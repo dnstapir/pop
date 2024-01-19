@@ -7,6 +7,7 @@ replace github.com/dnstapir/tapir-em/tapir => ../tapir
 require (
 	github.com/dnstapir/tapir-em/tapir v0.0.0-00010101000000-000000000000
 	github.com/go-playground/validator/v10 v10.9.0
+	github.com/miekg/dns v1.1.57
 	github.com/spf13/cobra v1.7.0
 	github.com/spf13/viper v1.18.1
 )
@@ -19,7 +20,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/leodido/go-urn v1.2.1 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
-	github.com/miekg/dns v1.1.57 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect
@@ -32,7 +32,7 @@ require (
 	github.com/twotwotwo/sorts v0.0.0-20160814051341-bf5c1f2b8553 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
-	golang.org/x/crypto v0.16.0 // indirect
+	golang.org/x/crypto v0.17.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/mod v0.12.0 // indirect
 	golang.org/x/net v0.19.0 // indirect
