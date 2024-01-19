@@ -19,7 +19,7 @@ build:
 	$(GO) build $(GOFLAGS) -o ${PROG}
 
 clean:
-	@rm -f $(PROG)
+	@rm -f $(PROG) *~
 
 install:
 	mkdir -p /usr/local/libexec

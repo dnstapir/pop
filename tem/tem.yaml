@@ -1,0 +1,48 @@
+# manually maintained
+
+cli:
+   tem:
+      url:	https://127.0.0.1:9099/api/v1
+      tlsurl:	https://127.0.0.1:9098/api/v1
+      apikey:	be-nice-to-a-bad-tempered-tapir
+   dtm:
+      tlsurl:	https://127.0.0.1:9090/
+
+apiserver:
+   key:		be-nice-to-a-bad-tempered-tapir
+   address:	127.0.0.1:9099
+   tlsaddress:	127.0.0.1:9098
+
+server:
+   listen:	127.0.0.1
+   port:	9097
+   upstreams:	[ nsa.johani.org:53 ]
+   downstreams:	[ 127.0.0.1:9999 ]  	# unbound
+   xferzones:	[ ]  # not useful for TAPIR
+   mapzones:	[ ]  # likely not useful for TAPIR
+   slicezones:	[ rpz.threat-feed.com ]
+
+dnsengine:
+   addresses:	127.0.0.1:5359
+
+service:
+   name:		foobar
+   filter:		dnssec+zonemd
+   reset_soa_serial:	true
+   verbose:		true
+   debug:		true
+   refresh:
+      active:	true
+
+certs:
+   certdir:	/etc/dnstapir/certs
+   cacertfile:	/etc/dnstapir/certs/axfr.netCA.crt
+   tem:
+      cert:	/etc/dnstapir/certs/tem.crt
+      key:	/etc/dnstapir/certs/tem.key
+   tapir-cli:
+      cert:	/etc/dnstapir/certs/tem.crt
+      key:	/etc/dnstapir/certs/tem.key
+
+log:
+   file:	/var/log/dnstapir/tem.log
