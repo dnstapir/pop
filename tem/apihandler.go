@@ -185,7 +185,7 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 	// tls.RequireAnyClientCert, tls.RequestClientCert, tls.NoClientCert
 	// We would like to request a client cert, but until all labgroup servers have certs we cannot do that.
 	if err != nil {
-		log.Fatalf("Error creating API server tls config: %v\n", err)
+		TEMExiter("Error creating API server tls config: %v\n", err)
 	}
 
 	tlsServer := &http.Server{
@@ -198,7 +198,7 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 
 	go func() {
 		log.Println("Starting API dispatcher #1. Listening on", address)
-		log.Fatal(http.ListenAndServe(address, router))
+		TEMExiter(http.ListenAndServe(address, router))
 	}()
 
 	if tlsaddress != "" {
@@ -206,7 +206,7 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 			wg.Add(1)
 			go func(wg *sync.WaitGroup) {
 				log.Println("Starting TLS API dispatcher #1. Listening on", tlsaddress)
-				log.Fatal(tlsServer.ListenAndServeTLS(certfile, keyfile))
+				TEMExiter(tlsServer.ListenAndServeTLS(certfile, keyfile))
 				wg.Done()
 			}(&wg)
 		} else {

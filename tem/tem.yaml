@@ -34,6 +34,51 @@ service:
    refresh:
       active:	true
 
+sources:
+   active:	[ tapir, local, localwhitelist ]
+   tapir:
+      type:	mqtt
+      content:	intelligence
+   local:
+      type:	file
+      content:	intelligence
+      format:	tapir-tags-v1
+      filename:	/etc/dnstapir/local-feed.txt
+   localwhitelist:
+      type:	file	
+      content:	whitelist
+      format:	domains		# domains | dawg
+      filename:	/etc/dnstapir/local-whitelist.txt
+   inactive_source:
+      type:	axfr
+      content:	intelligence
+      format:	rpz
+      zone:	rpz.zone
+      upstream:	10.1.2.3:53
+      tsig:	...
+
+redirects:
+   tapir:	landing-page.dnstapir.se
+   police:	www.polisen.se
+
+# known actions: passthru, drop, nxdomain, nodata, tapir, police
+
+policies:
+   default:
+      taglimit:		3	# i.e. 4 TAPIR tags and you're out
+      tagaction:	nxdomain
+      feedlimit:	1	# i.e. name present in multiple feeds will be blocked
+      feedaction:	nodata
+      hardblock:	[ barnporr-feed ]	# name present in one of these is always blocked
+      hardaction:	police
+   johani:
+      taglimit:		0	# i.e. 1 TAPIR tag and you're out
+      tagaction:	nxdomain
+      feedlimit:	0	# i.e. name present in any feeds will be blocked
+      feedaction:	nodata
+      hardblock:	[ barnporr-feed ]	# name present in one of these is always blocked
+      hardaction:	police
+
 certs:
    certdir:	/etc/dnstapir/certs
    cacertfile:	/etc/dnstapir/certs/axfr.netCA.crt

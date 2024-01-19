@@ -28,11 +28,41 @@ var (
 	soreuseport = flag.Int("soreuseport", 0, "use SO_REUSE_PORT")
 )
 
+var TEMExiter = func(args ...interface{}) {
+	log.Printf("TEMExiter: [placeholderfunction w/o real cleanup]")
+	log.Printf("TEMExiter: Exit message: %s", fmt.Sprintf(args[0].(string), args[1:]...))
+	os.Exit(1)
+}
+
 func mainloop(conf *Config, configfile *string) {
+	log.Println("mainloop: enter")
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, syscall.SIGINT, syscall.SIGTERM)
 	hupper := make(chan os.Signal, 1)
 	signal.Notify(hupper, syscall.SIGHUP)
+
+	TEMExiter = func(args ...interface{}) {
+		var msg string
+		log.Printf("TEMExiter: will try to clean up.")
+
+		switch args[0].(type) {
+		case string:
+			msg = fmt.Sprintf("TEMExiter: Exit message: %s",
+				fmt.Sprintf(args[0].(string), args[1:]...))
+		case error:
+			msg = fmt.Sprintf("TEMExiter: Error message: %s", args[0].(error).Error())
+
+		default:
+			msg = fmt.Sprintf("TEMExiter: Exit message: %v", args[0])
+		}
+
+		fmt.Println(msg)
+		log.Printf(msg)
+
+		// var done struct{}
+		// apistopper <- done
+		os.Exit(1)
+	}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -48,11 +78,10 @@ func mainloop(conf *Config, configfile *string) {
 			case <-hupper:
 				// config file to use has already been set in main()
 				if err := viper.ReadInConfig(); err == nil {
-				   fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-				 } else {
-				   log.Fatalf("Could not load config %s: Error: %v", viper.ConfigFileUsed(), err)
-				 }
-
+					fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+				} else {
+					TEMExiter("Could not load config %s: Error: %v", viper.ConfigFileUsed(), err)
+				}
 
 				log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
 				all_zones := viper.GetStringSlice("server.xferzones")
@@ -72,7 +101,7 @@ func mainloop(conf *Config, configfile *string) {
 	}()
 	wg.Wait()
 
-	fmt.Println("mainloop: leaving signal dispatcher")
+	log.Println("mainloop: leaving signal dispatcher")
 }
 
 func main() {
@@ -93,9 +122,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		log.Fatalf("Could not load config %s: Error: %v", tapir.DefaultTEMCfgFile, err)
+		TEMExiter("Could not load config %s: Error: %v", tapir.DefaultTEMCfgFile, err)
 	}
-
 
 	logfile := viper.GetString("log.file")
 	tapir.SetupLogging(logfile)
@@ -105,10 +133,15 @@ func main() {
 
 	err := viper.Unmarshal(&conf)
 	if err != nil {
-		log.Fatalf("Error unmarshalling config into struct: %v", err)
+		TEMExiter("Error unmarshalling config into struct: %v", err)
 	}
 
 	fmt.Printf("TEM (TAPIR Edge Manager) version %s starting.\n", appVersion)
+
+	err = ParseSources()
+	if err != nil {
+	   TEMExiter("Error from ParseSources: %v", err)
+	}
 
 	var stopch = make(chan struct{}, 10)
 	conf.Internal.RefreshZoneCh = make(chan ZoneRefresher, 10)
@@ -154,23 +187,12 @@ func main() {
 	// conf.Internal.APIStopCh = apistopper
 	go APIdispatcher(&conf, apistopper)
 
-//	conf.Internal.ScannerQ = make(chan ScanRequest, 5)
-//	conf.Internal.UpdateQ = make(chan UpdateRequest, 5)
+	//	conf.Internal.ScannerQ = make(chan ScanRequest, 5)
+	//	conf.Internal.UpdateQ = make(chan UpdateRequest, 5)
 
-//	go ScannerEngine(&conf)
-//	go UpdaterEngine(&conf)
+	//	go ScannerEngine(&conf)
+	//	go UpdaterEngine(&conf)
 	go DnsEngine(&conf)
-
-	//	dns.HandleFunc(".", createHandler(&conf))
-	//	if *soreuseport > 0 {
-	//		for i := 0; i < *soreuseport; i++ {
-	//			go Serve(&conf, "tcp", conf.Server.Listen, conf.Server.Port, true)
-	//			go Serve(&conf, "udp", conf.Server.Listen, conf.Server.Port, true)
-	//		}
-	//	} else {
-	//		go Serve(&conf, "tcp", conf.Server.Listen, conf.Server.Port, false)
-	//		go Serve(&conf, "udp", conf.Server.Listen, conf.Server.Port, false)
-	//	}
 
 	mainloop(&conf, &cfgFileUsed)
 }
@@ -203,12 +225,12 @@ func ParseUpDownStreams(stream string) string {
 		portstr := parts[len(parts)-1]
 		_, err := strconv.Atoi(portstr)
 		if err != nil {
-			log.Fatalf("Illegal port specification for AXFR src: %s", portstr)
+			TEMExiter("Illegal port specification for AXFR src: %s", portstr)
 		}
 		if _, ok := dns.IsDomainName(parts[0]); ok {
 			ips, err := net.LookupHost(parts[0])
 			if err != nil {
-				log.Fatalf("Error from net.LookupHost(%s): %v", parts[0], err)
+				TEMExiter("Error from net.LookupHost(%s): %v", parts[0], err)
 			}
 			parts[0] = ips[0]
 		}
@@ -217,7 +239,7 @@ func ParseUpDownStreams(stream string) string {
 		if _, ok := dns.IsDomainName(stream); ok {
 			ips, err := net.LookupHost(parts[0])
 			if err != nil {
-				log.Fatalf("Error from net.LookupHost(%s): %v", parts[0], err)
+				TEMExiter("Error from net.LookupHost(%s): %v", parts[0], err)
 			}
 			parts[0] = ips[0]
 		}

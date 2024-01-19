@@ -57,11 +57,11 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 
 	if v == nil {
 		if err := viper.Unmarshal(&config); err != nil {
-			log.Fatalf("ValidateConfig: Unmarshal error: %v", err)
+			TEMExiter("ValidateConfig: Unmarshal error: %v", err)
 		}
 	} else {
 		if err := v.Unmarshal(&config); err != nil {
-			log.Fatalf("ValidateConfig: unmarshal error: %v", err)
+			TEMExiter("ValidateConfig: unmarshal error: %v", err)
 		}
 	}
 
@@ -73,7 +73,7 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 	configsections["apiserver"] = config.Apiserver
 
 	if err := ValidateBySection(&config, configsections, cfgfile); err != nil {
-		log.Fatalf("Config \"%s\" is missing required attributes:\n%v\n", cfgfile, err)
+		TEMExiter("Config \"%s\" is missing required attributes:\n%v\n", cfgfile, err)
 	}
 	return nil
 }
@@ -84,7 +84,7 @@ func ValidateBySection(config *Config, configsections map[string]interface{}, cf
 	for k, data := range configsections {
 		log.Printf("%s: Validating config for %s section\n", config.Service.Name, k)
 		if err := validate.Struct(data); err != nil {
-			log.Fatalf("Config %s, section %s: missing required attributes:\n%v\n",
+			TEMExiter("Config %s, section %s: missing required attributes:\n%v\n",
 				cfgfile, k, err)
 		}
 	}

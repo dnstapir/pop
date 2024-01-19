@@ -291,7 +291,7 @@ func (zd *ZoneData) SortFunc(rr dns.RR, first_soa *dns.SOA) {
 	       // ignore
 
 	default:
-		log.Printf("SortFunc: owner=%s, rrtype=%s", owner, dns.TypeToString[rrtype])
+		// log.Printf("SortFunc: owner=%s, rrtype=%s", owner, dns.TypeToString[rrtype])
 		if zd.ZoneType == 1 {
 			zd.FilteredRRs = append(zd.FilteredRRs, rr)
 		} else {
