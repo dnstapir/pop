@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var rpzname, rpzaction, rpzpolicy string
+var rpzname, rpztype, rpzaction, rpzpolicy string
 
 var RpzCmd = &cobra.Command{
  	Use:   "rpz",
@@ -32,7 +32,13 @@ var RpzAddCmd = &cobra.Command{
 		   os.Exit(1)
 		}
 
-	        if rpzpolicy == "" {
+	        if rpztype == "" {
+		   fmt.Printf("Error: RPZ list type for domain name \"%s\" not specified.\n", rpzname)
+		   fmt.Printf("Error: must be one of: whitelist, greylist or blacklist.\n")
+		   os.Exit(1)
+		}
+
+		if rpzpolicy == "" {
 		   fmt.Printf("Error: desired RPZ policy for domain name \"%s\" not specified.\n", rpzname)
 		   os.Exit(1)
 		}
@@ -43,11 +49,12 @@ var RpzAddCmd = &cobra.Command{
 //		}
 
 		resp := SendCommandCmd(tapir.CommandPost{
- 			Command: "rpz-add",
-			Name:	 dns.Fqdn(rpzname),
-			Action:	 rpzaction,
-			Policy:	 rpzpolicy,
-			Zone:	 dns.Fqdn(tapir.GlobalCF.Zone),
+ 			Command:	"rpz-add",
+			Name:		dns.Fqdn(rpzname),
+			ListType:	rpztype,
+			Action:		rpzaction,
+			Policy:		rpzpolicy,
+			Zone:		dns.Fqdn(tapir.GlobalCF.Zone),
  		})
  		if resp.Error {
  			fmt.Printf("%s\n", resp.ErrorMsg)
@@ -70,8 +77,46 @@ var RpzRemoveCmd = &cobra.Command{
 
  		resp := SendCommandCmd(tapir.CommandPost{
  			Command: "rpz-remove",
-			Name:	 rpzname,
+			Name:	 dns.Fqdn(rpzname),
 			Zone:	 dns.Fqdn(tapir.GlobalCF.Zone),
+ 		})
+ 		if resp.Error {
+ 			fmt.Printf("%s\n", resp.ErrorMsg)
+ 		}
+
+		fmt.Printf("%s\n", resp.Msg)
+ 	},
+}
+
+var RpzLookupCmd = &cobra.Command{
+ 	Use:   "lookup",
+ 	Short: "Instruct TEM to remove a rule from the RPZ zone",
+ 	Run: func(cmd *cobra.Command, args []string) {
+	        if rpzname == "" {
+		   fmt.Printf("Error: domain name look up not specified.\n")
+		   os.Exit(1)
+		}
+
+ 		resp := SendCommandCmd(tapir.CommandPost{
+ 			Command: "rpz-lookup",
+			Name:	 dns.Fqdn(rpzname),
+			Zone:	 dns.Fqdn(tapir.GlobalCF.Zone),
+ 		})
+ 		if resp.Error {
+ 			fmt.Printf("%s\n", resp.ErrorMsg)
+ 		}
+
+		fmt.Printf("%s\n", resp.Msg)
+ 	},
+}
+
+var RpzListCmd = &cobra.Command{
+ 	Use:   "list",
+ 	Short: "Instruct TEM to remove a rule from the RPZ zone",
+ 	Run: func(cmd *cobra.Command, args []string) {
+
+ 		resp := SendCommandCmd(tapir.CommandPost{
+ 			Command: "rpz-list-sources",
  		})
  		if resp.Error {
  			fmt.Printf("%s\n", resp.ErrorMsg)
@@ -83,9 +128,11 @@ var RpzRemoveCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(RpzCmd)
-	RpzCmd.AddCommand(RpzAddCmd, RpzRemoveCmd)
+	RpzCmd.AddCommand(RpzAddCmd, RpzRemoveCmd, RpzLookupCmd, RpzListCmd)
 
 	RpzAddCmd.Flags().StringVarP(&rpzname, "name", "", "", "Domain name to add rule for")
+	RpzLookupCmd.Flags().StringVarP(&rpzname, "name", "", "", "Domain name to look up")
+	RpzAddCmd.Flags().StringVarP(&rpztype, "type", "", "", "One of: whitelist, greylist or blacklist")
 	RpzAddCmd.Flags().StringVarP(&rpzaction, "action", "", "", "Desired action")
 	RpzAddCmd.Flags().StringVarP(&rpzpolicy, "policy", "", "", "Desired policy for this domain name")
 }

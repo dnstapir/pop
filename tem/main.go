@@ -194,19 +194,15 @@ func main() {
 	//	go UpdaterEngine(&conf)
 	go DnsEngine(&conf)
 
-	for _, n := range []string{ "facebook.com", "facebook.com.", "netnod.se", "www.netnod.se", "xyzzynniohiyfhe.com" } {
- 	    if td.Whitelisted(n) {
-	       fmt.Printf("The name \"%s\" is whitelisted\n", n)
-	    } else {
-	       fmt.Printf("The name \"%s\" is NOT whitelisted\n", n)
-	    }
-	}
-
 	mainloop(&conf, &cfgFileUsed)
 }
 
 func GetUpstream(zone string) string {
 	var upstream string
+
+	// First check whether this zone is listed as an RPZ source
+
+	// Fallback: check for global upstream config
 	upstreamaddrs := viper.GetStringSlice("server.upstreams")
 	if len(upstreamaddrs) > 0 {
 		upstream = upstreamaddrs[0]
@@ -256,7 +252,3 @@ func ParseUpDownStreams(stream string) string {
 	return stream
 }
 
-type ZoneRefresher struct {
-	Name     string
-	ZoneType uint8 // 1=xfr, 2=map, 3=slice
-}

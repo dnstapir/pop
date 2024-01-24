@@ -15,6 +15,7 @@ type Config struct {
 	Service   ServiceConf
 	Server    ServerConf
 	Apiserver ApiserverConf
+	Sources	  []SourceConf
 	Log       struct {
 		File string `validate:"required"`
 	}
@@ -40,6 +41,15 @@ type ServerConf struct {
 	SliceZones []string `validate:"required"`
 }
 
+type SourceConf struct {
+        Name	        string	`validate:"required"`
+	Description	string	`validate:"required"`
+	Type		string	`validate:"required"`
+	Format		string	`validate:"required"`
+	Source		string	`validate:"required"`
+	Filename	string
+}
+
 type ApiserverConf struct {
 	Address string `validate:"required"`
 	Key     string `validate:"required"`
@@ -48,8 +58,6 @@ type ApiserverConf struct {
 type InternalConf struct {
 	RefreshZoneCh chan ZoneRefresher
 	RpzCmdCh      chan RpzCmdData
-//	ScannerQ      chan ScanRequest
-//	UpdateQ       chan UpdateRequest
 }
 
 func ValidateConfig(v *viper.Viper, cfgfile string) error {

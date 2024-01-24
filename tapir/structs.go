@@ -57,8 +57,10 @@ type CommandPost struct {
      Command	 string
      Zone	 string
      Name	 string	// Domain name to add/remove an RPZ action for
+     ListType	 string
      Policy	 string	// RPZ policy
      Action	 string	// RPZ action (OBE)
+     RpzSource	 string	// corresponds with the sourceid in tem.conf
 }
 
 type CommandResponse struct {

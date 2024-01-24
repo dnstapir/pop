@@ -54,8 +54,8 @@ and usage of using your command.`,
 		case "text":
 		     CompileDawgFromText(srcfile, outfile)
 		default:
-	   	   fmt.Printf("Error: format of source file \"%s\" unknown. Must be either \"csv\" or \"text\".\n",
-	   		      	      srcformat)
+	   	   fmt.Printf("Error: format \"%s\" of source file \"%s\" unknown. Must be either \"csv\" or \"text\".\n",
+	   		      	      srcformat, srcfile)
 	   	   os.Exit(1)
 		}
 	},

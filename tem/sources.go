@@ -8,24 +8,73 @@ import (
 	"log"
 	"github.com/spf13/viper"
 	"github.com/smhanov/dawg"
+	"github.com/miekg/dns"
 
 //	"github.com/dnstapir/tapir-em/tapir"
 )
 
 type TemData struct {
-     GlobalWL	    dawg.Finder
-     LocalWL 	    dawg.Finder
+     Blacklists	    []WBGlist
+     Whitelists	    []WBGlist
+     Greylists	    []WBGlist
+     RefreshZoneCh  chan ZoneRefresher
      Logger	    *log.Logger
 }
 
+type WBGlist struct {
+     Name		string
+     Description	string
+     Type		string	// whitelist | blacklist | greylist
+     Mutable		bool	// true = is possible to update. Only local text file sources are mutable
+     Format		string	// 
+     Datasource		string	// file | mqtt | https | api | ...
+     Filename		string
+     Dawgf   		dawg.Finder
+
+     // greylist sources needs more complex stuff here:
+     GreyNames	 	map[string]GreyName
+     Zone		string
+     Upstream		string
+}
+
+type GreyName struct {
+     Format   string // "tapir-feed-v1" | ...
+     Tags     map[string]bool		// XXX: extremely wasteful, a bitfield would be better,
+     	      				//      but don't know how many tags there can be
+}
+
 func (td *TemData) Whitelisted(name string) bool {
-     if td.GlobalWL != nil && td.GlobalWL.IndexOf(name) != -1 {
-     	return true
-     }
-     if td.LocalWL != nil && td.LocalWL.IndexOf(name) != -1 {
-     	return true
+     for _, list := range td.Whitelists {
+     	 td.Logger.Printf("Whitelisted: checking %s in whitelist %s", name, list.Name)
+     	 if list.Dawgf.IndexOf(name) != -1 {
+     	    return true
+	 }
      }
      return false
+}
+
+func (td *TemData) Blacklisted(name string) bool {
+     for _, list := range td.Blacklists {
+     	 td.Logger.Printf("Blacklisted: checking %s in blacklist %s", name, list.Name)
+     	 if list.Dawgf.IndexOf(name) != -1 {
+     	    return true
+	 }
+     }
+     return false
+}
+
+func (td *TemData) GreylistingReport(name string) (bool, string) {
+     var report string
+     if len(td.Greylists) == 0 {
+     	return false, fmt.Sprintf("Domain name \"%s\" is not greylisted (there are no active greylists).\n", name)
+     }
+     
+     for _, list := range td.Greylists {
+     	 td.Logger.Printf("Greylisted: checking %s in greylist %s", name, list.Name)
+	 report += fmt.Sprintf("Domain name \"%s\" could be present in greylist %s\n", name, list.Name)
+     }
+     return false, report
+
 }
 
 func NewTemData(lg *log.Logger) (*TemData, error) {
@@ -43,36 +92,68 @@ func (td *TemData) ParseSources() error {
      sources := viper.GetStringSlice("sources.active")
      log.Printf("Defined policy sources: %v", sources)
 
-     for _, source := range sources {
-         stype := viper.GetString(fmt.Sprintf("sources.%s.type", source))
-	 if stype == "" {
-	    TEMExiter("ParseSources: source %d has no type", source)
-	 }
-         scontent := viper.GetString(fmt.Sprintf("sources.%s.content", source))
-	 if scontent == "" {
-	    TEMExiter("ParseSources: source %d has undefined content", source)
+     for _, sourceid := range sources {
+         listtype := viper.GetString(fmt.Sprintf("sources.%s.type", sourceid))
+	 if listtype == "" {
+	    TEMExiter("ParseSources: source %d has no list type", sourceid)
 	 }
 
-	 log.Printf("Found source: %s (type %s, content %s)", source, stype, scontent)
-	 switch stype {
+         datasource := viper.GetString(fmt.Sprintf("sources.%s.source", sourceid))
+	 if datasource == "" {
+	    TEMExiter("ParseSources: source %d has no data source", sourceid)
+	 }
+
+	 name := viper.GetString(fmt.Sprintf("sources.%s.name", sourceid))
+	 if datasource == "" {
+	    TEMExiter("ParseSources: source %d has no name", sourceid)
+	 }
+
+	 desc := viper.GetString(fmt.Sprintf("sources.%s.description", sourceid))
+	 if desc == "" {
+	    TEMExiter("ParseSources: source %d has no description", sourceid)
+	 }
+
+	 format := viper.GetString(fmt.Sprintf("sources.%s.format", sourceid))
+	 if desc == "" {
+	    TEMExiter("ParseSources: source %d has no format description", sourceid)
+	 }
+
+	 td.Logger.Printf("Found source: %s (list type %s)", sourceid, listtype)
+
+	 newsource := WBGlist{
+			Name:		name,
+			Description:	desc,
+			Type:		listtype,
+			Format:		format,
+			Datasource:	datasource,
+		      }
+
+	 switch datasource {
 	 case "mqtt":
-	      log.Printf("*** Do not yet know how to deal with MQTT sources. Ignoring.")
+	      td.Logger.Printf("*** Do not yet know how to deal with MQTT sources. Ignoring.")
 	 case "file":
-	      filename := viper.GetString(fmt.Sprintf("sources.%s.filename", source))
+	      filename := viper.GetString(fmt.Sprintf("sources.%s.filename", sourceid))
 	      if filename == "" {
-	      	 TEMExiter("ParseSources: source %s of type file has undefined filename", source)
+	      	 TEMExiter("ParseSources: source %s of type file has undefined filename", sourceid)
 	      }
 
-	      switch scontent {
-	      case "intelligence":
-	      	   err := ParseLocalFeed(source, filename)
+	      newsource.Filename = filename
+
+	      switch listtype {
+	      case "blacklist":
+	      	   err := td.ParseLocalBlacklist(sourceid, &newsource)
 	      	   if err != nil {
-	      	      log.Printf("Error from ParseLocalFeed: %v", err)
+	      	      td.Logger.Printf("Error from ParseLocalBlacklist: %v", err)
 	      	   }
 	      case "whitelist":
-	      	   err := td.ParseLocalWhiteList(source, filename)
+	      	   err := td.ParseLocalWhitelist(sourceid, &newsource)
 	      	   if err != nil {
-	      	      log.Printf("Error from ParseLocalWhiteList: %v", err)
+	      	      td.Logger.Printf("Error from ParseLocalWhitelist: %v", err)
+	      	   }
+	      case "greylist":
+	      	   err := td.ParseGreylist(sourceid, &newsource)
+	      	   if err != nil {
+	      	      td.Logger.Printf("Error from ParseGreylist: %v", err)
 	      	   }
 	      }
 	 }
@@ -87,22 +168,98 @@ func ParseLocalFeed (source, filename string) error {
      return nil
 }
 
-func (td *TemData) ParseLocalWhiteList (source, filename string) error {
-     format := viper.GetString(fmt.Sprintf("sources.%s.format", source))
-     switch format {
+func (td *TemData) ParseLocalWhitelist (sourceid string, s *WBGlist) error {
+     var df dawg.Finder
+     var err error
+     
+     switch s.Format {
      case "domains":
-     	  log.Printf("ParseLocalWhiteList: parsing text file of domain names (NYI)")
+     	  td.Logger.Printf("ParseLocalWhitelist: parsing text file of domain names (NYI)")
      case "dawg":
-     	  log.Printf("ParseLocalWhiteList: loading DAWG: %s", filename)
-	  df, err := dawg.Load(filename)
+     	  td.Logger.Printf("ParseLocalWhitelist: loading DAWG: %s", s.Filename)
+	  df, err = dawg.Load(s.Filename)
 	  if err != nil {
-	     TEMExiter("Error from dawg.Load(%s): %v", filename, err)
+	     TEMExiter("Error from dawg.Load(%s): %v", s.Filename, err)
 	  }
-     	  log.Printf("ParseLocalWhiteList: DAWG loaded")
-	  td.LocalWL = df
+     	  td.Logger.Printf("ParseLocalWhitelist: DAWG loaded")
+	  s.Dawgf = df
+	  td.Whitelists = append(td.Whitelists, *s)
+     case "rpz":
+     	  _, err := td.SetupRPZFeed(sourceid, s)
+	  if err != nil {
+	     return err
+	  }
+	  td.Whitelists = append(td.Whitelists, *s)
 	  
      default:
-	TEMExiter("ParseLocalWhiteList: Format \"%s\" is unknown.", format)
+	TEMExiter("ParseLocalWhitelist: Format \"%s\" is unknown.", s.Format)
      }
      return nil
+}
+
+func (td *TemData) ParseLocalBlacklist (sourceid string, s *WBGlist) error {
+     var df dawg.Finder
+     var err error
+     
+     switch s.Format {
+     case "domains":
+     	  td.Logger.Printf("ParseLocalBlackList: parsing text file of domain names (NYI)")
+     case "dawg":
+     	  td.Logger.Printf("ParseLocalBlacklist: loading DAWG: %s", s.Filename)
+	  df, err = dawg.Load(s.Filename)
+	  if err != nil {
+	     TEMExiter("Error from dawg.Load(%s): %v", s.Filename, err)
+	  }
+     	  td.Logger.Printf("ParseLocalBlacklist: DAWG loaded")
+	  s.Dawgf = df
+	  td.Blacklists = append(td.Blacklists, *s)
+     case "rpz":
+     	  _, err := td.SetupRPZFeed(sourceid, s)
+	  if err != nil {
+	     return err
+	  }
+	  td.Blacklists = append(td.Blacklists, *s)
+	  
+     default:
+	TEMExiter("ParseLocalBlacklist: Format \"%s\" is unknown.", s.Format)
+     }
+     return nil
+}
+
+func (td *TemData) ParseGreylist (sourceid string, s *WBGlist) error {
+     switch s.Format {
+     case "rpz":
+     	  _, err := td.SetupRPZFeed(sourceid, s)
+	  if err != nil {
+	     return err
+	  }
+	  td.Greylists = append(td.Greylists, *s)
+	  
+     default:
+	TEMExiter("ParseLocalBlacklist: Format \"%s\" is unknown.", s.Format)
+     }
+     return nil
+}
+
+func (td *TemData) SetupRPZFeed(sourceid string, s *WBGlist) (string, error) {
+     	  zone := viper.GetString(fmt.Sprintf("sources.%s.zone", sourceid))
+	  if zone == "" {
+	     return "", fmt.Errorf("Unable to load RPZ source %s, upstream zone not specified.", sourceid)
+	  }
+
+     	  upstream := viper.GetString(fmt.Sprintf("sources.%s.upstream", sourceid))
+	  if upstream == "" {
+	     return "", fmt.Errorf("Unable to load RPZ source %s, upstream address not specified.", sourceid)
+	  }
+
+	  s.Zone = dns.Fqdn(zone)
+	  s.Upstream = upstream
+	  td.Logger.Printf("SetupRPZFeed: about to transfer zone %s from %s", zone, upstream)
+	  td.RefreshZoneCh <- ZoneRefresher{
+				Name:		dns.Fqdn(zone),
+				Upstream:	upstream,
+				KeepFunc:	func(uint16) bool { return true },
+				ZoneType:	3,
+	  		      }
+	return "FOO", nil
 }

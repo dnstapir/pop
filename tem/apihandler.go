@@ -23,6 +23,8 @@ type RpzCmdData struct {
      	Command	string
 	Zone   	string
 	Domain 	string
+	ListType	string
+	RpzSource	string	// Name of one feed
 	Policy	string
 	Action 	string
 	Result 	chan RpzCmdResponse
@@ -56,7 +58,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		resp := tapir.CommandResponse{}
 
 		defer func() {
-		      log.Printf("defer: resp: %v", resp)
+		      // log.Printf("defer: resp: %v", resp)
 		      w.Header().Set("Content-Type", "application/json")
 		      json.NewEncoder(w).Encode(resp)
 		}()
@@ -75,22 +77,82 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "rpz-add":
-			log.Printf("Received RPZ-ADD %s policy %s command", cp.Name, cp.Policy)
+			log.Printf("Received RPZ-ADD %s policy %s RPZ source %s command", cp.Name, cp.Policy, cp.RpzSource)
 			
+			log.Printf("apihandler: RPZ-ADD 1. Len(ch): %d", len(conf.Internal.RpzCmdCh))
 			var respch = make(chan RpzCmdResponse, 1)
 			conf.Internal.RpzCmdCh <- RpzCmdData{
 							Command:   "RPZ-ADD",
 							Domain:    cp.Name,
 							Policy:	   cp.Policy,
+							RpzSource: cp.RpzSource,
 							Result:    respch,
 						  }
+			log.Printf("apihandler: RPZ-ADD 2")
 			rpzresp := <-respch
 
+			log.Printf("apihandler: RPZ-ADD 3")
 			if rpzresp.Error {
 			   log.Printf("RPZ-ADD: Error from RefreshEngine: %s", resp.ErrorMsg)
 			   resp.Error = true
 			   resp.ErrorMsg = rpzresp.ErrorMsg
 	 		}
+			log.Printf("apihandler: RPZ-ADD 4")
+			resp.Msg = rpzresp.Msg
+
+		case "rpz-lookup":
+			log.Printf("Received RPZ-LOOKUP %s command", cp.Name)
+			
+			var respch = make(chan RpzCmdResponse, 1)
+			conf.Internal.RpzCmdCh <- RpzCmdData{
+							Command:   "RPZ-LOOKUP",
+							Domain:    cp.Name,
+							Result:    respch,
+						  }
+			rpzresp := <-respch
+
+			if rpzresp.Error {
+			   log.Printf("RPZ-REMOVE: Error from RefreshEngine: %s", resp.ErrorMsg)
+			   resp.Error = true
+			   resp.ErrorMsg = rpzresp.ErrorMsg
+	 		}
+			resp.Msg = rpzresp.Msg
+
+		case "rpz-remove":
+			log.Printf("Received RPZ-REMOVE %s source %s command", cp.Name, cp.RpzSource)
+			
+			var respch = make(chan RpzCmdResponse, 1)
+			conf.Internal.RpzCmdCh <- RpzCmdData{
+							Command:   "RPZ-REMOVE",
+							Domain:    cp.Name,
+							RpzSource: cp.RpzSource,
+							Result:    respch,
+						  }
+			rpzresp := <-respch
+
+			if rpzresp.Error {
+			   log.Printf("RPZ-REMOVE: Error from RefreshEngine: %s", resp.ErrorMsg)
+			   resp.Error = true
+			   resp.ErrorMsg = rpzresp.ErrorMsg
+	 		}
+			resp.Msg = rpzresp.Msg
+
+		case "rpz-list-sources":
+			log.Printf("Received RPZ-LIST-SOURCES command")
+			
+			var respch = make(chan RpzCmdResponse, 1)
+			conf.Internal.RpzCmdCh <- RpzCmdData{
+							Command:   "RPZ-LIST-SOURCES",
+							Result:    respch,
+						  }
+			rpzresp := <-respch
+
+			if rpzresp.Error {
+			   log.Printf("RPZ-LIST-SOURCS: Error from RefreshEngine: %s", resp.ErrorMsg)
+			   resp.Error = true
+			   resp.ErrorMsg = rpzresp.ErrorMsg
+	 		}
+			resp.Msg = rpzresp.Msg
 
 		case "stop":
 			log.Printf("Daemon instructed to stop\n")

@@ -6,6 +6,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/miekg/dns"
@@ -13,6 +14,13 @@ import (
 
 	"github.com/dnstapir/tapir-em/tapir"
 )
+
+type ZoneRefresher struct {
+	Name     string
+	Upstream string
+	KeepFunc func(uint16) bool
+	ZoneType uint8 // 1=xfr, 2=map, 3=slice
+}
 
 type RefreshCounter struct {
 	Name           string
@@ -67,9 +75,19 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						zone)
 					if _, known := refreshCounters[zone]; !known {
 						refresh = zonedata.SOA.Refresh
-						upstream = GetUpstream(zone)
+
+						upstream = zr.Upstream
+						if upstream == "" {
+						   upstream = GetUpstream(zone)
+						}
+
 						downstreams = GetDownstreams(zone)
-						_, keepfunc = GetKeepFunc(zone)
+
+						keepfunc = zr.KeepFunc
+						if keepfunc == nil {
+						   _, keepfunc = GetKeepFunc(zone)
+						}
+
 						refreshCounters[zone] = &RefreshCounter{
 							Name:        zone,
 							SOARefresh:  refresh,
@@ -182,6 +200,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 		case cmd = <-rpzcmdch:
 			command := cmd.Command
+			log.Printf("RefreshEngine: recieved an %s command on the RpzCmd channel", command)
 			resp := RpzCmdResponse{
 					Zone: zone,
 			}
@@ -203,7 +222,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						resp.Status = true
 					} else {
 						resp.Error = true
-						resp.ErrorMsg = fmt.Sprintf("Request to bump serial and epoch for unknown zone '%s'", zone)
+						resp.ErrorMsg = fmt.Sprintf("Request to bump serial for unknown zone '%s'", zone)
 						log.Printf(resp.ErrorMsg)
 					}
 				}
@@ -213,18 +232,85 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				log.Printf("RefreshEngine: recieved an RPZ ADD command: %s (policy %s)", cmd.Domain, cmd.Policy)
 				if td.Whitelisted(cmd.Domain) {
 				   resp.Error = true
-				   resp.ErrorMsg = fmt.Sprintf("No rule added for \"%s\" as this domain is whitelisted.",
+				   resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is whitelisted. No change.",
 				   		   		   cmd.Domain)
-				} else {
-				   resp.Msg = fmt.Sprintf("New rule added for \"%s\" (policy %s).",
-				   	      		       cmd.Domain, cmd.Policy)
-				  
+				   cmd.Result <- resp
+				   continue
 				}
-				cmd.Result <- resp
 
+				if td.Blacklisted(cmd.Domain) {
+				   resp.Error = true
+				   resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is already blacklisted. No change.",
+				   	      		       cmd.Domain)
+				  
+				   cmd.Result <- resp
+				   continue
+				}  
+
+				// if the name isn't either whitelisted or blacklisted
+				if cmd.ListType == "greylist" {
+				   td.GreylistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
+				   resp.Msg = fmt.Sprintf("Domain name \"%s\" (policy %s) added to greylisting DB.",
+				   	      		       cmd.Domain, cmd.Policy)
+				   cmd.Result <- resp
+				   continue
+				}			
+				log.Printf("rf: RPZ-ADD 3")
+	
 			case "RPZ-REMOVE":
 				log.Printf("RefreshEngine: recieved an RPZ REMOVE command: %s", cmd.Domain)
 				resp.Msg = "RPZ-REMOVE NYI"
+				cmd.Result <- resp
+
+			case "RPZ-LOOKUP":
+				log.Printf("RefreshEngine: recieved an RPZ LOOKUP command: %s", cmd.Domain)
+				var msg string
+				if td.Whitelisted(cmd.Domain) {
+				   resp.Msg = fmt.Sprintf("Domain name \"%s\" is whitelisted.", cmd.Domain)
+				   cmd.Result <- resp
+				   continue
+				}
+				msg += fmt.Sprintf("Domain name \"%s\" is not whitelisted.\n", cmd.Domain)
+				
+				if td.Blacklisted(cmd.Domain) {
+				   resp.Msg = fmt.Sprintf("Domain name \"%s\" is blacklisted.", cmd.Domain)
+				   cmd.Result <- resp
+				   continue
+				}  
+				msg += fmt.Sprintf("Domain name \"%s\" is not blacklisted.\n", cmd.Domain)
+
+				// if the name isn't either whitelisted or blacklisted: go though all greylists
+				_, greymsg := td.GreylistingReport(cmd.Domain)
+				resp.Msg = msg + greymsg
+				cmd.Result <- resp
+				continue
+
+			case "RPZ-LIST-SOURCES":
+				log.Printf("RefreshEngine: recieved an RPZ LIST-SOURCES command")
+				list := []string{}
+				for _, wl := range td.Whitelists {
+				    list = append(list, wl.Name)
+				}
+				resp.Msg += fmt.Sprintf("Whitelist srcs: %s\n", strings.Join(list, ", "))
+
+				list = []string{}
+				for _, bl := range td.Blacklists {
+				    list = append(list, bl.Name)
+				}
+				resp.Msg += fmt.Sprintf("Blacklist srcs: %s\n", strings.Join(list, ", "))
+
+				list = []string{}
+				for _, gl := range td.Greylists {
+				    list = append(list, gl.Name)
+				}
+				resp.Msg += fmt.Sprintf("Greylist srcs: %s\n", strings.Join(list, ", "))
+				cmd.Result <- resp
+
+			default:
+				td.Logger.Printf("RefreshEngine: unknown command: \"%s\". Ignored.", command)
+				resp.Error = true
+				resp.ErrorMsg = fmt.Sprintf("RefreshEngine: unknown command: \"%s\". Ignored.",
+					      				    command)
 				cmd.Result <- resp
 			}
 		}
