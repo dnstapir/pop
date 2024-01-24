@@ -138,15 +138,15 @@ func main() {
 
 	fmt.Printf("TEM (TAPIR Edge Manager) version %s starting.\n", appVersion)
 
-	err = ParseSources()
+	td, err := NewTemData(log.Default())
 	if err != nil {
-	   TEMExiter("Error from ParseSources: %v", err)
+	   TEMExiter("Error from NewTemData: %v", err)
 	}
 
 	var stopch = make(chan struct{}, 10)
 	conf.Internal.RefreshZoneCh = make(chan ZoneRefresher, 10)
 	conf.Internal.RpzCmdCh = make(chan RpzCmdData, 10)
-	go RefreshEngine(&conf, stopch)
+	go td.RefreshEngine(&conf, stopch)
 
 	var keepfunc_name = viper.GetString("service.filter")
 
@@ -193,6 +193,14 @@ func main() {
 	//	go ScannerEngine(&conf)
 	//	go UpdaterEngine(&conf)
 	go DnsEngine(&conf)
+
+	for _, n := range []string{ "facebook.com", "facebook.com.", "netnod.se", "www.netnod.se", "xyzzynniohiyfhe.com" } {
+ 	    if td.Whitelisted(n) {
+	       fmt.Printf("The name \"%s\" is whitelisted\n", n)
+	    } else {
+	       fmt.Printf("The name \"%s\" is NOT whitelisted\n", n)
+	    }
+	}
 
 	mainloop(&conf, &cfgFileUsed)
 }

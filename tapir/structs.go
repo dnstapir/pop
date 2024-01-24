@@ -57,7 +57,8 @@ type CommandPost struct {
      Command	 string
      Zone	 string
      Name	 string	// Domain name to add/remove an RPZ action for
-     Action	 string	// RPZ action
+     Policy	 string	// RPZ policy
+     Action	 string	// RPZ action (OBE)
 }
 
 type CommandResponse struct {

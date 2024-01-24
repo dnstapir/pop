@@ -24,7 +24,7 @@ type RefreshCounter struct {
 	Downstreams    []string
 }
 
-func RefreshEngine(conf *Config, stopch chan struct{}) {
+func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 	var zonerefch = conf.Internal.RefreshZoneCh
 	var rpzcmdch = conf.Internal.RpzCmdCh
@@ -182,12 +182,12 @@ func RefreshEngine(conf *Config, stopch chan struct{}) {
 
 		case cmd = <-rpzcmdch:
 			command := cmd.Command
+			resp := RpzCmdResponse{
+					Zone: zone,
+			}
 			switch command {
 			case "BUMP":
 				zone = cmd.Zone
-				resp := RpzCmdResponse{
-					Zone: zone,
-				}
 				if zone != "" {
 					if zd, exist := Zones[zone]; exist {
 						log.Printf("RefreshEngine: bumping SOA serial for known zone '%s'",
@@ -210,11 +210,22 @@ func RefreshEngine(conf *Config, stopch chan struct{}) {
 				cmd.Result <- resp
 
 			case "RPZ-ADD":
-				log.Printf("RefreshEngine: recieved an RPZ ADD command: %s %s", cmd.Domain, cmd.Action)
+				log.Printf("RefreshEngine: recieved an RPZ ADD command: %s (policy %s)", cmd.Domain, cmd.Policy)
+				if td.Whitelisted(cmd.Domain) {
+				   resp.Error = true
+				   resp.ErrorMsg = fmt.Sprintf("No rule added for \"%s\" as this domain is whitelisted.",
+				   		   		   cmd.Domain)
+				} else {
+				   resp.Msg = fmt.Sprintf("New rule added for \"%s\" (policy %s).",
+				   	      		       cmd.Domain, cmd.Policy)
+				  
+				}
+				cmd.Result <- resp
 
 			case "RPZ-REMOVE":
 				log.Printf("RefreshEngine: recieved an RPZ REMOVE command: %s", cmd.Domain)
-
+				resp.Msg = "RPZ-REMOVE NYI"
+				cmd.Result <- resp
 			}
 		}
 	}

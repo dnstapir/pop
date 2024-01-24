@@ -19,6 +19,27 @@ import (
 	"github.com/dnstapir/tapir-em/tapir"
 )
 
+type RpzCmdData struct {
+     	Command	string
+	Zone   	string
+	Domain 	string
+	Policy	string
+	Action 	string
+	Result 	chan RpzCmdResponse
+}
+
+type RpzCmdResponse struct {
+	Time      time.Time
+	Zone      string
+	Domain	  string
+	Msg       string
+	OldSerial uint32
+	NewSerial uint32
+	Error     bool
+	ErrorMsg  string
+	Status    bool
+}
+
 func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -34,6 +55,12 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		resp := tapir.CommandResponse{}
 
+		defer func() {
+		      log.Printf("defer: resp: %v", resp)
+		      w.Header().Set("Content-Type", "application/json")
+		      json.NewEncoder(w).Encode(resp)
+		}()
+
 		switch cp.Command {
 		case "status":
 			log.Printf("Daemon status inquiry\n")
@@ -48,7 +75,22 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "rpz-add":
-		
+			log.Printf("Received RPZ-ADD %s policy %s command", cp.Name, cp.Policy)
+			
+			var respch = make(chan RpzCmdResponse, 1)
+			conf.Internal.RpzCmdCh <- RpzCmdData{
+							Command:   "RPZ-ADD",
+							Domain:    cp.Name,
+							Policy:	   cp.Policy,
+							Result:    respch,
+						  }
+			rpzresp := <-respch
+
+			if rpzresp.Error {
+			   log.Printf("RPZ-ADD: Error from RefreshEngine: %s", resp.ErrorMsg)
+			   resp.Error = true
+			   resp.ErrorMsg = rpzresp.ErrorMsg
+	 		}
 
 		case "stop":
 			log.Printf("Daemon instructed to stop\n")
@@ -62,9 +104,6 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", cp.Command)
 			resp.Error = true
 		}
-
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
 	}
 }
 
@@ -239,21 +278,3 @@ func BumpSerial(conf *Config, zone string) (string, error) {
 	return resp.Msg, nil
 }
 
-type RpzCmdData struct {
-     	Command	string
-	Zone   	string
-	Domain 	string
-	Action 	string
-	Result 	chan RpzCmdResponse
-}
-
-type RpzCmdResponse struct {
-	Time      time.Time
-	Zone      string
-	Msg       string
-	OldSerial uint32
-	NewSerial uint32
-	Error     bool
-	ErrorMsg  string
-	Status    bool
-}
