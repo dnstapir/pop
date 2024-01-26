@@ -7,3 +7,4 @@ import (
 )
 
 const DefaultTEMCfgFile	= "/etc/dnstapir/tem.yaml"
+const DefaultTAPIRCLICfgFile	= "/etc/dnstapir/tapir-cli.yaml"
