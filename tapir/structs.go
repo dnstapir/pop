@@ -4,11 +4,15 @@
 package tapir
 
 import (
+       	"crypto/ecdsa"
+	"crypto/tls"
+	"crypto/x509"
 	"log"
 	"net/http"
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/eclipse/paho.golang/paho"
 )
 
 type ZoneData struct {
@@ -125,10 +129,13 @@ type PingResponse struct {
 	Pongs      int
 }
 
-type MqttPublish struct {
+type MqttPkg struct {
      Type    string
+     Error   bool	// only used for sub.
+     ErrorMsg	string	// only used for sub.
      Msg     string
-     Data    any
+     Data    TapirMsg
+     TimeStamp	time.Time
 }
 
 type TapirMsg struct {
@@ -136,10 +143,40 @@ type TapirMsg struct {
      Added	[]Domain
      Removed	[]Domain
      Msg	string
-     Time	time.Time
+     TimeStamp	time.Time
 }
 
 type Domain struct {
      Name	 string
      Tags	 []string	// this should become a bit field in the future
 }
+
+type MqttEngine struct {
+	Topic        string
+	ClientID     string
+	Server       string
+	QoS          int
+	PrivKey      *ecdsa.PrivateKey
+	PubKey       any
+	Client       *paho.Client
+	ClientCert   tls.Certificate
+	CaCertPool   *x509.CertPool
+	MsgChan      chan *paho.Publish
+	CmdChan      chan MqttEngineCmd
+	PublishChan  chan MqttPkg
+	SubscribeChan  chan MqttPkg
+	CanPublish   bool
+	CanSubscribe bool
+}
+
+type MqttEngineCmd struct {
+	Cmd  string
+	Resp chan MqttEngineResponse
+}
+
+type MqttEngineResponse struct {
+	Status   string
+	Error    bool
+	ErrorMsg string
+}
+

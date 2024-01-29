@@ -5,21 +5,17 @@
 package tapir
 
 import (
-	//	"bufio"
 	"bytes"
 	"context"
-	"crypto/ecdsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	//	"io"
 	"log"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
+	"time"
 
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/lestrrat-go/jwx/v2/jwa"
@@ -34,24 +30,11 @@ func Chomp(s string) string {
 	return s
 }
 
-type MqttEngine struct {
-	Topic        string
-	ClientID     string
-	Server       string
-	QoS          int
-	PrivKey      *ecdsa.PrivateKey
-	PubKey       any
-	Client       *paho.Client
-	ClientCert   tls.Certificate
-	CaCertPool   *x509.CertPool
-	MsgChan      chan *paho.Publish
-	CmdChan      chan MqttPubSubCmd
-	PublishChan  chan MqttPublish
-	CanPublish   bool
-	CanSubscribe bool
-}
+func NewMqttEngine(clientid string) (*MqttEngine, error) {
+	if clientid == "" {
+		return nil, fmt.Errorf("MQTT client id not specified")
+	}
 
-func newMqttEngine() (*MqttEngine, error) {
 	server := viper.GetString("mqtt.server")
 	if server == "" {
 		return nil, fmt.Errorf("MQTT server not specified in config")
@@ -64,83 +47,64 @@ func newMqttEngine() (*MqttEngine, error) {
 
 	clientCertFile := viper.GetString("mqtt.clientcert")
 	if clientCertFile == "" {
-		log.Fatal("MQTT client cert file not specified in config")
+		return nil, fmt.Errorf("MQTT client cert file not specified in config")
 	}
 
 	clientKeyFile := viper.GetString("mqtt.clientkey")
 	if clientKeyFile == "" {
-		log.Fatal("MQTT client key file not specified in config")
+		return nil, fmt.Errorf("MQTT client key file not specified in config")
 	}
 
 	cacertFile := viper.GetString("mqtt.cacert")
 	if cacertFile == "" {
-		log.Fatal("MQTT CA cert file not specified in config")
-	}
-
-	signingKeyFile := viper.GetString("mqtt.pub.signingkey")
-	if signingKeyFile == "" {
-		log.Fatal("MQTT signing key file not specified in config")
+		return nil, fmt.Errorf("MQTT CA cert file not specified in config")
 	}
 
 	// Setup CA cert for validating the MQTT connection
 	caCert, err := os.ReadFile(cacertFile)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 	caCertPool := x509.NewCertPool()
 	ok := caCertPool.AppendCertsFromPEM([]byte(caCert))
 	if !ok {
-		log.Fatalf("failed to parse CA certificate in file %s", cacertFile)
+		return nil, fmt.Errorf("failed to parse CA certificate in file %s", cacertFile)
 	}
 
 	// Setup client cert/key for mTLS authentication
 	clientCert, err := tls.LoadX509KeyPair(clientCertFile, clientKeyFile)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
-	return &MqttEngine{
+	me := MqttEngine{
 		Topic:      topic,
 		Server:     server,
+		ClientID:   clientid,
 		ClientCert: clientCert,
 		CaCertPool: caCertPool,
-	}, nil
-}
-
-func NewMqttPublisher(clientid string) (*MqttEngine, error) {
-	me, err := newMqttEngine()
-	if err != nil {
-		return me, err
 	}
-
-	if clientid == "" {
-		return nil, fmt.Errorf("MQTT client id not specified")
-	}
-	me.ClientID = clientid
 
 	signingKeyFile := viper.GetString("mqtt.pub.signingkey")
 	if signingKeyFile == "" {
-		// log.Fatal("MQTT signing key file not specified in config")
 		log.Printf("MQTT signing key file not specified in config, publish not possible")
 	} else {
 		signingKey, err := os.ReadFile(signingKeyFile)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 
 		// Setup key used for creating the JWS
 		pemBlock, _ := pem.Decode(signingKey)
 		if pemBlock == nil || pemBlock.Type != "EC PRIVATE KEY" {
-			log.Fatal("failed to decode PEM block containing private key")
+			return nil, fmt.Errorf("failed to decode PEM block containing private key")
 		}
 		me.PrivKey, err = x509.ParseECPrivateKey(pemBlock.Bytes)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 		me.CanPublish = true
 	}
-
-	//-----
 
 	me.QoS = viper.GetInt("mqtt.sub.qos")
 	if me.QoS == 0 {
@@ -149,28 +113,25 @@ func NewMqttPublisher(clientid string) (*MqttEngine, error) {
 
 	signingPubFile := viper.GetString("mqtt.sub.validatorkey")
 	if signingPubFile == "" {
-		// log.Fatal("MQTT validator pub file not specified in config")
 		log.Printf("MQTT validator pub file not specified in config, subscribe not possible")
 	} else {
 		signingPub, err := os.ReadFile(signingPubFile)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
 
 		// Setup key used for creating the JWS
 		pemBlock, _ := pem.Decode(signingPub)
 		if pemBlock == nil || pemBlock.Type != "PUBLIC KEY" {
-			log.Fatal("failed to decode PEM block containing public key")
+			return nil, fmt.Errorf("failed to decode PEM block containing public key")
 		}
 		me.PubKey, err = x509.ParsePKIXPublicKey(pemBlock.Bytes)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
-		log.Printf("PubKey is of type %t", me.PubKey)
+		// log.Printf("PubKey is of type %t", me.PubKey)
 		me.CanSubscribe = true
 	}
-
-	//-----
 
 	// Setup connection to the MQTT bus
 	conn, err := tls.Dial("tcp", me.Server, &tls.Config{
@@ -179,7 +140,7 @@ func NewMqttPublisher(clientid string) (*MqttEngine, error) {
 		MinVersion:   tls.VersionTLS13,
 	})
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
 
 	logger := log.New(os.Stdout, fmt.Sprintf("SUB (%s): ", me.ClientID), log.LstdFlags)
@@ -194,15 +155,18 @@ func NewMqttPublisher(clientid string) (*MqttEngine, error) {
 		Conn: conn,
 	})
 
-	c.SetDebugLogger(logger)
+	if GlobalCF.Debug {
+	   c.SetDebugLogger(logger)
+	}
 	c.SetErrorLogger(logger)
 
 	me.Client = c
 
-	me.CmdChan = make(chan MqttPubSubCmd, 1)
-	me.PublishChan = make(chan MqttPublish, 10)
+	me.CmdChan = make(chan MqttEngineCmd, 1)
+	me.PublishChan = make(chan MqttPkg, 10)   // Here clients send us messages to pub
+	me.SubscribeChan = make(chan MqttPkg, 10) // Here we send clients messages that arrived via sub
 
-	StartEngine := func(resp chan MqttPubSubResponse) {
+	StartEngine := func(resp chan MqttEngineResponse) {
 		cp := &paho.Connect{
 			KeepAlive:  30,
 			ClientID:   me.ClientID,
@@ -211,30 +175,21 @@ func NewMqttPublisher(clientid string) (*MqttEngine, error) {
 
 		ca, err := me.Client.Connect(context.Background(), cp)
 		if err != nil {
-			resp <- MqttPubSubResponse{
+			resp <- MqttEngineResponse{
 				Error:    true,
 				ErrorMsg: fmt.Sprintf("Error from mp.Client.Connect: %v", err),
 			}
+			return
 		}
 		if ca.ReasonCode != 0 {
-			resp <- MqttPubSubResponse{
+			resp <- MqttEngineResponse{
 				Error: true,
 				ErrorMsg: fmt.Sprintf("Failed to connect to %s: %d - %s", me.Server,
 					ca.ReasonCode, ca.Properties.ReasonString),
 			}
+			return
 		}
 		fmt.Printf("Connected to %s\n", me.Server)
-		resp <- MqttPubSubResponse{
-			Error:  false,
-			Status: "all ok",
-		}
-
-//		if !me.CanPublish {
-//			resp <- MqttPubSubResponse{
-//				Error:    true,
-//				ErrorMsg: fmt.Sprintf("Engine has no signing key, publish not possible"),
-//			}
-//		}
 
 		if me.CanSubscribe {
 			sa, err := me.Client.Subscribe(context.Background(), &paho.Subscribe{
@@ -243,248 +198,150 @@ func NewMqttPublisher(clientid string) (*MqttEngine, error) {
 				},
 			})
 			if err != nil {
-				log.Fatalln(err)
+				resp <- MqttEngineResponse{
+						Error:    true,
+						ErrorMsg: fmt.Sprintf("Error from mp.Client.Subscribe: %v", err),
+				     	}
+				return
 			}
 			fmt.Println(string(sa.Reasons))
 			if sa.Reasons[0] != byte(me.QoS) {
-				log.Fatalf("Failed to subscribe to %s : %d", me.Topic, sa.Reasons[0])
+				resp <- MqttEngineResponse{
+						Error:    true,
+						ErrorMsg: fmt.Sprintf("Failed to subscribe to topic: %s reasons: %d",
+							  		      me.Topic, sa.Reasons[0]),
+				     	}
+				return
 			}
 			log.Printf("Subscribed to %s", me.Topic)
 		}
+		resp <- MqttEngineResponse{
+			Error:  false,
+			Status: "all ok",
+		}
 	}
 
-	StopEngine := func(resp chan MqttPubSubResponse) {
+	StopEngine := func(resp chan MqttEngineResponse) {
 		if me.Client != nil {
 			d := &paho.Disconnect{ReasonCode: 0}
 			err := me.Client.Disconnect(d)
 			if err != nil {
-				resp <- MqttPubSubResponse{}
+				resp <- MqttEngineResponse{
+						Error:	true,
+						ErrorMsg:	err.Error(),
+				     	}
+			} else {
+				resp <- MqttEngineResponse{
+						Status:	"connection to MQTT broker closed",
+				     	}
 			}
 		}
 	}
 
 	go func() {
-		var msg string
 		buf := new(bytes.Buffer)
 		jenc := json.NewEncoder(buf)
 
 		for {
 			select {
 			case outbox := <-me.PublishChan:
+				if !me.CanPublish {
+					log.Printf("Error: pub request but this engine is unable to publish messages")
+					continue
+				}
+
 				switch outbox.Type {
 				case "text":
-					msg = outbox.Msg
-					log.Printf("Publisher: received text msg: %s", msg)
+					buf.Reset()
+					_, err = buf.WriteString(outbox.Msg)
+					if err != nil {
+						log.Printf("Error from buf.Writestring(): %v", err)
+					}
+					log.Printf("MQTT Engine: received text msg: %s", outbox.Msg)
 
 				case "data":
-					log.Printf("Publisher: received raw data: %v", outbox.Data)
+					log.Printf("MQTT Engine: received raw data: %v", outbox.Data)
 					buf.Reset()
 					err = jenc.Encode(outbox.Data)
 					if err != nil {
 						log.Printf("Error from json.NewEncoder: %v", err)
 						continue
 					}
-					msg = buf.String()
 				}
 
-				signedMessage, err := jws.Sign([]byte(msg), jws.WithJSON(),
-					jws.WithKey(jwa.ES256, me.PrivKey))
+				sMsg, err := jws.Sign(buf.Bytes(), jws.WithJSON(), jws.WithKey(jwa.ES256, me.PrivKey))
 				if err != nil {
 					log.Printf("failed to create JWS message: %s", err)
 				}
 
 				if _, err = me.Client.Publish(context.Background(), &paho.Publish{
 					Topic:   me.Topic,
-					Payload: signedMessage,
+					Payload: sMsg,
 				}); err != nil {
 					log.Println("error sending message:", err)
 					continue
 				}
 				if GlobalCF.Debug {
-				   log.Printf("sent signed JWS: %s", string(signedMessage))
+					log.Printf("sent signed JWS: %s", string(sMsg))
 				}
 
 			case inbox := <-me.MsgChan:
-			     	if GlobalCF.Debug {
-				   log.Println("received message:", string(inbox.Payload))
+				if GlobalCF.Debug {
+					log.Println("MQTT Engine: received message:", string(inbox.Payload))
 				}
-				verified, err := jws.Verify(inbox.Payload, jws.WithKey(jwa.ES256, me.PubKey))
+				pkg := MqttPkg{TimeStamp: time.Now(), Data: TapirMsg{}}
+				payload, err := jws.Verify(inbox.Payload, jws.WithKey(jwa.ES256, me.PubKey))
 				if err != nil {
-					log.Fatalf("failed to verify message: %s", err)
+					pkg.Error = true
+					pkg.ErrorMsg = fmt.Sprintf("failed to verify message: %v", err)
+				} else {
+					// log.Printf("verified message: %s", payload)
+					r := bytes.NewReader(payload)
+					err = json.NewDecoder(r).Decode(&pkg.Data)
+					if err != nil {
+						pkg.Error = true
+						pkg.ErrorMsg = fmt.Sprintf("failed to decide json: %v", err)
+					}
 				}
-				log.Printf("verified message: %s", verified)
+
+				me.SubscribeChan <- pkg
 
 			case cmd := <-me.CmdChan:
-				fmt.Printf("Publisher: %s command received", cmd.Cmd)
+				fmt.Printf("MQTT Engine: %s command received\n", cmd.Cmd)
 				switch cmd.Cmd {
 				case "stop":
 					StopEngine(cmd.Resp)
 				case "start":
 					StartEngine(cmd.Resp)
 				default:
-					log.Printf("Publisher: Error: unknown command: %s", cmd.Cmd)
+					log.Printf("MQTT Engine: Error: unknown command: %s", cmd.Cmd)
 				}
+				fmt.Printf("MQTT Engine: cmd %s handled.\n", cmd.Cmd)
 			}
 		}
 	}()
 
-	//	return msgCh, nil
-
-	return me, nil
+	return &me, nil
 }
 
-func (me *MqttEngine) StartEngine() (chan MqttPubSubCmd, chan MqttPublish, error) {
-	resp := make(chan MqttPubSubResponse, 1)
-	me.CmdChan <- MqttPubSubCmd{Cmd: "start", Resp: resp}
+func (me *MqttEngine) StartEngine() (chan MqttEngineCmd, chan MqttPkg, chan MqttPkg, error) {
+	resp := make(chan MqttEngineResponse, 1)
+	me.CmdChan <- MqttEngineCmd{Cmd: "start", Resp: resp}
 	r := <-resp
 	if r.Error {
 		log.Printf("Error: error: %s", r.ErrorMsg)
-		return me.CmdChan, me.PublishChan, fmt.Errorf(r.ErrorMsg)
+		return me.CmdChan, me.PublishChan, me.SubscribeChan, fmt.Errorf(r.ErrorMsg)
 	}
-	return me.CmdChan, me.PublishChan, nil
+	return me.CmdChan, me.PublishChan, me.SubscribeChan, nil
 }
 
-func (me *MqttEngine) StopEngine() (chan MqttPubSubCmd, error) {
-	resp := make(chan MqttPubSubResponse, 1)
-	me.CmdChan <- MqttPubSubCmd{Cmd: "stop", Resp: resp}
+func (me *MqttEngine) StopEngine() (chan MqttEngineCmd, error) {
+	resp := make(chan MqttEngineResponse, 1)
+	me.CmdChan <- MqttEngineCmd{Cmd: "stop", Resp: resp}
 	r := <-resp
 	if r.Error {
 		log.Printf("Error: error: %s", r.ErrorMsg)
 		return me.CmdChan, fmt.Errorf(r.ErrorMsg)
 	}
 	return me.CmdChan, nil
-}
-
-func NewMqttSubscriber(clientid string) (*MqttEngine, error) {
-	me, err := newMqttEngine()
-	if err != nil {
-		return me, err
-	}
-
-	if clientid == "" {
-		return nil, fmt.Errorf("MQTT client id not specified")
-	}
-	me.ClientID = clientid
-
-	me.QoS = viper.GetInt("mqtt.sub.qos")
-	if me.QoS == 0 {
-		fmt.Printf("MQTT subscribe quality-of-service not specified in config, using 0")
-	}
-
-	signingPubFile := viper.GetString("mqtt.sub.validatorkey")
-	if signingPubFile == "" {
-		log.Fatal("MQTT validator pub file not specified in config")
-	}
-
-	signingPub, err := os.ReadFile(signingPubFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Setup key used for creating the JWS
-	pemBlock, _ := pem.Decode(signingPub)
-	if pemBlock == nil || pemBlock.Type != "PUBLIC KEY" {
-		log.Fatal("failed to decode PEM block containing public key")
-	}
-	me.PubKey, err = x509.ParsePKIXPublicKey(pemBlock.Bytes)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("PubKey is of type %t", me.PubKey)
-
-	// Setup connection to the MQTT bus
-	conn, err := tls.Dial("tcp", me.Server, &tls.Config{
-		RootCAs:      me.CaCertPool,
-		Certificates: []tls.Certificate{me.ClientCert},
-		MinVersion:   tls.VersionTLS13,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	logger := log.New(os.Stdout, fmt.Sprintf("SUB (%s): ", me.ClientID), log.LstdFlags)
-
-	me.MsgChan = make(chan *paho.Publish)
-
-	c := paho.NewClient(paho.ClientConfig{
-		Router: paho.NewSingleHandlerRouter(func(m *paho.Publish) {
-			me.MsgChan <- m
-		}),
-		Conn: conn,
-	})
-	c.SetDebugLogger(logger)
-	c.SetErrorLogger(logger)
-
-	me.Client = c
-
-	return me, nil
-}
-
-type MqttPubSubCmd struct {
-	Cmd  string
-	Resp chan MqttPubSubResponse
-}
-
-type MqttPubSubResponse struct {
-	Status   string
-	Error    bool
-	ErrorMsg string
-}
-
-// Based on subscribe example at: https://github.com/eclipse/paho.golang/tree/master/paho/cmd/stdoutsub
-func (me *MqttEngine) RunSubscriber() {
-
-	cp := &paho.Connect{
-		KeepAlive:  30,
-		ClientID:   me.ClientID,
-		CleanStart: true,
-	}
-
-	ca, err := me.Client.Connect(context.Background(), cp)
-	if err != nil {
-		log.Fatalln(err)
-	}
-	if ca.ReasonCode != 0 {
-		log.Fatalf("Failed to connect to %s : %d - %s", me.Server, ca.ReasonCode, ca.Properties.ReasonString)
-	}
-
-	fmt.Printf("Connected to %s\n", me.Server)
-
-	ic := make(chan os.Signal, 1)
-	signal.Notify(ic, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-ic
-		fmt.Println("signal received, exiting")
-		if me.Client != nil {
-			d := &paho.Disconnect{ReasonCode: 0}
-			err = me.Client.Disconnect(d)
-			if err != nil {
-				log.Fatal(err)
-			}
-		}
-		os.Exit(0)
-	}()
-
-	sa, err := me.Client.Subscribe(context.Background(), &paho.Subscribe{
-		Subscriptions: []paho.SubscribeOptions{
-			{Topic: me.Topic, QoS: byte(me.QoS)},
-		},
-	})
-	if err != nil {
-		log.Fatalln(err)
-	}
-	fmt.Println(string(sa.Reasons))
-	if sa.Reasons[0] != byte(me.QoS) {
-		log.Fatalf("Failed to subscribe to %s : %d", me.Topic, sa.Reasons[0])
-	}
-	log.Printf("Subscribed to %s", me.Topic)
-
-	for m := range me.MsgChan {
-		log.Println("received message:", string(m.Payload))
-		verified, err := jws.Verify(m.Payload, jws.WithKey(jwa.ES256, me.PubKey))
-		if err != nil {
-			log.Fatalf("failed to verify message: %s", err)
-		}
-		log.Printf("verified message: %s", verified)
-	}
 }

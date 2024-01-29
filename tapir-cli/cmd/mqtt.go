@@ -12,6 +12,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -47,21 +48,21 @@ var mqttCmd = &cobra.Command{
 and usage of using your command. For example: to quickly create a Cobra application.`,
 }
 
-var mqttPublishCmd = &cobra.Command{
-	Use:   "publish",
+var mqttEngineCmd = &cobra.Command{
+	Use:   "engine",
 	Short: "A brief description of your command",
 	Long: `A longer description that spans multiple lines and likely contains examples
 and usage of using your command. For example: to quickly create a Cobra application.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		mp, err := tapir.NewMqttPublisher(mqttclientid)
+		meng, err := tapir.NewMqttEngine(mqttclientid)
 		if err != nil {
-			fmt.Printf("Error from NewMqttPublisher: %v\n", err)
+			fmt.Printf("Error from NewMqttEngine: %v\n", err)
 			os.Exit(1)
 		}
 
-		cmder, messenger, err := mp.StartEngine()
+		cmnder, outbox, inbox, err := meng.StartEngine()
 		if err != nil {
-			log.Fatalf("Error from RunPublisher(): %v", err)
+			log.Fatalf("Error from StartEngine(): %v", err)
 		}
 
 		stdin := bufio.NewReader(os.Stdin)
@@ -69,7 +70,7 @@ and usage of using your command. For example: to quickly create a Cobra applicat
 		buf := new(bytes.Buffer)
 		jenc := json.NewEncoder(buf)
 
-		respch := make(chan tapir.MqttPubSubResponse, 2)
+		respch := make(chan tapir.MqttEngineResponse, 2)
 
 		ic := make(chan os.Signal, 1)
 		signal.Notify(ic, os.Interrupt, syscall.SIGTERM)
@@ -78,25 +79,31 @@ and usage of using your command. For example: to quickly create a Cobra applicat
 				select {
 
 				case <-ic:
-					fmt.Println("SIGTERM interrupt received, sending stop signal to MQTT Publisher")
-					cmder <- tapir.MqttPubSubCmd{Cmd: "stop", Resp: respch}
-					// mp.CmdChan <- tapir.MqttPubSubCmd{Cmd: "stop", Resp: respch}
+					fmt.Println("SIGTERM interrupt received, sending stop signal to MQTT Engine")
+					cmnder <- tapir.MqttEngineCmd{Cmd: "stop", Resp: respch}
 					r := <-respch
-					fmt.Printf("Response from MQTT Publisher: %v", r)
+					if r.Error {
+					   fmt.Printf("Error: %s\n", r.ErrorMsg)
+					} else {
+					   fmt.Printf("MQTT Engine: %s\n", r.Status)
+					}
+					os.Exit(1)
 				}
 			}
 		}()
 
-		var r tapir.MqttPubSubResponse
+		go func() {
+			var pkg tapir.MqttPkg
+			for {
+				select {
 
-		// cmder <- tapir.MqttPubSubCmd{Cmd: "start", Resp: respch}
-//		mp.CmdChan <- tapir.MqttPubSubCmd{Cmd: "start", Resp: respch}
-//		r = <-respch
-//		fmt.Printf("Response from MQTT Publisher: %v", r)
-//		if r.Error {
-//		   log.Fatalf("Error from publisher: %v", r.ErrorMsg)
-//		}
-//		fmt.Printf("Publisher status: %s\n", r.Status)
+				case pkg = <-inbox:
+					fmt.Printf("sub data received from MQTT Engine: %v", pkg)
+				}
+			}
+		}()
+
+		var r tapir.MqttEngineResponse
 
 		for {
 			count++
@@ -106,49 +113,34 @@ and usage of using your command. For example: to quickly create a Cobra applicat
 			}
 			fmt.Printf("Read: %s", msg)
 			msg = tapir.Chomp(msg)
+			if len(msg) == 0 {
+				fmt.Printf("Empty message ignored.\n")
+				continue
+			}
+			if strings.ToUpper(msg) == "QUIT" {
+			   break
+			}
 
 			buf.Reset()
-			jenc.Encode(tapir.TapirMsg{Type: "message", Msg: msg, Time: time.Now()})
-			messenger <- tapir.MqttPublish{Type: "text", Msg: string(buf.String())}
-			fmt.Printf("Msg sent to publisher\n")
+			jenc.Encode(tapir.TapirMsg{Type: "message", Msg: msg, TimeStamp: time.Now()})
+			outbox <- tapir.MqttPkg{Type: "text", Msg: string(buf.String())}
 
-			testMsg.Time = time.Now()
+			testMsg.TimeStamp = time.Now()
 			testMsg.Msg = fmt.Sprintf("This is the %d message", count)
 
-//			json.NewEncoder(buf).Encode(testMsg)
-//			mp.PublishChan <- tapir.MqttPublish{Msg: string(buf.String())}
-			mp.PublishChan <- tapir.MqttPublish{ Type: "data", Data: testMsg }
-			fmt.Printf("Struct sent to publisher\n")
+			meng.PublishChan <- tapir.MqttPkg{Type: "data", Data: testMsg}
 		}
 
-		mp.CmdChan <- tapir.MqttPubSubCmd{Cmd: "stop", Resp: respch}
+		meng.CmdChan <- tapir.MqttEngineCmd{Cmd: "stop", Resp: respch}
 		r = <-respch
-		fmt.Printf("Response from MQTT Publisher: %v", r)
-
-		fmt.Printf("Done.\n")
-	},
-}
-
-var mqttSubscribeCmd = &cobra.Command{
-	Use:   "subscribe",
-	Short: "Subscribe to messages on the topic specified in config",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example: to quickly create a Cobra application.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		mp, err := tapir.NewMqttSubscriber(mqttclientid)
-		if err != nil {
-			fmt.Printf("Error from NewMqttSubscriber: %v\n", err)
-			os.Exit(1)
-		}
-
-		mp.RunSubscriber()
+		fmt.Printf("Response from MQTT Engine: %v", r)
 		fmt.Printf("Done.\n")
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(mqttCmd)
-	mqttCmd.AddCommand(mqttPublishCmd, mqttSubscribeCmd)
+	mqttCmd.AddCommand(mqttEngineCmd)
 
 	mqttCmd.PersistentFlags().StringVarP(&mqttclientid, "clientid", "", "", "MQTT client id, must be unique")
 }
