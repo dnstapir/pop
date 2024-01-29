@@ -85,7 +85,7 @@ func NewMqttEngine(clientid string) (*MqttEngine, error) {
 		CaCertPool: caCertPool,
 	}
 
-	signingKeyFile := viper.GetString("mqtt.pub.signingkey")
+	signingKeyFile := viper.GetString("mqtt.signingkey")
 	if signingKeyFile == "" {
 		log.Printf("MQTT signing key file not specified in config, publish not possible")
 	} else {
@@ -106,12 +106,12 @@ func NewMqttEngine(clientid string) (*MqttEngine, error) {
 		me.CanPublish = true
 	}
 
-	me.QoS = viper.GetInt("mqtt.sub.qos")
+	me.QoS = viper.GetInt("mqtt.qos")
 	if me.QoS == 0 {
 		fmt.Printf("MQTT subscribe quality-of-service not specified in config, using 0")
 	}
 
-	signingPubFile := viper.GetString("mqtt.sub.validatorkey")
+	signingPubFile := viper.GetString("mqtt.validatorkey")
 	if signingPubFile == "" {
 		log.Printf("MQTT validator pub file not specified in config, subscribe not possible")
 	} else {

@@ -1,16 +1,12 @@
 mqtt:
-   uid:			johani
    server:		mqtt.dev.dnstapir.se:8883
+   uid:			johani
+   clientid:		johani
    topic:		events/up/johani/frobozz
    cacert:		/etc/dnstapir/certs/tapirCA.crt
-   pub:
-      clientid:		johani-pub
-      clientcert:	/etc/dnstapir/certs/mqttclient.crt
-      clientkey:	/etc/dnstapir/certs/mqttclient-key.pem
-      signingkey:	/etc/dnstapir/certs/mqttsigner-key.pem
-   sub:
-      clientid:		johani-sub
-      clientcert:	/etc/dnstapir/certs/mqttclient.crt
-      clientkey:	/etc/dnstapir/certs/mqttclient-key.pem
-      validatorkey:	/etc/dnstapir/certs/mqttsigner-pub.pem
+   clientcert:		/etc/dnstapir/certs/mqttclient.crt
+   clientkey:		/etc/dnstapir/certs/mqttclient-key.pem
+   signingkey:		/etc/dnstapir/certs/mqttsigner-key.pem
+   validatorkey:	/etc/dnstapir/certs/mqttsigner-pub.pem
+   qos:			2
 
