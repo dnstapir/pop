@@ -4,7 +4,7 @@
 package tapir
 
 import (
-        "bufio"
+	"bufio"
 	"crypto/rand"
 	"fmt"
 	"hash"
@@ -62,8 +62,8 @@ func newWellKnownDomainsTracker(dawgFinder dawg.Finder) (*wellKnownDomainsTracke
 
 func (wkd *wellKnownDomainsTracker) isWellKnown(name string) (bool, int) {
 
-//	wkd.mutex.Lock()
-//	defer wkd.mutex.Unlock()
+	//	wkd.mutex.Lock()
+	//	defer wkd.mutex.Unlock()
 
 	index := wkd.dawgFinder.IndexOf(name)
 

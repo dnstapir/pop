@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/spf13/cobra"
 )
 
 var mqttCmd = &cobra.Command{
@@ -26,8 +26,8 @@ and usage of using your command. For example: to quickly create a Cobra applicat
 	Run: func(cmd *cobra.Command, args []string) {
 		mp, err := tapir.NewMqttPublisher()
 		if err != nil {
-		   fmt.Printf("Error from NewMqttPublisher: %v\n", err)
-		   os.Exit(1)
+			fmt.Printf("Error from NewMqttPublisher: %v\n", err)
+			os.Exit(1)
 		}
 
 		mp.RunPublisher()
@@ -43,8 +43,8 @@ and usage of using your command. For example: to quickly create a Cobra applicat
 	Run: func(cmd *cobra.Command, args []string) {
 		mp, err := tapir.NewMqttSubscriber()
 		if err != nil {
-		   fmt.Printf("Error from NewMqttSubscriber: %v\n", err)
-		   os.Exit(1)
+			fmt.Printf("Error from NewMqttSubscriber: %v\n", err)
+			os.Exit(1)
 		}
 
 		mp.RunSubscriber()

@@ -24,7 +24,7 @@ func (api *ApiClient) SendPing(pingcount int, dieOnError bool) (PingResponse, er
 	var pr PingResponse
 	err = json.Unmarshal(buf, &pr)
 	if err != nil {
-	        log.Printf("Error parsing JSON for PingResponse: %s", string(buf))
+		log.Printf("Error parsing JSON for PingResponse: %s", string(buf))
 		log.Fatalf("Error from json.Unmarshal PingResponse: %v\n", err)
 	}
 	return pr, nil
@@ -36,11 +36,10 @@ func (api *ApiClient) ShowApi() {
 	var sar ShowAPIresponse
 	err := json.Unmarshal(buf, &sar)
 	if err != nil {
-	        log.Printf("Error parsing JSON for ShowAPIResponse: %s", string(buf))
+		log.Printf("Error parsing JSON for ShowAPIResponse: %s", string(buf))
 		log.Fatalf("Error from unmarshal of ShowAPIresponse: %v\n", err)
 	}
 	for _, ep := range sar.Data[1:] {
 		fmt.Printf("%s\n", ep)
 	}
 }
-

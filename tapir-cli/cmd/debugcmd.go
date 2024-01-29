@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/miekg/dns"
 	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/miekg/dns"
 	"github.com/spf13/cobra"
 )
 
@@ -46,25 +46,25 @@ var debugcmdCmd = &cobra.Command{
 // }
 
 var debugZoneDataCmd = &cobra.Command{
- 	Use:   "zonedata",
- 	Short: "Return the ZoneData struct for the specified zone from server",
- 	Long: `Return the ZoneData struct from server
+	Use:   "zonedata",
+	Short: "Return the ZoneData struct for the specified zone from server",
+	Long: `Return the ZoneData struct from server
  (mostly useful with -d JSON prettyprinter).`,
- 	Run: func(cmd *cobra.Command, args []string) {
- 		resp := SendDebugCmd(tapir.DebugPost{
- 			Command: "zonedata",
-			Zone:	 dns.Fqdn(tapir.GlobalCF.Zone),
- 		})
- 		if resp.Error {
- 			fmt.Printf("%s\n", resp.ErrorMsg)
- 		}
+	Run: func(cmd *cobra.Command, args []string) {
+		resp := SendDebugCmd(tapir.DebugPost{
+			Command: "zonedata",
+			Zone:    dns.Fqdn(tapir.GlobalCF.Zone),
+		})
+		if resp.Error {
+			fmt.Printf("%s\n", resp.ErrorMsg)
+		}
 
 		zd := resp.ZoneData
 
- 		fmt.Printf("Received %d bytes of data\n", len(resp.Msg))
+		fmt.Printf("Received %d bytes of data\n", len(resp.Msg))
 		fmt.Printf("Zone %s: RRs: %d Owners: %d\n", tapir.GlobalCF.Zone,
-				 len(zd.RRs), len(zd.Owners))
- 	},
+			len(zd.RRs), len(zd.Owners))
+	},
 }
 
 var zonefile string
@@ -86,7 +86,7 @@ var debugSyncZoneCmd = &cobra.Command{
 		}
 
 		zd := tapir.ZoneData{
-			ZoneType: 3,	// zonetype=3 keeps RRs in a []OwnerData, with an OwnerIndex map[string]int to locate stuff
+			ZoneType: 3, // zonetype=3 keeps RRs in a []OwnerData, with an OwnerIndex map[string]int to locate stuff
 			ZoneName: tapir.GlobalCF.Zone,
 			KeepFunc: func(uint16) bool { return true },
 			Logger:   log.Default(),
@@ -107,10 +107,10 @@ var debugSyncZoneCmd = &cobra.Command{
 		zd.Sync()
 		fmt.Printf("----- zd.RRs (post-sync): ----\n")
 		tapir.PrintRRs(zd.RRs)
-//		zd.Digest()
-//		fmt.Printf("----- zd.ZONEMDrrs (post-sync): ----\n")
-//		tapir.PrintRRs(zd.ZONEMDrrs)
-//		zd.SOA.Serial = 8914
+		//		zd.Digest()
+		//		fmt.Printf("----- zd.ZONEMDrrs (post-sync): ----\n")
+		//		tapir.PrintRRs(zd.ZONEMDrrs)
+		//		zd.SOA.Serial = 8914
 		zd.Sync()
 		fmt.Printf("----- zd.RRs (post-sync): ----\n")
 		tapir.PrintRRs(zd.RRs)

@@ -137,7 +137,7 @@ func RootInitConfig() {
 	if tapir.GlobalCF.UseTLS { // default = true
 		cd := viper.GetString("certs.certdir")
 		if cd == "" {
-		   log.Fatalf("Error: missing config key: certs.certdir")
+			log.Fatalf("Error: missing config key: certs.certdir")
 		}
 		cert := cd + "/" + certname
 		tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"),

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) DNS TAPIR
  */
- 
+
 package tapir
 
 import (
@@ -25,52 +25,52 @@ import (
 )
 
 type MqttEngine struct {
-     Topic	   string
-     ClientID	   string
-     Server	   string
-     QoS	   int		
-     PrivKey	   *ecdsa.PrivateKey
-     PubKey	   any
-     Client	   *paho.Client
-     ClientCert	   tls.Certificate
-     CaCertPool	   *x509.CertPool
-     MsgChan	   chan *paho.Publish
+	Topic      string
+	ClientID   string
+	Server     string
+	QoS        int
+	PrivKey    *ecdsa.PrivateKey
+	PubKey     any
+	Client     *paho.Client
+	ClientCert tls.Certificate
+	CaCertPool *x509.CertPool
+	MsgChan    chan *paho.Publish
 }
 
 func newMqttEngine() (*MqttEngine, error) {
 	server := viper.GetString("mqtt.server")
 	if server == "" {
-	   return nil, fmt.Errorf("MQTT server not specified in config")
+		return nil, fmt.Errorf("MQTT server not specified in config")
 	}
 
 	topic := viper.GetString("mqtt.topic")
 	if topic == "" {
-	   return nil, fmt.Errorf("MQTT topic not specified in config")
+		return nil, fmt.Errorf("MQTT topic not specified in config")
 	}
 
 	clientid := viper.GetString("mqtt.pub.clientid")
 	if clientid == "" {
-	   return nil, fmt.Errorf("MQTT client id not specified in config")
+		return nil, fmt.Errorf("MQTT client id not specified in config")
 	}
-	
+
 	clientCertFile := viper.GetString("mqtt.pub.clientcert")
 	if clientCertFile == "" {
-	   log.Fatal("MQTT client cert file not specified in config")
+		log.Fatal("MQTT client cert file not specified in config")
 	}
-	
+
 	clientKeyFile := viper.GetString("mqtt.pub.clientkey")
 	if clientKeyFile == "" {
-	   log.Fatal("MQTT client key file not specified in config")
+		log.Fatal("MQTT client key file not specified in config")
 	}
 
 	cacertFile := viper.GetString("mqtt.cacert")
 	if cacertFile == "" {
-	   log.Fatal("MQTT CA cert file not specified in config")
+		log.Fatal("MQTT CA cert file not specified in config")
 	}
 
 	signingKeyFile := viper.GetString("mqtt.pub.signingkey")
 	if signingKeyFile == "" {
-	   log.Fatal("MQTT signing key file not specified in config")
+		log.Fatal("MQTT signing key file not specified in config")
 	}
 
 	// Setup CA cert for validating the MQTT connection
@@ -91,24 +91,24 @@ func newMqttEngine() (*MqttEngine, error) {
 	}
 
 	return &MqttEngine{
-			Topic:		topic,
-			ClientID:	clientid,
-			Server:		server,
-			ClientCert:	clientCert,
-			CaCertPool:	caCertPool,
-	       }, nil
+		Topic:      topic,
+		ClientID:   clientid,
+		Server:     server,
+		ClientCert: clientCert,
+		CaCertPool: caCertPool,
+	}, nil
 }
 
 func NewMqttPublisher() (*MqttEngine, error) {
 
-     me, err := newMqttEngine()
-     if err != nil {
-     	return me, err
-     }
-     
+	me, err := newMqttEngine()
+	if err != nil {
+		return me, err
+	}
+
 	signingKeyFile := viper.GetString("mqtt.pub.signingkey")
 	if signingKeyFile == "" {
-	   log.Fatal("MQTT signing key file not specified in config")
+		log.Fatal("MQTT signing key file not specified in config")
 	}
 
 	signingKey, err := os.ReadFile(signingKeyFile)
@@ -148,19 +148,19 @@ func NewMqttPublisher() (*MqttEngine, error) {
 
 func NewMqttSubscriber() (*MqttEngine, error) {
 
-     me, err := newMqttEngine()
-     if err != nil {
-     	return me, err
-     }
-     
+	me, err := newMqttEngine()
+	if err != nil {
+		return me, err
+	}
+
 	me.QoS = viper.GetInt("mqtt.sub.qos")
 	if me.QoS == 0 {
-	   fmt.Printf("MQTT subsscribe quality-of-service not specified in config, using 0")
+		fmt.Printf("MQTT subsscribe quality-of-service not specified in config, using 0")
 	}
 
 	signingPubFile := viper.GetString("mqtt.sub.validatorkey")
 	if signingPubFile == "" {
-	   log.Fatal("MQTT validator pub file not specified in config")
+		log.Fatal("MQTT validator pub file not specified in config")
 	}
 
 	signingPub, err := os.ReadFile(signingPubFile)

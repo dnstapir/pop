@@ -49,7 +49,7 @@ type ApiClient struct {
 	AuthMethod string
 	ApiKey     string
 	Timeout    int
-	ClientName string	// ClientName is used to figure out which client cert to use for TLS setup.
+	ClientName string // ClientName is used to figure out which client cert to use for TLS setup.
 	UseTLS     bool
 	Verbose    bool
 	Debug      bool
@@ -65,7 +65,7 @@ func NewApiClient(params ApiClient) *ApiClient {
 	}
 
 	if params.ClientName == "" {
-	   params.ClientName = "axfr-cli"
+		params.ClientName = "axfr-cli"
 	}
 
 	ac := ApiClient{
@@ -216,7 +216,7 @@ func (api *ApiClient) Setup() error {
 
 	if api.UseTLS {
 		return fmt.Errorf("api.Setup(): Use api.SetupTls() for setup of a TLS client")
-	} 
+	}
 
 	client = &http.Client{
 		Timeout: time.Duration(api.Timeout) * time.Second,

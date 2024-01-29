@@ -33,7 +33,7 @@ func (zd *ZoneData) FindDelegation(qname string, dnssec_ok bool) (*RRset, *RRset
 }
 
 func (zd *ZoneData) FindGlue(nsrrs RRset, dnssec_ok bool) *RRset {
-        zd.Logger.Printf("FindGlue: nsrrs: %v", nsrrs)
+	zd.Logger.Printf("FindGlue: nsrrs: %v", nsrrs)
 	var glue, maybe_glue RRset
 	var nsname string
 	child := nsrrs.RRs[0].Header().Name
@@ -46,13 +46,13 @@ func (zd *ZoneData) FindGlue(nsrrs RRset, dnssec_ok bool) *RRset {
 
 			switch zd.ZoneType {
 			case 3:
-			     nsnidx := zd.OwnerIndex[nsname]
-			     nsnamerrs = &zd.Owners[nsnidx]
+				nsnidx := zd.OwnerIndex[nsname]
+				nsnamerrs = &zd.Owners[nsnidx]
 			case 2:
-			     tmp := zd.Data[nsname]
-			     nsnamerrs = &tmp
+				tmp := zd.Data[nsname]
+				nsnamerrs = &tmp
 			}
-			
+
 			if nsnamerrs != nil {
 				log.Printf("FindGlue nsname='%s': there are RRs", nsname)
 				if ns_A_rrs, ok := nsnamerrs.RRtypes[dns.TypeA]; ok {
