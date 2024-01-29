@@ -124,3 +124,22 @@ type PingResponse struct {
 	Pings      int
 	Pongs      int
 }
+
+type MqttPublish struct {
+     Type    string
+     Msg     string
+     Data    any
+}
+
+type TapirMsg struct {
+     Type       string	// "intelupdate", "reset", ...
+     Added	[]Domain
+     Removed	[]Domain
+     Msg	string
+     Time	time.Time
+}
+
+type Domain struct {
+     Name	 string
+     Tags	 []string	// this should become a bit field in the future
+}
