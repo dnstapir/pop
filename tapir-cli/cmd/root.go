@@ -48,7 +48,7 @@ func init() {
 	cobra.OnInitialize(initConfig)
 
 	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "",
-		fmt.Sprintf("config file (default is %s)", tapir.DefaultTEMCfgFile))
+		fmt.Sprintf("config file (default is %s)", tapir.DefaultTemCfgFile))
 	rootCmd.PersistentFlags().BoolVarP(&tapir.GlobalCF.Verbose, "verbose", "v", false, "Verbose mode")
 	rootCmd.PersistentFlags().BoolVarP(&tapir.GlobalCF.Debug, "debug", "d", false, "Debugging output")
 	rootCmd.PersistentFlags().BoolVarP(&tapir.GlobalCF.ShowHdr, "headers", "H", false, "Show column headers")
@@ -87,7 +87,7 @@ func RootInitConfig() {
 		case "tapir-cli":
 			certname = "tapir-cli"
 			servername = "tem"
-			viper.SetConfigFile(tapir.DefaultTEMCfgFile)
+			viper.SetConfigFile(tapir.DefaultTemCfgFile)
 			viper.AutomaticEnv() // read in environment variables that match
 
 			// If a config file is found, read it in.
@@ -98,7 +98,7 @@ func RootInitConfig() {
 				fmt.Println("Using config file:", viper.ConfigFileUsed())
 			}
 
-			viper.SetConfigFile(tapir.DefaultTAPIRCLICfgFile)
+			viper.SetConfigFile(tapir.DefaultTapirCliCfgFile)
 			viper.AutomaticEnv() // read in environment variables that match
 
 			// If a config file is found, read it in.

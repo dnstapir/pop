@@ -8,16 +8,16 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"net"
+//	"net"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
+//	"strconv"
+//	"strings"
 	"sync"
 	"syscall"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/miekg/dns"
+//	"github.com/miekg/dns"
 	"github.com/spf13/viper"
 	_ "unsafe" // to use constants from linker
 
@@ -84,18 +84,8 @@ func mainloop(conf *Config, configfile *string) {
 				}
 
 				log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
-				all_zones := viper.GetStringSlice("server.xferzones")
-				for _, zone := range all_zones {
-					zone = dns.Fqdn(zone)
-					log.Printf("mainloop: Requesting refresh of %s", zone)
-					conf.Internal.RefreshZoneCh <- ZoneRefresher{Name: zone, ZoneType: 1}
-				}
-				all_zones = viper.GetStringSlice("server.fullzones")
-				for _, zone := range all_zones {
-					zone = dns.Fqdn(zone)
-					log.Printf("mainloop: Requesting refresh of %s", zone)
-					conf.Internal.RefreshZoneCh <- ZoneRefresher{Name: zone, ZoneType: 2}
-				}
+				log.Printf("mainloop: Requesting refresh of all RPZ zones")
+				conf.TemData.RpzRefreshCh <- RpzRefresher{ Name: "" }
 			}
 		}
 	}()
@@ -112,7 +102,7 @@ func main() {
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		viper.SetConfigFile(tapir.DefaultTEMCfgFile)
+		viper.SetConfigFile(tapir.DefaultTemCfgFile)
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
@@ -122,8 +112,16 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.DefaultTEMCfgFile, err)
+		TEMExiter("Could not load config %s: Error: %v", tapir.DefaultTemCfgFile, err)
 	}
+	viper.SetConfigFile(tapir.TemSourcesCfgFile)
+	if err := viper.MergeInConfig(); err == nil {
+		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		cfgFileUsed = viper.ConfigFileUsed()
+	} else {
+		TEMExiter("Could not load config %s: Error: %v", tapir.TemSourcesCfgFile, err)
+	}
+
 
 	logfile := viper.GetString("log.file")
 	tapir.SetupLogging(logfile)
@@ -138,15 +136,9 @@ func main() {
 
 	fmt.Printf("TEM (TAPIR Edge Manager) version %s starting.\n", appVersion)
 
-	td, err := NewTemData(log.Default())
-	if err != nil {
-	   TEMExiter("Error from NewTemData: %v", err)
-	}
-
 	var stopch = make(chan struct{}, 10)
-	conf.Internal.RefreshZoneCh = make(chan ZoneRefresher, 10)
-	conf.Internal.RpzCmdCh = make(chan RpzCmdData, 10)
-	go td.RefreshEngine(&conf, stopch)
+//	conf.Internal.RefreshZoneCh = make(chan RpzRefresher, 10)
+//	conf.Internal.RpzCmdCh = make(chan RpzCmdData, 10)
 
 	var keepfunc_name = viper.GetString("service.filter")
 
@@ -154,101 +146,106 @@ func main() {
 
 	// ZoneType=1 (xferzones) are limited to only support ops related to zone transfers
 	// i.e. no support for arbitrary queries, dnssec_ok flags, etc.
-	for _, zone := range viper.GetStringSlice("server.xferzones") {
-		all_zones = append(all_zones, zone)
-		conf.Internal.RefreshZoneCh <- ZoneRefresher{
-			Name:     dns.Fqdn(zone),
-			ZoneType: 1,
-		}
-	}
+// 	for _, zone := range viper.GetStringSlice("server.xferzones") {
+// 		all_zones = append(all_zones, zone)
+// 		conf.Internal.RefreshZoneCh <- ZoneRefresher{
+// 			Name:     dns.Fqdn(zone),
+// 			ZoneType: 1,
+// 		}
+// 	}
 
 	// ZoneType=2 stores the zone data in a map[string]OwnerData.
-	for _, zone := range viper.GetStringSlice("server.mapzones") {
-		all_zones = append(all_zones, zone)
-		conf.Internal.RefreshZoneCh <- ZoneRefresher{
-			Name:     dns.Fqdn(zone),
-			ZoneType: 2,
-		}
-	}
+// 	for _, zone := range viper.GetStringSlice("server.mapzones") {
+// 		all_zones = append(all_zones, zone)
+// 		conf.Internal.RefreshZoneCh <- ZoneRefresher{
+// 			Name:     dns.Fqdn(zone),
+// 			ZoneType: 2,
+// 		}
+// 	}
 
 	// ZoneType=3 stores the zone data in a []OwnerData with precomputed
 	// index entrypoints for different owner names.
-	for _, zone := range viper.GetStringSlice("server.slicezones") {
-		all_zones = append(all_zones, zone)
-		conf.Internal.RefreshZoneCh <- ZoneRefresher{
-			Name:     dns.Fqdn(zone),
-			ZoneType: 3,
-		}
-	}
+// 	for _, zone := range viper.GetStringSlice("server.slicezones") {
+// 		all_zones = append(all_zones, zone)
+// 		conf.Internal.RefreshZoneCh <- ZoneRefresher{
+// 			Name:     dns.Fqdn(zone),
+// 			ZoneType: 3,
+// 		}
+// 	}
 
 	log.Printf("All configured zones now refreshing (using filter: %s): %v", keepfunc_name, all_zones)
+
+	td, err := NewTemData(&conf, log.Default())
+	if err != nil {
+	   TEMExiter("Error from NewTemData: %v", err)
+	}
+	go td.RefreshEngine(&conf, stopch)
+	err = td.ParseSources()
+	if err != nil {
+	   TEMExiter("Error from ParseSources: %v", err)
+	}
 
 	apistopper := make(chan struct{}) //
 	// conf.Internal.APIStopCh = apistopper
 	go APIdispatcher(&conf, apistopper)
 
-	//	conf.Internal.ScannerQ = make(chan ScanRequest, 5)
-	//	conf.Internal.UpdateQ = make(chan UpdateRequest, 5)
-
-	//	go ScannerEngine(&conf)
-	//	go UpdaterEngine(&conf)
 	go DnsEngine(&conf)
 
 	mainloop(&conf, &cfgFileUsed)
 }
 
-func GetUpstream(zone string) string {
-	var upstream string
+// func GetUpstream(zone string) string {
+// 	var upstream string
+// 
+// 	// First check whether this zone is listed as an RPZ source
+// 
+// 	// Fallback: check for global upstream config
+// 	upstreamaddrs := viper.GetStringSlice("server.upstreams")
+// 	if len(upstreamaddrs) > 0 {
+// 		upstream = upstreamaddrs[0]
+// 	}
+// 
+// 	return ParseUpDownStreams(upstream)
+// }
+// 
+// func GetDownstreams(zone string) []string {
+// 	downstreams := viper.GetStringSlice("server.downstreams")
+// 
+// 	var ds_parsed []string
+// 
+// 	for _, ds := range downstreams {
+// 		ds_parsed = append(ds_parsed, ParseUpDownStreams(ds))
+// 	}
+// 
+// 	return ds_parsed
+// }
 
-	// First check whether this zone is listed as an RPZ source
-
-	// Fallback: check for global upstream config
-	upstreamaddrs := viper.GetStringSlice("server.upstreams")
-	if len(upstreamaddrs) > 0 {
-		upstream = upstreamaddrs[0]
-	}
-
-	return ParseUpDownStreams(upstream)
-}
-
-func GetDownstreams(zone string) []string {
-	downstreams := viper.GetStringSlice("server.downstreams")
-
-	var ds_parsed []string
-
-	for _, ds := range downstreams {
-		ds_parsed = append(ds_parsed, ParseUpDownStreams(ds))
-	}
-
-	return ds_parsed
-}
-
-func ParseUpDownStreams(stream string) string {
-	parts := strings.Split(stream, ":")
-	if len(parts) > 1 {
-		portstr := parts[len(parts)-1]
-		_, err := strconv.Atoi(portstr)
-		if err != nil {
-			TEMExiter("Illegal port specification for AXFR src: %s", portstr)
-		}
-		if _, ok := dns.IsDomainName(parts[0]); ok {
-			ips, err := net.LookupHost(parts[0])
-			if err != nil {
-				TEMExiter("Error from net.LookupHost(%s): %v", parts[0], err)
-			}
-			parts[0] = ips[0]
-		}
-		stream = net.JoinHostPort(parts[0], portstr)
-	} else {
-		if _, ok := dns.IsDomainName(stream); ok {
-			ips, err := net.LookupHost(parts[0])
-			if err != nil {
-				TEMExiter("Error from net.LookupHost(%s): %v", parts[0], err)
-			}
-			parts[0] = ips[0]
-		}
-		stream = net.JoinHostPort(parts[0], "53")
-	}
-	return stream
-}
+// func ParseUpDownStreams(stream string) string {
+// 	parts := strings.Split(stream, ":")
+// 	if len(parts) > 1 {
+// 		portstr := parts[len(parts)-1]
+// 		_, err := strconv.Atoi(portstr)
+// 		if err != nil {
+// 			TEMExiter("Illegal port specification for AXFR src: %s", portstr)
+// 		}
+// 		if _, ok := dns.IsDomainName(parts[0]); ok {
+// 			ips, err := net.LookupHost(parts[0])
+// 			if err != nil {
+// 				TEMExiter("Error from net.LookupHost(%s): %v", parts[0], err)
+// 			}
+// 			parts[0] = ips[0]
+// 		}
+// 		stream = net.JoinHostPort(parts[0], portstr)
+// 	} else {
+// 		if _, ok := dns.IsDomainName(stream); ok {
+// 			ips, err := net.LookupHost(parts[0])
+// 			if err != nil {
+// 				TEMExiter("Error from net.LookupHost(%s): %v", parts[0], err)
+// 			}
+// 			parts[0] = ips[0]
+// 		}
+// 		stream = net.JoinHostPort(parts[0], "53")
+// 	}
+// 	return stream
+// }
 

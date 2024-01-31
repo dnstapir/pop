@@ -5,5 +5,7 @@ package tapir
 
 import ()
 
-const DefaultTEMCfgFile = "/etc/dnstapir/tem.yaml"
-const DefaultTAPIRCLICfgFile = "/etc/dnstapir/tapir-cli.yaml"
+const DefaultTemCfgFile = "/etc/dnstapir/tem.yaml"
+const TemSourcesCfgFile = "/etc/dnstapir/sources.yaml"
+
+const DefaultTapirCliCfgFile = "/etc/dnstapir/tapir-cli.yaml"

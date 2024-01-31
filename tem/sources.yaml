@@ -1,0 +1,56 @@
+# manually maintained
+
+sources:
+   active:	[ tapir, rpztfc, rpz2, black_as_sin, localwhitelist ]
+   tapir:
+      name:		dns-tapir
+      description:	DNS TAPIR main intelligence feed
+      type:		greylist
+      source:		mqtt
+      content:		intelligence
+   rpztfc:
+      name:		rpz.threat-feed.com
+      description:	Commercial RPZ feed from threat-feed.com
+      type:		greylist
+      source:		axfr
+      zone:		rpz.threat-feed.com
+      upstream:		nsa.johani.org:53
+      format:		rpz
+   rpz2:
+      name:		rpz.axfr.net
+      description:	Test RPZ feed from axfr.net
+      type:		greylist
+      source:		axfr
+      zone:		rpz.axfr.net
+      upstream:		nsa.johani.org:53
+      format:		rpz
+   black_as_sin:
+      name:		bas
+      description:	"Locally maintained blacklisted domain names"
+      type:		blacklist
+      source:		file
+      format:		dawg
+      filename:		/var/tmp/dnstapir/black-as-sin.dawg
+   localwhitelist:
+      name:		local-whitelist
+      description:	"Locally maintained whitelisted domain names"
+      type:		whitelist
+      source:		file	
+      format:		dawg		# domains | dawg
+      filename:		/var/tmp/dnstapir/well-known-domains.dawg
+   inactive_source:
+      name:	
+      type:		greylist
+      format:		rpz
+      zone:		rpz.zone
+      source:		axfr
+      upstream:		10.1.2.3:53
+      tsig:		...
+   black_1:
+      type:		blacklist
+      format:		rpz
+      zone:		rpz.zone
+      source:		axfr
+      upstream:		10.1.2.3:53
+      tsig:		...
+

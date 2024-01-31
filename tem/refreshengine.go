@@ -15,11 +15,18 @@ import (
 	"github.com/dnstapir/tapir-em/tapir"
 )
 
-type ZoneRefresher struct {
+type RpzRefresher struct {
 	Name     string
 	Upstream string
 	KeepFunc func(uint16) bool
 	ZoneType uint8 // 1=xfr, 2=map, 3=slice
+	Resp	 chan RpzRefresherResult
+}
+
+type RpzRefresherResult struct {
+     Msg		string
+     Error		bool
+     ErrorMsg		string
 }
 
 type RefreshCounter struct {
@@ -34,8 +41,10 @@ type RefreshCounter struct {
 
 func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
-	var zonerefch = conf.Internal.RefreshZoneCh
-	var rpzcmdch = conf.Internal.RpzCmdCh
+        var TapirIntelCh = td.TapirMqttSubCh
+
+	var zonerefch = td.RpzRefreshCh
+	var rpzcmdch = td.RpzCommandCh
 
 	var refreshCounters = make(map[string]*RefreshCounter, 5)
 	ticker := time.NewTicker(1 * time.Second)
@@ -60,32 +69,35 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	var updated bool
 	var err error
 	var cmd RpzCmdData
-	var zr ZoneRefresher
+	var tpkg tapir.MqttPkg
+	var zr RpzRefresher
 
 	resetSoaSerial := viper.GetBool("service.reset_soa_serial")
 
 	for {
 		select {
+		case tpkg = <- TapirIntelCh:
+		     	log.Printf("RefreshEngine: received a Tapir IntelUpdate: Message: %s\n", tpkg.Data)
 		case zr = <-zonerefch:
 			zone = zr.Name
 			log.Printf("RefreshEngine: Requested to refresh zone \"%s\"", zone)
 			if zone != "" {
-				if zonedata, exist := Zones[zone]; exist {
+				if zonedata, exist := RpzZones[zone]; exist {
 					log.Printf("RefreshEngine: scheduling immediate refresh for known zone '%s'",
 						zone)
 					if _, known := refreshCounters[zone]; !known {
 						refresh = zonedata.SOA.Refresh
 
 						upstream = zr.Upstream
-						if upstream == "" {
-						   upstream = GetUpstream(zone)
+						if upstream == "" && zr.Resp != nil {
+						   log.Printf("RefreshEngine: %s: Upstream unspecified", zone)
+						   zr.Resp <- RpzRefresherResult{ Error: true, ErrorMsg: "Upstream unspecified" }
 						}
 
-						downstreams = GetDownstreams(zone)
-
 						keepfunc = zr.KeepFunc
-						if keepfunc == nil {
-						   _, keepfunc = GetKeepFunc(zone)
+						if keepfunc == nil && zr.Resp != nil {
+						   log.Printf("RefreshEngine: %s: KeepFunc unspecified", zone)
+						   zr.Resp <- RpzRefresherResult{ Error: true, ErrorMsg: "KeepFunc unspecified" }
 						}
 
 						refreshCounters[zone] = &RefreshCounter{
@@ -99,33 +111,43 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					} else {
 						rc = refreshCounters[zone]
 					}
-					updated, err = Zones[zone].Refresh(rc.Upstream, rc.KeepFunc)
+					updated, err = RpzZones[zone].Refresh(rc.Upstream, rc.KeepFunc)
 					if err != nil {
 						log.Printf("RefreshEngine: Error from zone refresh(%s): %v", zone, err)
 					}
 
 					if updated {
 						if resetSoaSerial {
-							Zones[zone].SOA.Serial = uint32(time.Now().Unix())
+							RpzZones[zone].SOA.Serial = uint32(time.Now().Unix())
 							log.Printf("RefreshEngine: %s updated from upstream. Resetting serial to unixtime: %d",
-								zone, Zones[zone].SOA.Serial)
+								zone, RpzZones[zone].SOA.Serial)
 						}
-						NotifyDownstreams(Zones[zone], rc.Downstreams)
+						NotifyDownstreams(RpzZones[zone], rc.Downstreams)
 					}
 					// showing some apex details:
-					log.Printf("Showing some details for zone %s: zoneid=%s", zone, Zones[zone].ZoneID)
-					log.Printf("%s SOA: %s", zone, Zones[zone].SOA.String())
-					for _, rr := range Zones[zone].TXTrrs {
-						log.Printf("%s TXT: %s", zone, rr.String())
-					}
-					//					for _, rr := range Zones[zone].ZONEMDrrs {
+					log.Printf("Showing some details for zone %s: ", zone)
+					log.Printf("%s SOA: %s", zone, RpzZones[zone].SOA.String())
+//					for _, rr := range RpzZones[zone].TXTrrs {
+//						log.Printf("%s TXT: %s", zone, rr.String())
+//					}
+					//					for _, rr := range RpzZones[zone].ZONEMDrrs {
 					//						log.Printf("%s ZONEMD: %s", zone, rr.String())
 					//					}
 				} else {
 					log.Printf("RefreshEngine: adding the new zone '%s'", zone)
-					upstream = GetUpstream(zone)
-					downstreams = GetDownstreams(zone)
-					_, keepfunc = GetKeepFunc(zone)
+
+					upstream = zr.Upstream
+					if upstream == "" {
+						log.Printf("RefreshEngine: %s: Upstream unspecified", zone)
+						zr.Resp <- RpzRefresherResult{ Error: true, ErrorMsg: "Upstream unspecified" }
+					}
+
+					keepfunc = zr.KeepFunc
+					if keepfunc == nil {
+					   log.Printf("RefreshEngine: %s: KeepFunc unspecified", zone)
+					   zr.Resp <- RpzRefresherResult{ Error: true, ErrorMsg: "KeepFunc unspecified" }
+					}
+
 					zonedata = &tapir.ZoneData{
 						ZoneName: zone,
 						ZoneType: zr.ZoneType,
@@ -162,38 +184,39 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						}
 						NotifyDownstreams(zonedata, downstreams)
 					}
-					Zones[zone] = zonedata
+					RpzZones[zone] = zonedata
 				}
 			}
 
 		case <-ticker.C:
+		        TapirIntelCh = td.TapirMqttSubCh	// stupid kludge
 			// log.Printf("RefEng: ticker. refCounters: %v", refreshCounters)
 			for zone, rc := range refreshCounters {
 				// log.Printf("RefEng: ticker for %s: curref: %d", zone, v.CurRefresh)
 				rc.CurRefresh--
 				if rc.CurRefresh <= 0 {
-					upstream = GetUpstream(zone)
+					upstream = rc.Upstream
 					if rc.KeepFunc == nil {
 						panic("keepfunc=nil in refeng")
 					}
 
 					log.Printf("RefreshEngine: will refresh zone %s due to refresh counter", zone)
-					// log.Printf("Len(Zones) = %d", len(Zones))
-					updated, err := Zones[zone].Refresh(upstream, rc.KeepFunc)
+					// log.Printf("Len(RpzZones) = %d", len(Zones))
+					updated, err := RpzZones[zone].Refresh(upstream, rc.KeepFunc)
 					rc.CurRefresh = rc.SOARefresh
 					if err != nil {
 						log.Printf("RefreshEngine: Error from zd.Refresh(%s): %v", zone, err)
 					}
 					if updated {
 						if resetSoaSerial {
-							Zones[zone].SOA.Serial = uint32(time.Now().Unix())
+							RpzZones[zone].SOA.Serial = uint32(time.Now().Unix())
 							log.Printf("RefreshEngine: %s updated from upstream. Resetting serial to unixtime: %d",
-								zone, Zones[zone].SOA.Serial)
+								zone, RpzZones[zone].SOA.Serial)
 
 						}
 					}
 					if updated {
-						NotifyDownstreams(Zones[zone], rc.Downstreams)
+						NotifyDownstreams(RpzZones[zone], rc.Downstreams)
 					}
 				}
 			}
@@ -208,7 +231,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			case "BUMP":
 				zone = cmd.Zone
 				if zone != "" {
-					if zd, exist := Zones[zone]; exist {
+					if zd, exist := RpzZones[zone]; exist {
 						log.Printf("RefreshEngine: bumping SOA serial for known zone '%s'",
 							zone)
 						resp.OldSerial = zd.SOA.Serial

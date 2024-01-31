@@ -100,11 +100,11 @@ func (zd *ZoneData) FetchFromUpstream(upstream string, current_serial uint32,
 
 	zonedata.Sync()
 	if viper.GetString("service.zonemd") == "generate" {
-		zonedata.ZONEMDHashAlgs = []uint8{1}
-		log.Printf("FetchFromUpstream: %s has %d RRs pre ZONEMD generation (%d FilteredRRs)",
-			zd.ZoneName, len(zonedata.RRs), len(zonedata.FilteredRRs))
-		log.Printf("FetchFromUpstream: %s has %d RRs post ZONEMD generation (%d FilteredRRs)",
-			zd.ZoneName, len(zonedata.RRs), len(zonedata.FilteredRRs))
+//		zonedata.ZONEMDHashAlgs = []uint8{1}
+//		log.Printf("FetchFromUpstream: %s has %d RRs pre ZONEMD generation (%d FilteredRRs)",
+//			zd.ZoneName, len(zonedata.RRs), len(zonedata.FilteredRRs))
+//		log.Printf("FetchFromUpstream: %s has %d RRs post ZONEMD generation (%d FilteredRRs)",
+//			zd.ZoneName, len(zonedata.RRs), len(zonedata.FilteredRRs))
 	}
 
 	if viper.GetBool("service.debug") {
@@ -117,12 +117,12 @@ func (zd *ZoneData) FetchFromUpstream(upstream string, current_serial uint32,
 	zd.OwnerIndex = zonedata.OwnerIndex
 	zd.FilteredRRs = zonedata.FilteredRRs
 	zd.SOA = zonedata.SOA
-	zd.SOA_RRSIG = zonedata.SOA_RRSIG
+//	zd.SOA_RRSIG = zonedata.SOA_RRSIG
 	zd.IncomingSerial = zd.SOA.Serial
-	zd.ZONEMDrrs = zonedata.ZONEMDrrs
-	zd.ZONEMDHashAlgs = zonedata.ZONEMDHashAlgs
+//	zd.ZONEMDrrs = zonedata.ZONEMDrrs
+//	zd.ZONEMDHashAlgs = zonedata.ZONEMDHashAlgs
 	zd.NSrrs = zonedata.NSrrs
-	zd.TXTrrs = zonedata.TXTrrs
+//	zd.TXTrrs = zonedata.TXTrrs
 	zd.ApexLen = zonedata.ApexLen
 	//	zd.Role = zonedata.Role
 	zd.XfrType = zonedata.XfrType
@@ -144,16 +144,15 @@ func (zd *ZoneData) Sync() error {
 	//			    len(zd.FilteredRRs), len(zd.RRs))
 	var rrs = []dns.RR{dns.RR(&zd.SOA)}
 	rrs = append(rrs, zd.NSrrs...)
-	rrs = append(rrs, zd.ZONEMDrrs...)
-	rrs = append(rrs, zd.TXTrrs...)
+//	rrs = append(rrs, zd.ZONEMDrrs...)
+//	rrs = append(rrs, zd.TXTrrs...)
 
 	if zd.ZoneType != 3 {
-		rrs = append(rrs, zd.FilteredRRs...)
+//		rrs = append(rrs, zd.FilteredRRs...)
 	} else {
 		for _, omap := range zd.Data {
 			for _, rrl := range omap.RRtypes {
 				rrs = append(rrs, rrl.RRs...)
-				// rrs = append(rrs, rrl.RRSIGs...)
 			}
 		}
 	}

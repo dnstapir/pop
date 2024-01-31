@@ -323,24 +323,18 @@ func CreateDawg(sortedDomains []string, outfile string) error {
 	return nil
 }
 
-// func main() {
-// 	_, err := os.Stat(domainsFileName)
-// 	if errors.Is(err, os.ErrNotExist) {
-// 		err := fetchFile(domainsFileName)
-// 		if err != nil {
-// 			log.Fatal(err)
-// 		}
-// 	} else if err != nil {
-// 		log.Fatal(err)
-// 	}
-//
-// 	domainsList, err := createDomainsList(domainsFileName)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-//
-// 	err = makeDAWGWords(domainsList, dawgFileName)
-// 	if err != nil {
-// 		log.Fatal(err)
-// 	}
-// }
+// XXX: This is a slow and costly operation. Do not use unnecessarily.
+func ListDawg(df dawg.Finder) (int, []string) {
+     count := 0
+     var result []string
+     enumfn := func(idx int, s []rune, final bool) int {
+		       count++
+		       if final {
+			  result = append(result, string(s))
+		       }
+		       return dawg.Continue
+		}
+
+      df.Enumerate(enumfn)
+      return count, result
+}

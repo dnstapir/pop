@@ -79,9 +79,9 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		case "rpz-add":
 			log.Printf("Received RPZ-ADD %s policy %s RPZ source %s command", cp.Name, cp.Policy, cp.RpzSource)
 			
-			log.Printf("apihandler: RPZ-ADD 1. Len(ch): %d", len(conf.Internal.RpzCmdCh))
+			log.Printf("apihandler: RPZ-ADD 1. Len(ch): %d", len(conf.TemData.RpzCommandCh))
 			var respch = make(chan RpzCmdResponse, 1)
-			conf.Internal.RpzCmdCh <- RpzCmdData{
+			conf.TemData.RpzCommandCh <- RpzCmdData{
 							Command:   "RPZ-ADD",
 							Domain:    cp.Name,
 							Policy:	   cp.Policy,
@@ -104,7 +104,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Received RPZ-LOOKUP %s command", cp.Name)
 			
 			var respch = make(chan RpzCmdResponse, 1)
-			conf.Internal.RpzCmdCh <- RpzCmdData{
+			conf.TemData.RpzCommandCh <- RpzCmdData{
 							Command:   "RPZ-LOOKUP",
 							Domain:    cp.Name,
 							Result:    respch,
@@ -122,7 +122,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Received RPZ-REMOVE %s source %s command", cp.Name, cp.RpzSource)
 			
 			var respch = make(chan RpzCmdResponse, 1)
-			conf.Internal.RpzCmdCh <- RpzCmdData{
+			conf.TemData.RpzCommandCh <- RpzCmdData{
 							Command:   "RPZ-REMOVE",
 							Domain:    cp.Name,
 							RpzSource: cp.RpzSource,
@@ -141,7 +141,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Received RPZ-LIST-SOURCES command")
 			
 			var respch = make(chan RpzCmdResponse, 1)
-			conf.Internal.RpzCmdCh <- RpzCmdData{
+			conf.TemData.RpzCommandCh <- RpzCmdData{
 							Command:   "RPZ-LIST-SOURCES",
 							Result:    respch,
 						  }
@@ -198,7 +198,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		switch dp.Command {
 		case "rrset":
 			log.Printf("TEM debug rrset inquiry")
-			if zd, ok := Zones[dp.Zone]; ok {
+			if zd, ok := RpzZones[dp.Zone]; ok {
 				if owner := &zd.Owners[zd.OwnerIndex[dp.Qname]]; owner != nil {
 					if rrset, ok := owner.RRtypes[dp.Qtype]; ok {
 						resp.RRset = rrset
@@ -211,7 +211,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "zonedata":
 			log.Printf("TEM debug zone inquiry")
-			if zd, ok := Zones[dp.Zone]; ok {
+			if zd, ok := RpzZones[dp.Zone]; ok {
 			       resp.ZoneData = *zd
 			       resp.ZoneData.KeepFunc = nil
 			       log.Printf("TEM debug zone: name: %s rrs: %d owners: %d", dp.Zone,
@@ -320,7 +320,7 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 
 func BumpSerial(conf *Config, zone string) (string, error) {
 	var respch = make(chan RpzCmdResponse, 1)
-	conf.Internal.RpzCmdCh <- RpzCmdData{
+	conf.TemData.RpzCommandCh <- RpzCmdData{
 		Command:   "BUMP",
 		Zone:      zone,
 		Result:    respch,

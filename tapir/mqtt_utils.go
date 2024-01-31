@@ -30,7 +30,11 @@ func Chomp(s string) string {
 	return s
 }
 
-func NewMqttEngine(clientid string) (*MqttEngine, error) {
+func NewMqttEngine(clientid string, pub, sub bool) (*MqttEngine, error) {
+        if !pub && !sub {
+	   return nil, fmt.Errorf("Either (or both) pub or sub support must be requested for MQTT Engine")
+	}
+	
 	if clientid == "" {
 		return nil, fmt.Errorf("MQTT client id not specified")
 	}
@@ -86,7 +90,9 @@ func NewMqttEngine(clientid string) (*MqttEngine, error) {
 	}
 
 	signingKeyFile := viper.GetString("mqtt.signingkey")
-	if signingKeyFile == "" {
+	if !pub {
+		log.Printf("MQTT pub support not requested, only sub possible")
+	} else if signingKeyFile == "" {
 		log.Printf("MQTT signing key file not specified in config, publish not possible")
 	} else {
 		signingKey, err := os.ReadFile(signingKeyFile)
@@ -112,7 +118,9 @@ func NewMqttEngine(clientid string) (*MqttEngine, error) {
 	}
 
 	signingPubFile := viper.GetString("mqtt.validatorkey")
-	if signingPubFile == "" {
+	if !sub {
+		log.Printf("MQTT sub support not requested, only pub possible")
+	} else if signingPubFile == "" {
 		log.Printf("MQTT validator pub file not specified in config, subscribe not possible")
 	} else {
 		signingPub, err := os.ReadFile(signingPubFile)
@@ -257,11 +265,16 @@ func NewMqttEngine(clientid string) (*MqttEngine, error) {
 					if err != nil {
 						log.Printf("Error from buf.Writestring(): %v", err)
 					}
-					log.Printf("MQTT Engine: received text msg: %s", outbox.Msg)
+					if GlobalCF.Debug {
+					   log.Printf("MQTT Engine: received text msg: %s", outbox.Msg)
+					}
 
 				case "data":
-					log.Printf("MQTT Engine: received raw data: %v", outbox.Data)
+				        if GlobalCF.Debug {
+					   log.Printf("MQTT Engine: received raw data: %v", outbox.Data)
+					}
 					buf.Reset()
+					outbox.TimeStamp = time.Now()
 					err = jenc.Encode(outbox.Data)
 					if err != nil {
 						log.Printf("Error from json.NewEncoder: %v", err)

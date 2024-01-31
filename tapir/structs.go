@@ -4,15 +4,15 @@
 package tapir
 
 import (
-       	"crypto/ecdsa"
+	"crypto/ecdsa"
 	"crypto/tls"
 	"crypto/x509"
 	"log"
 	"net/http"
 	"time"
 
-	"github.com/miekg/dns"
 	"github.com/eclipse/paho.golang/paho"
+	"github.com/miekg/dns"
 )
 
 type ZoneData struct {
@@ -21,26 +21,20 @@ type ZoneData struct {
 	Owners     Owners
 	OwnerIndex map[string]int
 	// Apex RRs
-	ApexLen   int // # RRs that are stored separately
-	SOA       dns.SOA
-	SOA_RRSIG []dns.RR
-	NSrrs     []dns.RR // apex NS RRs
-	TXTrrs    []dns.RR // apex TXT RRs
-	ZONEMDrrs []dns.RR // apex ZONEMD RRs
+	ApexLen int // # RRs that are stored separately
+	SOA     dns.SOA
+	NSrrs   []dns.RR // apex NS RRs
 	// Rest of zone
+	FilteredRRs RRArray // FilteredRRs should die
 	RRs         RRArray // FilteredRRs + ApexRRs
-	FilteredRRs RRArray
 	// Data		map[string]map[uint16][]dns.RR	// map[owner]map[rrtype][]dns.RR
 	Data map[string]OwnerData // map[owner]map[rrtype][]dns.RR
 	// Other stuff
 	DroppedRRs     int
-	ZONEMDHashAlgs []uint8
+	KeptRRs        int
 	XfrType        string // axfr | ixfr
 	Logger         *log.Logger
-	ZoneFile       string
 	IncomingSerial uint32
-	ZoneID         string // intended to be the unixtime found in the apex TXT RR
-	Epoch          uint32 // essentially the same as ZoneID, but as an uint32
 	KeepFunc       func(uint16) bool
 	Verbose        bool
 }
@@ -130,43 +124,43 @@ type PingResponse struct {
 }
 
 type MqttPkg struct {
-     Type    string
-     Error   bool	// only used for sub.
-     ErrorMsg	string	// only used for sub.
-     Msg     string
-     Data    TapirMsg
-     TimeStamp	time.Time
+	Type      string	// text | data, only used on sender side
+	Error     bool   // only used for sub.
+	ErrorMsg  string // only used for sub.
+	Msg       string
+	Data      TapirMsg
+	TimeStamp time.Time		// time mqtt packet was sent or received, mgmt by MQTT Engine
 }
 
 type TapirMsg struct {
-     Type       string	// "intelupdate", "reset", ...
-     Added	[]Domain
-     Removed	[]Domain
-     Msg	string
-     TimeStamp	time.Time
+	Type      string // "intelupdate", "reset", ...
+	Added     []Domain
+	Removed   []Domain
+	Msg       string
+	TimeStamp time.Time		// time encoded in the payload by the sender, not touched by MQTT
 }
 
 type Domain struct {
-     Name	 string
-     Tags	 []string	// this should become a bit field in the future
+	Name string
+	Tags []string // this should become a bit field in the future
 }
 
 type MqttEngine struct {
-	Topic        string
-	ClientID     string
-	Server       string
-	QoS          int
-	PrivKey      *ecdsa.PrivateKey
-	PubKey       any
-	Client       *paho.Client
-	ClientCert   tls.Certificate
-	CaCertPool   *x509.CertPool
-	MsgChan      chan *paho.Publish
-	CmdChan      chan MqttEngineCmd
-	PublishChan  chan MqttPkg
-	SubscribeChan  chan MqttPkg
-	CanPublish   bool
-	CanSubscribe bool
+	Topic         string
+	ClientID      string
+	Server        string
+	QoS           int
+	PrivKey       *ecdsa.PrivateKey
+	PubKey        any
+	Client        *paho.Client
+	ClientCert    tls.Certificate
+	CaCertPool    *x509.CertPool
+	MsgChan       chan *paho.Publish
+	CmdChan       chan MqttEngineCmd
+	PublishChan   chan MqttPkg
+	SubscribeChan chan MqttPkg
+	CanPublish    bool
+	CanSubscribe  bool
 }
 
 type MqttEngineCmd struct {
@@ -179,4 +173,3 @@ type MqttEngineResponse struct {
 	Error    bool
 	ErrorMsg string
 }
-

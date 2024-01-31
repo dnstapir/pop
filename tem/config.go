@@ -20,6 +20,7 @@ type Config struct {
 		File string `validate:"required"`
 	}
 	Internal InternalConf
+	TemData	 *TemData
 }
 
 type ServiceConf struct {
@@ -33,12 +34,12 @@ type ServiceConf struct {
 type ServerConf struct {
 	Listen      string   `validate:"required"`
 	Port        string   `validate:"required"`
-	Upstreams   []string `validate:"required"`
-	Downstreams []string `validate:"required"`
+//	Upstreams   []string `validate:"required"`
+//	Downstreams []string `validate:"required"`
 	//     Zones	   []string		`validate:"required"`
-	XferZones  []string `validate:"required"`
-	MapZones   []string `validate:"required"`
-	SliceZones []string `validate:"required"`
+//	XferZones  []string `validate:"required"`
+//	MapZones   []string `validate:"required"`
+//	SliceZones []string `validate:"required"`
 }
 
 type SourceConf struct {
@@ -56,8 +57,8 @@ type ApiserverConf struct {
 }
 
 type InternalConf struct {
-	RefreshZoneCh chan ZoneRefresher
-	RpzCmdCh      chan RpzCmdData
+//	RefreshZoneCh chan RpzRefresher
+//	RpzCmdCh      chan RpzCmdData
 }
 
 func ValidateConfig(v *viper.Viper, cfgfile string) error {

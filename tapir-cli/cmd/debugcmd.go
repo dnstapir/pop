@@ -97,7 +97,7 @@ var debugSyncZoneCmd = &cobra.Command{
 			log.Fatalf("ReloadAuthZones: Error from ReadZoneFile(%s): %v", zonefile, err)
 		}
 
-		zd.ZONEMDHashAlgs = []uint8{1, 2}
+//		zd.ZONEMDHashAlgs = []uint8{1, 2}
 
 		// XXX: This will be wrong for zonetype=3 (which we're using)
 		fmt.Printf("----- zd.FilteredRRs: ----\n")
