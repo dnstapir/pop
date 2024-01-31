@@ -65,17 +65,17 @@ func (zd *ZoneData) ZoneTransferIn(upstream string, serial uint32, ttype string)
 		// log.Printf("ZoneTransferIn: size of env: %d RRs", len(envelope.RR)) // ~5-600 RRs
 		for _, rr := range envelope.RR {
 			count++
-			zd.SortFunc(rr, first_soa)
+			zd.RRSortFunc(rr, first_soa)
 		}
 		if zd.Verbose && (count%100000 == 0) {
-//		   zd.Logger.Printf("%d RRs transferred (total %d RRs kept)",
-//				len(envelope.RR), len(zd.FilteredRRs)+zd.ApexLen)
-		   zd.Logger.Printf("%d RRs transferred", len(envelope.RR))
+			//		   zd.Logger.Printf("%d RRs transferred (total %d RRs kept)",
+			//				len(envelope.RR), len(zd.FilteredRRs)+zd.ApexLen)
+			zd.Logger.Printf("%d RRs transferred", len(envelope.RR))
 		}
 	}
 
-//	zd.Logger.Printf("ZoneTransferIn: %s: dropped %d RRs (filter), kept %d apex RRs + %d FilteredRRs",
-//		zd.ZoneName, zd.DroppedRRs, zd.ApexLen, len(zd.FilteredRRs))
+	//	zd.Logger.Printf("ZoneTransferIn: %s: dropped %d RRs (filter), kept %d apex RRs + %d FilteredRRs",
+	//		zd.ZoneName, zd.DroppedRRs, zd.ApexLen, len(zd.FilteredRRs))
 	zd.Logger.Printf("ZoneTransferIn: %s: dropped %d RRs (filter), kept %d apex RRs",
 		zd.ZoneName, zd.DroppedRRs, zd.ApexLen)
 
@@ -182,7 +182,7 @@ func (zd *ZoneData) ReadZoneFile(filename string) (uint32, error) {
 	zp.SetIncludeAllowed(true)
 
 	for rr, ok := zp.Next(); ok; rr, ok = zp.Next() {
-		zd.SortFunc(rr, first_soa)
+		zd.RRSortFunc(rr, first_soa)
 	}
 
 	if err := zp.Err(); err != nil {
@@ -197,35 +197,40 @@ func (zd *ZoneData) ReadZoneFile(filename string) (uint32, error) {
 
 	zd.XfrType = "axfr" // XXX: technically not true, but the distinction is between complete zone and "diff"
 
-//	zd.Logger.Printf("ReadZoneFile: %s: dropped %d RRs (filter), kept %d apex RRs + %d FilteredRRs",
-//		zd.ZoneName, zd.DroppedRRs, zd.ApexLen, len(zd.FilteredRRs))
+	//	zd.Logger.Printf("ReadZoneFile: %s: dropped %d RRs (filter), kept %d apex RRs + %d FilteredRRs",
+	//		zd.ZoneName, zd.DroppedRRs, zd.ApexLen, len(zd.FilteredRRs))
 	zd.Logger.Printf("ReadZoneFile: %s: dropped %d RRs (filter), kept %d apex RRs",
 		zd.ZoneName, zd.DroppedRRs, zd.ApexLen)
 
 	return zd.SOA.Serial, nil
 }
 
-func (zd *ZoneData) SortFunc(rr dns.RR, first_soa *dns.SOA) {
-	if !zd.KeepFunc(rr.Header().Rrtype) {
+func (zd *ZoneData) RRSortFunc(rr dns.RR, first_soa *dns.SOA) {
+	if !zd.RRKeepFunc(rr.Header().Rrtype) {
 		zd.DroppedRRs++
 		return
 	}
 	zd.KeptRRs++
 
+	if !zd.RRParseFunc(&rr, zd) {
+		zd.DroppedRRs++
+		return
+	}
+
 	owner := rr.Header().Name
 	rrtype := rr.Header().Rrtype
 
-	// zd.Logger.Printf("SortFunc: owner=%s rrtype=%s", owner, dns.TypeToString[rrtype])
+	// zd.Logger.Printf("RRSortFunc: owner=%s rrtype=%s", owner, dns.TypeToString[rrtype])
 
-	var omap OwnerData
+	var odmap OwnerData
 	switch zd.ZoneType {
 	case 3:
 		fallthrough // store slicezones as mapzones during inbound transfer, sort afterwards into slice
 	case 2:
-		omap = zd.Data[owner]
-		if omap.RRtypes == nil {
-			omap.Name = owner
-			omap.RRtypes = map[uint16]RRset{}
+		odmap = zd.Data[owner]
+		if odmap.RRtypes == nil {
+			odmap.Name = owner
+			odmap.RRtypes = map[uint16]RRset{}
 		}
 	}
 
@@ -238,80 +243,35 @@ func (zd *ZoneData) SortFunc(rr dns.RR, first_soa *dns.SOA) {
 			zd.SOA = *first_soa
 			zd.ApexLen++
 		}
-//		if zd.ZoneType == 3 || zd.ZoneType == 2 {
-			tmp = omap.RRtypes[rrtype]
-			tmp.RRs = append(tmp.RRs, rr)
-			omap.RRtypes[rrtype] = tmp
-			// omap.RRtypes[rrtype].RRs = append(omap.RRtypes[rrtype].RRs, rr)
-//		}
+		tmp = odmap.RRtypes[rrtype]
+		tmp.RRs = append(tmp.RRs, rr)
+		odmap.RRtypes[rrtype] = tmp
+		// odmap.RRtypes[rrtype].RRs = append(odmap.RRtypes[rrtype].RRs, rr)
 	case *dns.NS:
 		if owner == zd.ZoneName {
 			zd.NSrrs = append(zd.NSrrs, rr)
 			zd.ApexLen++
-//			if zd.ZoneType == 3 || zd.ZoneType == 2 {
-				tmp = omap.RRtypes[rrtype]
-				tmp.RRs = append(tmp.RRs, rr)
-				omap.RRtypes[rrtype] = tmp
-				// omap.RRtypes[rrtype].RRs = append(omap.RRtypes[rrtype].RRs, rr)
-//			}
+			tmp = odmap.RRtypes[rrtype]
+			tmp.RRs = append(tmp.RRs, rr)
+			odmap.RRtypes[rrtype] = tmp
+			// odmap.RRtypes[rrtype].RRs = append(odmap.RRtypes[rrtype].RRs, rr)
 		} else {
-//			if zd.ZoneType == 1 {
-//				zd.FilteredRRs = append(zd.FilteredRRs, rr)
-//			} else {
-				tmp = omap.RRtypes[rrtype]
-				tmp.RRs = append(tmp.RRs, rr)
-				omap.RRtypes[rrtype] = tmp
-				// omap.RRtypes[rrtype].RRs = append(omap.RRtypes[rrtype].RRs, rr)
-//			}
+			tmp = odmap.RRtypes[rrtype]
+			tmp.RRs = append(tmp.RRs, rr)
+			odmap.RRtypes[rrtype] = tmp
+			// odmap.RRtypes[rrtype].RRs = append(odmap.RRtypes[rrtype].RRs, rr)
 		}
-//	case *dns.TXT:
-//		if owner == zd.ZoneName {
-//			zd.TXTrrs = append(zd.TXTrrs, rr)
-//			zd.ApexLen++
-//			if zd.ZoneType == 3 || zd.ZoneType == 2 {
-//				tmp = omap.RRtypes[rrtype]
-//				tmp.RRs = append(tmp.RRs, rr)
-//				omap.RRtypes[rrtype] = tmp
-//				// omap.RRtypes[rrtype].RRs = append(omap.RRtypes[rrtype].RRs, rr)
-//			}
-//		} else {
-//			if zd.ZoneType == 1 {
-//				zd.FilteredRRs = append(zd.FilteredRRs, rr)
-//			} else {
-//				tmp = omap.RRtypes[rrtype]
-//				tmp.RRs = append(tmp.RRs, rr)
-//				omap.RRtypes[rrtype] = tmp
-//				//				omap.RRtypes[rrtype].RRs = append(omap.RRtypes[rrtype].RRs, rr)
-//			}
-//		}
-//	case *dns.ZONEMD:
-//		zd.ZONEMDrrs = append(zd.ZONEMDrrs, rr)
-//		zd.ApexLen++
-//		if zd.ZoneType == 3 || zd.ZoneType == 2 {
-//			tmp = omap.RRtypes[rrtype]
-//			tmp.RRs = append(tmp.RRs, rr)
-//			omap.RRtypes[rrtype] = tmp
-//			//			omap.RRtypes[rrtype].RRs = append(omap.RRtypes[rrtype].RRs, rr)
-//		}
 	case *dns.RRSIG, *dns.NSEC, *dns.NSEC3, *dns.NSEC3PARAM, *dns.CDS, *dns.CDNSKEY, *dns.DNSKEY:
 		// ignore
 
 	default:
-		// log.Printf("SortFunc: owner=%s, rrtype=%s", owner, dns.TypeToString[rrtype])
-//		if zd.ZoneType == 1 {
-//			zd.FilteredRRs = append(zd.FilteredRRs, rr)
-//		} else {
-			tmp = omap.RRtypes[rrtype]
-			tmp.RRs = append(tmp.RRs, rr)
-			omap.RRtypes[rrtype] = tmp
-			// omap.RRtypes[rrtype].RRs = append(omap.RRtypes[rrtype].RRs, rr)
-			// log.Printf("SortFunc: owner=%s, qtype=%s, len(map)=%d", owner, dns.TypeToString[rrtype], len(omap.RRtypes))
-//		}
+		// log.Printf("RRSortFunc: owner=%s, rrtype=%s", owner, dns.TypeToString[rrtype])
+		tmp = odmap.RRtypes[rrtype]
+		tmp.RRs = append(tmp.RRs, rr)
+		odmap.RRtypes[rrtype] = tmp
 	}
 	// zd.Logger.Printf("ZoneName: %s, zonetype: %d", zd.ZoneName, zd.ZoneType)
-//	if zd.ZoneType == 2 || zd.ZoneType == 3 {
-		zd.Data[owner] = omap
-//	}
+	zd.Data[owner] = odmap
 	return
 }
 

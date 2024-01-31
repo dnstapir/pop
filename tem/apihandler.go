@@ -213,7 +213,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("TEM debug zone inquiry")
 			if zd, ok := RpzZones[dp.Zone]; ok {
 			       resp.ZoneData = *zd
-			       resp.ZoneData.KeepFunc = nil
+			       resp.ZoneData.RRKeepFunc = nil
 			       log.Printf("TEM debug zone: name: %s rrs: %d owners: %d", dp.Zone,
 			       		       len(zd.RRs), len(zd.Owners))
 			} else {

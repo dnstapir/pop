@@ -10,7 +10,10 @@ import (
 	"github.com/dnstapir/tapir-em/tapir"
 )
 
-// XXX: Generate a complete new RPZ zone for output to downstream
+// XXX: Generatin a complete new RPZ zone for output to downstream
+
+// Note that it is not possible to generate the output until all sources have been parsed.
+
 // 1. Walk through all blacklists and add blocks for those names
 // 2. Walk through all greylists and look for correlations between lists
 //    - if there are enough indications, then add a block

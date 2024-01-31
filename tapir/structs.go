@@ -35,8 +35,10 @@ type ZoneData struct {
 	XfrType        string // axfr | ixfr
 	Logger         *log.Logger
 	IncomingSerial uint32
-	KeepFunc       func(uint16) bool
+	RRKeepFunc     func(uint16) bool
+	RRParseFunc    func(*dns.RR, *ZoneData) bool
 	Verbose        bool
+	RpzData	       map[string]string	// map[ownername]action. owner w/o rpz zone name
 }
 
 type Owners []OwnerData
@@ -48,7 +50,6 @@ type OwnerData struct {
 
 type RRset struct {
 	RRs []dns.RR
-	// RRSIGs	  []dns.RR
 }
 
 type CommandPost struct {

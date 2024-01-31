@@ -95,16 +95,16 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 
 			if _, ok := RpzZones[qname]; ok {
 				log.Printf("Received Notify for known zone %s. Fetching from upstream", qname)
-				zonech <- RpzRefresher{
+				zonech <- RpzRefresh{
 					Name:     qname, // send zone name into RefreshEngine
 					ZoneType: RpzZones[qname].ZoneType,
 				}
-			} else {
-				log.Printf("Received Notify for unknown zone %s. Fetching from upstream", qname)
-				zonech <- RpzRefresher{
-					Name:     qname,
-					ZoneType: 1, // unknown zones are stored as the simplest type, i.e. as xfr zones
-				}
+//			} else {
+// 				log.Printf("Received Notify for unknown zone %s. Fetching from upstream", qname)
+// 				zonech <- RpzRefresh{
+// 					Name:     qname,
+// 					ZoneType: 1, // unknown zones are stored as xfr zones
+// 				}
 			}
 			fmt.Printf("Notify message: %v\n", m.String())
 

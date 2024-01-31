@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func (zd *ZoneData) Refresh(upstream string, keepfunc func(uint16) bool) (bool, error) {
+func (zd *ZoneData) Refresh(upstream string) (bool, error) {
 	verbose := true
 
 	do_transfer, current_serial, upstream_serial, err := zd.DoTransfer(upstream)
@@ -24,9 +24,9 @@ func (zd *ZoneData) Refresh(upstream string, keepfunc func(uint16) bool) (bool, 
 	if do_transfer {
 		log.Printf("Refresher: %s: upstream serial has increased: %d-->%d (refresh: %d)",
 			zd.ZoneName, current_serial, upstream_serial, zd.SOA.Refresh)
-		err = zd.FetchFromUpstream(upstream, current_serial, keepfunc, verbose)
+		err = zd.FetchFromUpstream(upstream, current_serial, verbose)
 		if err != nil {
-			log.Printf("Error from FetchZone(%s, %s): %v", zd.ZoneName, upstream, err)
+			log.Printf("Error from FetchFromUpstream(%s, %s): %v", zd.ZoneName, upstream, err)
 			return false, err
 		}
 		return true, nil // zone updated, no error
@@ -77,17 +77,18 @@ func (zd *ZoneData) DoTransfer(upstream string) (bool, uint32, uint32, error) {
 	return false, zd.IncomingSerial, upstream_serial, nil
 }
 
-func (zd *ZoneData) FetchFromUpstream(upstream string, current_serial uint32,
-	keepfunc func(uint16) bool, verbose bool) error {
+func (zd *ZoneData) FetchFromUpstream(upstream string, current_serial uint32, verbose bool) error {
 
 	log.Printf("Transferring zone %s via AXFR from %s\n", zd.ZoneName, upstream)
 
 	zonedata := ZoneData{
-		ZoneName: zd.ZoneName,
-		ZoneType: zd.ZoneType,
-		KeepFunc: zd.KeepFunc,
-		Logger:   zd.Logger,
-		Verbose:  zd.Verbose,
+		ZoneName:    zd.ZoneName,
+		ZoneType:    zd.ZoneType,
+		RRKeepFunc:  zd.RRKeepFunc,
+		RRParseFunc: zd.RRParseFunc,
+		RpzData:     zd.RpzData,
+		Logger:      zd.Logger,
+		Verbose:     zd.Verbose,
 	}
 
 	_, err := zonedata.ZoneTransferIn(upstream, current_serial, "axfr")
@@ -99,13 +100,6 @@ func (zd *ZoneData) FetchFromUpstream(upstream string, current_serial uint32,
 		zd.ZoneName, zonedata.ApexLen, len(zonedata.FilteredRRs))
 
 	zonedata.Sync()
-	if viper.GetString("service.zonemd") == "generate" {
-//		zonedata.ZONEMDHashAlgs = []uint8{1}
-//		log.Printf("FetchFromUpstream: %s has %d RRs pre ZONEMD generation (%d FilteredRRs)",
-//			zd.ZoneName, len(zonedata.RRs), len(zonedata.FilteredRRs))
-//		log.Printf("FetchFromUpstream: %s has %d RRs post ZONEMD generation (%d FilteredRRs)",
-//			zd.ZoneName, len(zonedata.RRs), len(zonedata.FilteredRRs))
-	}
 
 	if viper.GetBool("service.debug") {
 		filedir := viper.GetString("log.filedir")
@@ -117,17 +111,13 @@ func (zd *ZoneData) FetchFromUpstream(upstream string, current_serial uint32,
 	zd.OwnerIndex = zonedata.OwnerIndex
 	zd.FilteredRRs = zonedata.FilteredRRs
 	zd.SOA = zonedata.SOA
-//	zd.SOA_RRSIG = zonedata.SOA_RRSIG
 	zd.IncomingSerial = zd.SOA.Serial
-//	zd.ZONEMDrrs = zonedata.ZONEMDrrs
-//	zd.ZONEMDHashAlgs = zonedata.ZONEMDHashAlgs
 	zd.NSrrs = zonedata.NSrrs
-//	zd.TXTrrs = zonedata.TXTrrs
 	zd.ApexLen = zonedata.ApexLen
-	//	zd.Role = zonedata.Role
 	zd.XfrType = zonedata.XfrType
 	zd.ZoneType = zonedata.ZoneType
 	zd.Data = zonedata.Data
+	zd.RpzData = zonedata.RpzData
 
 	// XXX: This isn't exactly safe (as there may be multiple ongoing requests),
 	// but for the limited test case we have it should work.
@@ -144,14 +134,12 @@ func (zd *ZoneData) Sync() error {
 	//			    len(zd.FilteredRRs), len(zd.RRs))
 	var rrs = []dns.RR{dns.RR(&zd.SOA)}
 	rrs = append(rrs, zd.NSrrs...)
-//	rrs = append(rrs, zd.ZONEMDrrs...)
-//	rrs = append(rrs, zd.TXTrrs...)
 
 	if zd.ZoneType != 3 {
-//		rrs = append(rrs, zd.FilteredRRs...)
+		//		rrs = append(rrs, zd.FilteredRRs...)
 	} else {
-		for _, omap := range zd.Data {
-			for _, rrl := range omap.RRtypes {
+		for _, odmap := range zd.Data {
+			for _, rrl := range odmap.RRtypes {
 				rrs = append(rrs, rrl.RRs...)
 			}
 		}

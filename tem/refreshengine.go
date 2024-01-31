@@ -15,18 +15,19 @@ import (
 	"github.com/dnstapir/tapir-em/tapir"
 )
 
-type RpzRefresher struct {
-	Name     string
-	Upstream string
-	KeepFunc func(uint16) bool
-	ZoneType uint8 // 1=xfr, 2=map, 3=slice
-	Resp	 chan RpzRefresherResult
+type RpzRefresh struct {
+	Name        string
+	Upstream    string
+	RRKeepFunc  func(uint16) bool
+	RRParseFunc func(*dns.RR, *tapir.ZoneData) bool
+	ZoneType    uint8 // 1=xfr, 2=map, 3=slice
+	Resp        chan RpzRefreshResult
 }
 
-type RpzRefresherResult struct {
-     Msg		string
-     Error		bool
-     ErrorMsg		string
+type RpzRefreshResult struct {
+	Msg      string
+	Error    bool
+	ErrorMsg string
 }
 
 type RefreshCounter struct {
@@ -34,14 +35,15 @@ type RefreshCounter struct {
 	SOARefresh     uint32
 	CurRefresh     uint32
 	IncomingSerial uint32
-	KeepFunc       func(uint16) bool
+	RRKeepFunc     func(uint16) bool
+	RRParseFunc    func(*dns.RR, *tapir.ZoneData) bool
 	Upstream       string
 	Downstreams    []string
 }
 
 func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
-        var TapirIntelCh = td.TapirMqttSubCh
+	var TapirIntelCh = td.TapirMqttSubCh
 
 	var zonerefch = td.RpzRefreshCh
 	var rpzcmdch = td.RpzCommandCh
@@ -65,19 +67,20 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	var downstreams []string
 	var refresh uint32
 	var keepfunc func(uint16) bool
+	var parsefunc func(*dns.RR, *tapir.ZoneData) bool
 	var rc *RefreshCounter
 	var updated bool
 	var err error
 	var cmd RpzCmdData
 	var tpkg tapir.MqttPkg
-	var zr RpzRefresher
+	var zr RpzRefresh
 
 	resetSoaSerial := viper.GetBool("service.reset_soa_serial")
 
 	for {
 		select {
-		case tpkg = <- TapirIntelCh:
-		     	log.Printf("RefreshEngine: received a Tapir IntelUpdate: Message: %s\n", tpkg.Data)
+		case tpkg = <-TapirIntelCh:
+			log.Printf("RefreshEngine: received a Tapir IntelUpdate: Message: %s\n", tpkg.Data)
 		case zr = <-zonerefch:
 			zone = zr.Name
 			log.Printf("RefreshEngine: Requested to refresh zone \"%s\"", zone)
@@ -90,28 +93,35 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 						upstream = zr.Upstream
 						if upstream == "" && zr.Resp != nil {
-						   log.Printf("RefreshEngine: %s: Upstream unspecified", zone)
-						   zr.Resp <- RpzRefresherResult{ Error: true, ErrorMsg: "Upstream unspecified" }
+							log.Printf("RefreshEngine: %s: Upstream unspecified", zone)
+							zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "Upstream unspecified"}
 						}
 
-						keepfunc = zr.KeepFunc
+						keepfunc = zr.RRKeepFunc
 						if keepfunc == nil && zr.Resp != nil {
-						   log.Printf("RefreshEngine: %s: KeepFunc unspecified", zone)
-						   zr.Resp <- RpzRefresherResult{ Error: true, ErrorMsg: "KeepFunc unspecified" }
+							log.Printf("RefreshEngine: %s: KeepFunc unspecified", zone)
+							zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "KeepFunc unspecified"}
+						}
+
+						parsefunc = zr.RRParseFunc
+						if parsefunc == nil && zr.Resp != nil {
+							log.Printf("RefreshEngine: %s: ParseFunc unspecified", zone)
+							zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "ParseFunc unspecified"}
 						}
 
 						refreshCounters[zone] = &RefreshCounter{
 							Name:        zone,
 							SOARefresh:  refresh,
 							CurRefresh:  1, // force immediate refresh
-							KeepFunc:    keepfunc,
+							RRKeepFunc:  keepfunc,
+							RRParseFunc: parsefunc,
 							Upstream:    upstream,
 							Downstreams: downstreams,
 						}
 					} else {
 						rc = refreshCounters[zone]
 					}
-					updated, err = RpzZones[zone].Refresh(rc.Upstream, rc.KeepFunc)
+					updated, err = RpzZones[zone].Refresh(rc.Upstream)
 					if err != nil {
 						log.Printf("RefreshEngine: Error from zone refresh(%s): %v", zone, err)
 					}
@@ -127,38 +137,44 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					// showing some apex details:
 					log.Printf("Showing some details for zone %s: ", zone)
 					log.Printf("%s SOA: %s", zone, RpzZones[zone].SOA.String())
-//					for _, rr := range RpzZones[zone].TXTrrs {
-//						log.Printf("%s TXT: %s", zone, rr.String())
-//					}
-					//					for _, rr := range RpzZones[zone].ZONEMDrrs {
-					//						log.Printf("%s ZONEMD: %s", zone, rr.String())
-					//					}
 				} else {
 					log.Printf("RefreshEngine: adding the new zone '%s'", zone)
 
 					upstream = zr.Upstream
 					if upstream == "" {
 						log.Printf("RefreshEngine: %s: Upstream unspecified", zone)
-						zr.Resp <- RpzRefresherResult{ Error: true, ErrorMsg: "Upstream unspecified" }
+						zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "Upstream unspecified"}
+						continue
 					}
 
-					keepfunc = zr.KeepFunc
+					keepfunc = zr.RRKeepFunc
 					if keepfunc == nil {
-					   log.Printf("RefreshEngine: %s: KeepFunc unspecified", zone)
-					   zr.Resp <- RpzRefresherResult{ Error: true, ErrorMsg: "KeepFunc unspecified" }
+						log.Printf("RefreshEngine: %s: RRKeepFunc unspecified", zone)
+						zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "RRKeepFunc unspecified"}
+						continue
+					}
+
+					parsefunc = zr.RRParseFunc
+					if keepfunc == nil {
+						log.Printf("RefreshEngine: %s: KeepFunc unspecified", zone)
+						zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "RRParseFunc unspecified"}
+						continue
 					}
 
 					zonedata = &tapir.ZoneData{
-						ZoneName: zone,
-						ZoneType: zr.ZoneType,
-						KeepFunc: keepfunc,
-						Logger:   log.Default(),
+						ZoneName:    zone,
+						ZoneType:    zr.ZoneType,
+						RRKeepFunc:  keepfunc,
+						RRParseFunc: parsefunc,
+						RpzData:     map[string]string{}, // must be initialized
+						Logger:      log.Default(),
 					}
 					// log.Printf("RefEng: New zone %s, keepfunc: %v", zone, keepfunc)
-					updated, err := zonedata.Refresh(upstream, keepfunc)
+					updated, err := zonedata.Refresh(upstream)
 					if err != nil {
-						log.Printf("RefreshEngine: Error from zone refresh(%s): %v",
-							zone, err)
+						log.Printf("RefreshEngine: Error from zone refresh(%s): %v", zone, err)
+						zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: err.Error()}
+						continue
 					}
 
 					refresh = zonedata.SOA.Refresh
@@ -171,7 +187,8 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						Name:        zone,
 						SOARefresh:  refresh,
 						CurRefresh:  refresh,
-						KeepFunc:    keepfunc,
+						RRKeepFunc:  keepfunc,
+						RRParseFunc: parsefunc,
 						Upstream:    upstream,
 						Downstreams: downstreams,
 					}
@@ -182,27 +199,34 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 							log.Printf("RefreshEngine: %s updated from upstream. Resetting serial to unixtime: %d",
 								zone, zonedata.SOA.Serial)
 						}
-						NotifyDownstreams(zonedata, downstreams)
+						// NotifyDownstreams(zonedata, downstreams)
+
 					}
 					RpzZones[zone] = zonedata
+					// XXX: as parsing is done inline to the zone xfr, we don't need to inform
+					// the caller (I hope)
+					// zr.Resp <- RpzRefreshResult{ Msg: "all ok" }
 				}
 			}
 
 		case <-ticker.C:
-		        TapirIntelCh = td.TapirMqttSubCh	// stupid kludge
+			TapirIntelCh = td.TapirMqttSubCh // stupid kludge
 			// log.Printf("RefEng: ticker. refCounters: %v", refreshCounters)
 			for zone, rc := range refreshCounters {
 				// log.Printf("RefEng: ticker for %s: curref: %d", zone, v.CurRefresh)
 				rc.CurRefresh--
 				if rc.CurRefresh <= 0 {
 					upstream = rc.Upstream
-					if rc.KeepFunc == nil {
-						panic("keepfunc=nil in refeng")
+					if rc.RRKeepFunc == nil {
+						panic("RefreshEngine: keepfunc=nil")
+					}
+					if rc.RRParseFunc == nil {
+						panic("RefreshEngine: parsefunc=nil")
 					}
 
 					log.Printf("RefreshEngine: will refresh zone %s due to refresh counter", zone)
 					// log.Printf("Len(RpzZones) = %d", len(Zones))
-					updated, err := RpzZones[zone].Refresh(upstream, rc.KeepFunc)
+					updated, err := RpzZones[zone].Refresh(upstream)
 					rc.CurRefresh = rc.SOARefresh
 					if err != nil {
 						log.Printf("RefreshEngine: Error from zd.Refresh(%s): %v", zone, err)
@@ -225,7 +249,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			command := cmd.Command
 			log.Printf("RefreshEngine: recieved an %s command on the RpzCmd channel", command)
 			resp := RpzCmdResponse{
-					Zone: zone,
+				Zone: zone,
 			}
 			switch command {
 			case "BUMP":
@@ -254,32 +278,32 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			case "RPZ-ADD":
 				log.Printf("RefreshEngine: recieved an RPZ ADD command: %s (policy %s)", cmd.Domain, cmd.Policy)
 				if td.Whitelisted(cmd.Domain) {
-				   resp.Error = true
-				   resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is whitelisted. No change.",
-				   		   		   cmd.Domain)
-				   cmd.Result <- resp
-				   continue
+					resp.Error = true
+					resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is whitelisted. No change.",
+						cmd.Domain)
+					cmd.Result <- resp
+					continue
 				}
 
 				if td.Blacklisted(cmd.Domain) {
-				   resp.Error = true
-				   resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is already blacklisted. No change.",
-				   	      		       cmd.Domain)
-				  
-				   cmd.Result <- resp
-				   continue
-				}  
+					resp.Error = true
+					resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is already blacklisted. No change.",
+						cmd.Domain)
+
+					cmd.Result <- resp
+					continue
+				}
 
 				// if the name isn't either whitelisted or blacklisted
 				if cmd.ListType == "greylist" {
-				   td.GreylistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
-				   resp.Msg = fmt.Sprintf("Domain name \"%s\" (policy %s) added to greylisting DB.",
-				   	      		       cmd.Domain, cmd.Policy)
-				   cmd.Result <- resp
-				   continue
-				}			
+					td.GreylistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
+					resp.Msg = fmt.Sprintf("Domain name \"%s\" (policy %s) added to greylisting DB.",
+						cmd.Domain, cmd.Policy)
+					cmd.Result <- resp
+					continue
+				}
 				log.Printf("rf: RPZ-ADD 3")
-	
+
 			case "RPZ-REMOVE":
 				log.Printf("RefreshEngine: recieved an RPZ REMOVE command: %s", cmd.Domain)
 				resp.Msg = "RPZ-REMOVE NYI"
@@ -289,17 +313,17 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				log.Printf("RefreshEngine: recieved an RPZ LOOKUP command: %s", cmd.Domain)
 				var msg string
 				if td.Whitelisted(cmd.Domain) {
-				   resp.Msg = fmt.Sprintf("Domain name \"%s\" is whitelisted.", cmd.Domain)
-				   cmd.Result <- resp
-				   continue
+					resp.Msg = fmt.Sprintf("Domain name \"%s\" is whitelisted.", cmd.Domain)
+					cmd.Result <- resp
+					continue
 				}
 				msg += fmt.Sprintf("Domain name \"%s\" is not whitelisted.\n", cmd.Domain)
-				
+
 				if td.Blacklisted(cmd.Domain) {
-				   resp.Msg = fmt.Sprintf("Domain name \"%s\" is blacklisted.", cmd.Domain)
-				   cmd.Result <- resp
-				   continue
-				}  
+					resp.Msg = fmt.Sprintf("Domain name \"%s\" is blacklisted.", cmd.Domain)
+					cmd.Result <- resp
+					continue
+				}
 				msg += fmt.Sprintf("Domain name \"%s\" is not blacklisted.\n", cmd.Domain)
 
 				// if the name isn't either whitelisted or blacklisted: go though all greylists
@@ -312,19 +336,19 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				log.Printf("RefreshEngine: recieved an RPZ LIST-SOURCES command")
 				list := []string{}
 				for _, wl := range td.Whitelists {
-				    list = append(list, wl.Name)
+					list = append(list, wl.Name)
 				}
 				resp.Msg += fmt.Sprintf("Whitelist srcs: %s\n", strings.Join(list, ", "))
 
 				list = []string{}
 				for _, bl := range td.Blacklists {
-				    list = append(list, bl.Name)
+					list = append(list, bl.Name)
 				}
 				resp.Msg += fmt.Sprintf("Blacklist srcs: %s\n", strings.Join(list, ", "))
 
 				list = []string{}
 				for _, gl := range td.Greylists {
-				    list = append(list, gl.Name)
+					list = append(list, gl.Name)
 				}
 				resp.Msg += fmt.Sprintf("Greylist srcs: %s\n", strings.Join(list, ", "))
 				cmd.Result <- resp
@@ -333,7 +357,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				td.Logger.Printf("RefreshEngine: unknown command: \"%s\". Ignored.", command)
 				resp.Error = true
 				resp.ErrorMsg = fmt.Sprintf("RefreshEngine: unknown command: \"%s\". Ignored.",
-					      				    command)
+					command)
 				cmd.Result <- resp
 			}
 		}
