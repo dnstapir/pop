@@ -8,10 +8,10 @@ import (
 	"log"
 	"strings"
 
+	"github.com/dnstapir/tapir-em/tapir"
 	"github.com/miekg/dns"
 	"github.com/smhanov/dawg"
 	"github.com/spf13/viper"
-	"github.com/dnstapir/tapir-em/tapir"
 )
 
 type TemData struct {
@@ -151,68 +151,60 @@ func (td *TemData) ParseSources() error {
 					TEMExiter("Error starting MQTT Engine: %v", err)
 				}
 			}
-			td.Logger.Printf("*** Do not yet know how to deal with MQTT sources. Ignoring.")
+			td.Logger.Printf("*** MQTT sources are only managed via RefreshEngine.")
 		case "file":
-			newsource.Filename = viper.GetString(fmt.Sprintf("sources.%s.filename",
-										sourceid))
-			if newsource.Filename == "" {
-				TEMExiter("ParseSources: source %s of type file has undefined filename", sourceid)
-			}
-
-
-
-			switch listtype {
-			case "blacklist":
-				err = td.ParseLocalBlacklist(sourceid, &newsource)
-				if err != nil {
-					td.Logger.Printf("Error from ParseLocalBlacklist: %v", err)
-				}
-			case "whitelist":
-				err = td.ParseLocalWhitelist(sourceid, &newsource)
-				if err != nil {
-					td.Logger.Printf("Error from ParseLocalWhitelist: %v", err)
-				}
-			case "greylist":
-				err = td.ParseGreylist(sourceid, &newsource)
-				if err != nil {
-					td.Logger.Printf("Error from ParseGreylist: %v", err)
-				}
-			}
+			err = td.ParseLocalFile(sourceid, &newsource)
 		case "xfr":
-		     err = td.ParseRpzFeed(sourceid, &newsource)
+			err = td.ParseRpzFeed(sourceid, &newsource)
 		}
-
+		if err != nil {
+			log.Printf("Error parsing source %s (datasource %s): %v",
+				sourceid, datasource, err)
+		}
 	}
 
 	return nil
 }
 
-func ParseLocalFeed(source, filename string) error {
-
-	return nil
-}
-
-func (td *TemData) ParseLocalWhitelist(sourceid string, s *WBGlist) error {
-	td.Logger.Printf("ParseLocalWhitelist: %s", sourceid)
+func (td *TemData) ParseLocalFile(sourceid string, s *WBGlist) error {
+	td.Logger.Printf("ParseLocalFile: %s (%s)", sourceid, s.Type)
 	var df dawg.Finder
 	var err error
 
+	s.Filename = viper.GetString(fmt.Sprintf("sources.%s.filename", sourceid))
+	if s.Filename == "" {
+		TEMExiter("ParseLocalFile: source %s of type file has undefined filename",
+			sourceid)
+	}
+
 	switch s.Format {
 	case "domains":
-		td.Logger.Printf("ParseLocalWhitelist: parsing text file of domain names (NYI)")
+		td.Logger.Printf("ParseLocalFile: parsing text file of domain names (NYI)")
 	case "dawg":
-		td.Logger.Printf("ParseLocalWhitelist: loading DAWG: %s", s.Filename)
+		if s.Type != "whitelist" {
+			TEMExiter("Error: source %s (file %s): DAWG is only defined for whitelists.", sourceid, s.Filename)
+		}
+		td.Logger.Printf("ParseLocalFile: loading DAWG: %s", s.Filename)
 		df, err = dawg.Load(s.Filename)
 		if err != nil {
 			TEMExiter("Error from dawg.Load(%s): %v", s.Filename, err)
 		}
-		td.Logger.Printf("ParseLocalWhitelist: DAWG loaded")
+		td.Logger.Printf("ParseLocalFile: DAWG loaded")
 		s.Dawgf = df
-		td.Whitelists = append(td.Whitelists, s)
 
 	default:
-		TEMExiter("ParseLocalWhitelist: Format \"%s\" is unknown.", s.Format)
+		TEMExiter("ParseLocalFile: Format \"%s\" is unknown.", s.Format)
 	}
+
+	switch s.Type {
+	case "whitelist":
+		td.Whitelists = append(td.Whitelists, s)
+	case "blacklist":
+		td.Blacklists = append(td.Blacklists, s)
+	case "greylist":
+		td.Greylists = append(td.Greylists, s)
+	}
+
 	return nil
 }
 
@@ -254,13 +246,13 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *WBGlist) error {
 	zone := viper.GetString(fmt.Sprintf("sources.%s.zone", sourceid))
 	if zone == "" {
 		return fmt.Errorf("Unable to load RPZ source %s, upstream zone not specified.",
-		       			  sourceid)
+			sourceid)
 	}
 
 	upstream := viper.GetString(fmt.Sprintf("sources.%s.upstream", sourceid))
 	if upstream == "" {
 		return fmt.Errorf("Unable to load RPZ source %s, upstream address not specified.",
-		       			  sourceid)
+			sourceid)
 	}
 
 	s.RpzZoneName = dns.Fqdn(zone)
@@ -275,11 +267,11 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *WBGlist) error {
 	}
 	switch s.Type {
 	case "whitelist":
-	     td.Whitelists = append(td.Whitelists, s)
+		td.Whitelists = append(td.Whitelists, s)
 	case "blacklist":
-	     td.Blacklists = append(td.Blacklists, s)
+		td.Blacklists = append(td.Blacklists, s)
 	case "greylist":
-	     td.Greylists = append(td.Greylists, s)
+		td.Greylists = append(td.Greylists, s)
 	}
 	return nil
 }
@@ -318,10 +310,22 @@ func (td *TemData) RpzParseFuncFactory(s *WBGlist) func(*dns.RR, *tapir.ZoneData
 			}
 			log.Printf("ParseFunc: zone %s: name %s action: %s", zd.ZoneName, (*rr).Header().Name, action)
 			switch s.Type {
-			case "whitelist", "blacklist":
-			     zd.RpzData[name] = "x"
+			case "whitelist":
+				if action == "WHITELIST" {
+					zd.RpzData[name] = "x" // drop all other actions
+				}
+			case "blacklist":
+				if action != "WHITELIST" {
+					zd.RpzData[name] = "x" // drop all other actions
+				} else {
+					log.Printf("Warning: blacklist RPZ source %s has whitelisted name: %s", s.RpzZoneName, name)
+				}
 			case "greylist":
-			     zd.RpzData[name] = action
+				if action != "WHITELIST" {
+					zd.RpzData[name] = action
+				} else {
+					log.Printf("Warning: greylist RPZ source %s has whitelisted name: %s", s.RpzZoneName, name)
+				}
 			}
 		}
 		return true
