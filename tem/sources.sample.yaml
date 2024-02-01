@@ -1,18 +1,18 @@
 # manually maintained
 
 sources:
-   active:	[ tapir, rpztfc, rpz2, black_as_sin, localwhitelist ]
+   active:	[ tapir, rpz2, black_as_sin, white_and_shiny, localwhitelist ]
    tapir:
       name:		dns-tapir
       description:	DNS TAPIR main intelligence feed
       type:		greylist
       source:		mqtt
-      content:		intelligence
+      format:		tapir-mqtt-v1
    rpztfc:
       name:		rpz.threat-feed.com
       description:	Commercial RPZ feed from threat-feed.com
       type:		greylist
-      source:		axfr
+      source:		xfr
       zone:		rpz.threat-feed.com
       upstream:		nsa.johani.org:53
       format:		rpz
@@ -20,7 +20,7 @@ sources:
       name:		rpz.axfr.net
       description:	Test RPZ feed from axfr.net
       type:		greylist
-      source:		axfr
+      source:		xfr
       zone:		rpz.axfr.net
       upstream:		nsa.johani.org:53
       format:		rpz
@@ -29,8 +29,19 @@ sources:
       description:	"Locally maintained blacklisted domain names"
       type:		blacklist
       source:		file
-      format:		dawg
-      filename:		/var/tmp/dnstapir/black-as-sin.dawg
+#      format:		dawg
+#      filename:	/var/tmp/dnstapir/black-as-sin.dawg
+      format:		domains
+      filename:		/var/tmp/dnstapir/black-as-sin.txt
+   white_and_shiny:
+      name:		was
+      description:	"Locally maintained whitelisted domain names"
+      type:		whitelist
+      source:		file
+#      format:		dawg
+#      filename:	/var/tmp/dnstapir/black-as-sin.dawg
+      format:		domains
+      filename:		/var/tmp/dnstapir/white-and-shiny.txt
    localwhitelist:
       name:		local-whitelist
       description:	"Locally maintained whitelisted domain names"
@@ -38,19 +49,27 @@ sources:
       source:		file	
       format:		dawg		# domains | dawg
       filename:		/var/tmp/dnstapir/well-known-domains.dawg
+   wellknowndomains:
+      name:		wkdlist
+      description:	"External list of 10M whitelisted domain names"
+      type:		whitelist
+      source:		http	
+      format:		csv		# domains | dawg | csv
+      url:		https://www.domcop.com/files/top
+      outfile:		/var/tmp/dnstapir/well-known-domains.new.dawg
    inactive_source:
       name:	
       type:		greylist
       format:		rpz
       zone:		rpz.zone
-      source:		axfr
+      source:		xfr
       upstream:		10.1.2.3:53
       tsig:		...
    black_1:
       type:		blacklist
       format:		rpz
       zone:		rpz.zone
-      source:		axfr
+      source:		xfr
       upstream:		10.1.2.3:53
       tsig:		...
 

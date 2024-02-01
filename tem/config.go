@@ -6,6 +6,7 @@ package main
 
 import (
 	"log"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
@@ -21,6 +22,7 @@ type Config struct {
 	}
 	Internal InternalConf
 	TemData	 *TemData
+	BootTime time.Time	
 }
 
 type ServiceConf struct {

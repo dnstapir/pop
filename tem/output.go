@@ -5,7 +5,7 @@
 package main
 
 import (
-       "log"
+//       "log"
 
 	"github.com/dnstapir/tapir-em/tapir"
 )
@@ -38,16 +38,16 @@ func (td *TemData) GenerateOutput() (string, error) {
      return "", nil
 }
 
-func (wbg *WBGlist) List() ([]string, error) {
-     switch wbg.Format {
-     case "rpz":
-//     	  data, exist := RpzZones[wbg.Zone]
-//	  if !exist {
-//	     log.Printf("No data found for RPZ zone \"%s\". Ignoring.", wbg.Zone)
-//	  }
-	  
-     default:
-	log.Printf("wbg.List(): Format=%s is not handled yet. Only supported format is \"rpz\"", wbg.Format)
-     }
-     return []string{}, nil
-}
+// func (wbg *tapir.WBGlist) List() ([]string, error) {
+//      switch wbg.Format {
+//      case "rpz":
+// //     	  data, exist := RpzZones[wbg.Zone]
+// //	  if !exist {
+// //	     log.Printf("No data found for RPZ zone \"%s\". Ignoring.", wbg.Zone)
+// //	  }
+// 	  
+//      default:
+// 	log.Printf("wbg.List(): Format=%s is not handled yet. Only supported format is \"rpz\"", wbg.Format)
+//      }
+//      return []string{}, nil
+// }

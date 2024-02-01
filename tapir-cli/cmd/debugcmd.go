@@ -12,6 +12,7 @@ import (
 	"os"
 
 	"github.com/dnstapir/tapir-em/tapir"
+//	"github.com/ryanuber/columnize"
 	"github.com/miekg/dns"
 	"github.com/spf13/cobra"
 )
@@ -59,11 +60,38 @@ var debugZoneDataCmd = &cobra.Command{
 			fmt.Printf("%s\n", resp.ErrorMsg)
 		}
 
-		zd := resp.ZoneData
+//		zd := resp.ZoneData
 
 		fmt.Printf("Received %d bytes of data\n", len(resp.Msg))
-		fmt.Printf("Zone %s: RRs: %d Owners: %d\n", tapir.GlobalCF.Zone,
-			len(zd.RRs), len(zd.Owners))
+//		fmt.Printf("Zone %s: RRs: %d Owners: %d\n", tapir.GlobalCF.Zone,
+//			len(zd.RRs), len(zd.Owners))
+	},
+}
+
+var debugColourlistsCmd = &cobra.Command{
+	Use:   "colourlists",
+	Short: "Return the white/black/greylists from the current data structures",
+	Run: func(cmd *cobra.Command, args []string) {
+		resp := SendDebugCmd(tapir.DebugPost{
+			Command: "colourlists",
+		})
+		if resp.Error {
+			fmt.Printf("%s\n", resp.ErrorMsg)
+		}
+
+		fmt.Printf("Received %d bytes of data\n", len(resp.Msg))
+
+//		out := []string{ "Type|Name|Count|Desc|Names" }
+		
+		for _, l := range resp.Whitelists {
+		    fmt.Printf("white:%s\tcount=%d\tdesc=%s:\n\n%v\n", l.Name, len(l.Names), l.Description, l.Names)
+		}
+		for _, l := range resp.Blacklists {
+		    fmt.Printf("black:%s\tcount=%d\tdesc=%s:\n\n%v\n", l.Name, len(l.Names), l.Description, l.Names)
+		}
+		for _, l := range resp.Greylists {
+		    fmt.Printf("grey:%s\tcount=%d\tdesc=%s:\n\n%v\n", l.Name, len(l.Names), l.Description, l.Names)
+		}
 	},
 }
 
@@ -88,7 +116,7 @@ var debugSyncZoneCmd = &cobra.Command{
 		zd := tapir.ZoneData{
 			ZoneType: 3, // zonetype=3 keeps RRs in a []OwnerData, with an OwnerIndex map[string]int to locate stuff
 			ZoneName: tapir.GlobalCF.Zone,
-			KeepFunc: func(uint16) bool { return true },
+			RRKeepFunc: func(uint16) bool { return true },
 			Logger:   log.Default(),
 		}
 
@@ -96,8 +124,6 @@ var debugSyncZoneCmd = &cobra.Command{
 		if err != nil {
 			log.Fatalf("ReloadAuthZones: Error from ReadZoneFile(%s): %v", zonefile, err)
 		}
-
-//		zd.ZONEMDHashAlgs = []uint8{1, 2}
 
 		// XXX: This will be wrong for zonetype=3 (which we're using)
 		fmt.Printf("----- zd.FilteredRRs: ----\n")
@@ -121,7 +147,7 @@ var debugSyncZoneCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(debugcmdCmd)
-	debugcmdCmd.AddCommand(debugSyncZoneCmd, debugZoneDataCmd)
+	debugcmdCmd.AddCommand(debugSyncZoneCmd, debugZoneDataCmd, debugColourlistsCmd)
 
 	// Here you will define your flags and configuration settings.
 
@@ -153,8 +179,8 @@ func SendDebugCmd(data tapir.DebugPost) tapir.DebugResponse {
 	if err != nil {
 		fmt.Printf("JSON parse error: %v", err)
 	}
-	fmt.Printf("Received %d bytes of data: %v\n", len(buf), pretty.String())
-	os.Exit(1)
+//	fmt.Printf("Received %d bytes of data: %v\n", len(buf), pretty.String())
+//	os.Exit(1)
 
 	err = json.Unmarshal(buf, &dr)
 	if err != nil {

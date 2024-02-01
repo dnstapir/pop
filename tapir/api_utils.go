@@ -14,7 +14,7 @@ import (
 
 var pongs int = 0
 
-func APIping(appName string) func(w http.ResponseWriter, r *http.Request) {
+func APIping(appName string, boottime time.Time) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		tls := ""
@@ -33,11 +33,12 @@ func APIping(appName string) func(w http.ResponseWriter, r *http.Request) {
 		pongs += 1
 		hostname, _ := os.Hostname()
 		response := PingResponse{
-			Time:   time.Now(),
-			Client: r.RemoteAddr,
-			Msg:    fmt.Sprintf("%spong from %s @ %s", tls, appName, hostname),
-			Pings:  pp.Pings + 1,
-			Pongs:  pongs,
+			Time:     time.Now(),
+			BootTime: boottime,
+			Client:   r.RemoteAddr,
+			Msg:      fmt.Sprintf("%spong from %s @ %s", tls, appName, hostname),
+			Pings:    pp.Pings + 1,
+			Pongs:    pongs,
 		}
 
 		w.Header().Set("Content-Type", "application/json")

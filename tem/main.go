@@ -15,6 +15,7 @@ import (
 //	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 //	"github.com/miekg/dns"
@@ -153,6 +154,7 @@ func main() {
 	go APIdispatcher(&conf, apistopper)
 
 	go DnsEngine(&conf)
+	conf.BootTime = time.Now()
 
 	mainloop(&conf, &cfgFileUsed)
 }

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/smhanov/dawg"
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/miekg/dns"
 )
@@ -83,9 +84,12 @@ type DebugResponse struct {
 	Time       time.Time
 	Status     string
 	Zone       string
-	ZoneData   ZoneData
+//	ZoneData   ZoneData
 	OwnerIndex map[string]int
 	RRset      RRset
+	Whitelists []*WBGlist
+	Blacklists []*WBGlist
+	Greylists  []*WBGlist
 	Msg        string
 	Error      bool
 	ErrorMsg   string
@@ -173,4 +177,29 @@ type MqttEngineResponse struct {
 	Status   string
 	Error    bool
 	ErrorMsg string
+}
+
+type WBGlist struct {
+	Name        string
+	Description string
+	Type        string // whitelist | blacklist | greylist
+	Mutable     bool   // true = is possible to update. Only local text file sources are mutable
+	SrcFormat   string // Format of external source: dawg | rpz | tapir-mqtt-v1 | ...
+	Format	    string // Format of internal storage: dawg | map | slice | trie | rbtree | ...
+	Datasource  string // file | xfr | mqtt | https | api | ...
+	Filename    string
+	Dawgf       dawg.Finder
+
+	// greylist sources needs more complex stuff here:
+	GreyNames   map[string]GreyName
+	RpzZoneName string
+	RpzUpstream string
+	RpzSerial   int
+	Names	    map[string]string	// XXX: same data as in ZoneData.RpzData, should only keep one
+}
+
+type GreyName struct {
+	SrcFormat string          // "tapir-feed-v1" | ...
+	Tags   map[string]bool // XXX: extremely wasteful, a bitfield would be better,
+	//      but don't know how many tags there can be
 }

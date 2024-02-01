@@ -14,7 +14,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/eclipse/paho.golang/paho"
@@ -357,4 +359,22 @@ func (me *MqttEngine) StopEngine() (chan MqttEngineCmd, error) {
 		return me.CmdChan, fmt.Errorf(r.ErrorMsg)
 	}
 	return me.CmdChan, nil
+}
+
+// Trivial interrupt handler to catch SIGTERM and stop the MQTT engine nicely
+func (me *MqttEngine) SetupInterruptHandler() {
+//        respch := make(chan MqttEngineResponse, 2)
+
+        ic := make(chan os.Signal, 1)
+        signal.Notify(ic, os.Interrupt, syscall.SIGTERM)
+        go func() {
+                for {
+                        select {
+                        case <-ic:
+                                fmt.Println("SIGTERM interrupt received, sending stop signal to MQTT Engine")
+				me.StopEngine()
+//                                os.Exit(1)
+                        }
+                }
+        }()
 }

@@ -182,6 +182,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			err := json.NewEncoder(w).Encode(resp)
 			if err != nil {
 				log.Printf("Error from json encoder: %v", err)
+				log.Printf("resp: %v", resp)
 			}
 		}()
 
@@ -212,14 +213,26 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		case "zonedata":
 			log.Printf("TEM debug zone inquiry")
 			if zd, ok := RpzZones[dp.Zone]; ok {
-			       resp.ZoneData = *zd
-			       resp.ZoneData.RRKeepFunc = nil
+//			       resp.ZoneData = *zd
+//			       resp.ZoneData.RRKeepFunc = nil
+//			       resp.ZoneData.RRParseFunc = nil
 			       log.Printf("TEM debug zone: name: %s rrs: %d owners: %d", dp.Zone,
 			       		       len(zd.RRs), len(zd.Owners))
 			} else {
 				resp.Msg = fmt.Sprintf("Zone %s is unknown", dp.Zone)
 			}
 
+
+		case "colourlists":
+			log.Printf("TEM debug white/black/grey lists")
+			td := conf.TemData
+			resp.Whitelists = td.Whitelists
+			for _, wl := range resp.Whitelists {
+			    wl.Dawgf = nil
+			}
+			resp.Blacklists = td.Blacklists
+			resp.Greylists = td.Greylists
+			
 		default:
 			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", dp.Command)
 			resp.Error = true
@@ -232,7 +245,7 @@ func SetupRouter(conf *Config) *mux.Router {
 
 	sr := r.PathPrefix("/api/v1").Headers("X-API-Key",
 		viper.GetString("apiserver.key")).Subrouter()
-	sr.HandleFunc("/ping", tapir.APIping("tem")).Methods("POST")
+	sr.HandleFunc("/ping", tapir.APIping("tem", conf.BootTime)).Methods("POST")
 	sr.HandleFunc("/command", APIcommand(conf)).Methods("POST")
 	sr.HandleFunc("/debug", APIdebug(conf)).Methods("POST")
 	// sr.HandleFunc("/show/api", tapir.APIshowAPI(r)).Methods("GET")

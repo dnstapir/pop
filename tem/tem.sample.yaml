@@ -13,17 +13,35 @@ apiserver:
    address:	127.0.0.1:9099
    tlsaddress:	127.0.0.1:9098
 
+mqtt:
+   server:		mqtt.dev.dnstapir.se:8883
+   uid:			johani
+   clientid:		johani-tem
+   topic:		events/up/johani/frobozz
+   cacert:              /etc/dnstapir/certs/tapirCA.crt
+   clientcert:          /etc/dnstapir/certs/mqttclient.crt
+   clientkey:           /etc/dnstapir/certs/mqttclient-key.pem
+   signingkey:          /etc/dnstapir/certs/mqttsigner-key.pem
+   validatorkey:        /etc/dnstapir/certs/mqttsigner-pub.pem
+   qos:                 2
+
 server:
    listen:	127.0.0.1
    port:	9097
-   upstreams:	[ nsa.johani.org:53 ]
-   downstreams:	[ 127.0.0.1:9999 ]  	# unbound
-   xferzones:	[ ]  # not useful for TAPIR
-   mapzones:	[ ]  # likely not useful for TAPIR
-   slicezones:	[ rpz.threat-feed.com ]
+#   upstreams:	[ nsa.johani.org:53 ]
+#   downstreams:	[ 127.0.0.1:9999 ]  	# unbound
+#   xferzones:	[ ]  # not useful for TAPIR
+#   mapzones:	[ ]  # likely not useful for TAPIR
+#   slicezones:	[ rpz.threat-feed.com ]
+#   slicezones:	[ ]
 
 dnsengine:
    addresses:	127.0.0.1:5359
+
+output:
+   rpz:
+      zonename:		rpz.
+      primary:		127.0.0.1:5359	# must be an address that the dnsengine listens to
 
 service:
    name:		foobar
@@ -34,35 +52,13 @@ service:
    refresh:
       active:	true
 
-sources:
-   active:	[ tapir, local, localwhitelist ]
-   tapir:
-      type:	mqtt
-      content:	intelligence
-   local:
-      type:	file
-      content:	intelligence
-      format:	tapir-tags-v1
-      filename:	/etc/dnstapir/local-feed.txt
-   localwhitelist:
-      type:	file	
-      content:	whitelist
-      format:	domains		# domains | dawg
-      filename:	/etc/dnstapir/local-whitelist.txt
-   inactive_source:
-      type:	axfr
-      content:	intelligence
-      format:	rpz
-      zone:	rpz.zone
-      upstream:	10.1.2.3:53
-      tsig:	...
-
 redirects:
    tapir:	landing-page.dnstapir.se
    police:	www.polisen.se
 
+# policies ONLY affect GREYLISTED sources. whitelisted and blacklisted
+# sources go stright into (or not) the resulting RPZ
 # known actions: passthru, drop, nxdomain, nodata, tapir, police
-
 policies:
    default:
       taglimit:		3	# i.e. 4 TAPIR tags and you're out
