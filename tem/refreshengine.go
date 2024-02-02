@@ -81,7 +81,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 		select {
 		case tpkg = <-TapirIntelCh:
 			log.Printf("RefreshEngine: received a Tapir IntelUpdate: Message: %s\n", tpkg.Data)
-			td.EvaluateTapirUpdate(tpkg)
+			td.ProcessTapirUpdate(tpkg)
 			log.Printf("RefreshEngine: Tapir IntelUpdate evaluated.")
 			
 		case zr = <-zonerefch:

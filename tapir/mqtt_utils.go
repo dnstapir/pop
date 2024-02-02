@@ -32,8 +32,13 @@ func Chomp(s string) string {
 	return s
 }
 
-func NewMqttEngine(clientid string, pub, sub bool) (*MqttEngine, error) {
-        if !pub && !sub {
+const (
+      TapirPub uint8 = 1 << iota
+      TapirSub
+)
+
+func NewMqttEngine(clientid string, pubsub uint8) (*MqttEngine, error) {
+        if pubsub == 0 {
 	   return nil, fmt.Errorf("Either (or both) pub or sub support must be requested for MQTT Engine")
 	}
 	
@@ -92,7 +97,7 @@ func NewMqttEngine(clientid string, pub, sub bool) (*MqttEngine, error) {
 	}
 
 	signingKeyFile := viper.GetString("mqtt.signingkey")
-	if !pub {
+	if pubsub & TapirPub == 0 {
 		log.Printf("MQTT pub support not requested, only sub possible")
 	} else if signingKeyFile == "" {
 		log.Printf("MQTT signing key file not specified in config, publish not possible")
@@ -120,7 +125,7 @@ func NewMqttEngine(clientid string, pub, sub bool) (*MqttEngine, error) {
 	}
 
 	signingPubFile := viper.GetString("mqtt.validatorkey")
-	if !sub {
+	if pubsub & TapirSub == 0 {
 		log.Printf("MQTT sub support not requested, only pub possible")
 	} else if signingPubFile == "" {
 		log.Printf("MQTT validator pub file not specified in config, subscribe not possible")

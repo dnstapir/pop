@@ -18,15 +18,15 @@ import (
 	"time"
 
 	"github.com/dnstapir/tapir-em/tapir"
-	"github.com/spf13/cobra"
 	"github.com/miekg/dns"
+	"github.com/spf13/cobra"
 )
 
 var mqttclientid string
 var mqttpub, mqttsub bool
 
 var testMsg = tapir.TapirMsg{
-	Type: "intel-update",
+	MsgType: "intel-update",
 	Added: []tapir.Domain{
 		tapir.Domain{
 			Name: "frobozz.com.",
@@ -59,7 +59,15 @@ and usage of using your command. For example: to quickly create a Cobra applicat
 	Run: func(cmd *cobra.Command, args []string) {
 		var wg sync.WaitGroup
 
-		meng, err := tapir.NewMqttEngine(mqttclientid, mqttpub, mqttsub)
+		var pubsub uint8
+		if mqttpub {
+		   pubsub = pubsub | tapir.TapirPub
+		}
+		if mqttsub {
+		   pubsub = pubsub | tapir.TapirSub
+		}
+
+		meng, err := tapir.NewMqttEngine(mqttclientid, pubsub)
 		if err != nil {
 			fmt.Printf("Error from NewMqttEngine: %v\n", err)
 			os.Exit(1)
@@ -125,7 +133,7 @@ var mqttIntelUpdateCmd = &cobra.Command{
 	Long: `Will query for operation (add|del), domain name and tags.
 Will end the loop on the operation (or domain name) "QUIT"`,
 	Run: func(cmd *cobra.Command, args []string) {
-		meng, err := tapir.NewMqttEngine(mqttclientid, true, false)
+		meng, err := tapir.NewMqttEngine(mqttclientid, tapir.TapirPub) // pub, no sub
 		if err != nil {
 			fmt.Printf("Error from NewMqttEngine: %v\n", err)
 			os.Exit(1)
@@ -137,7 +145,6 @@ Will end the loop on the operation (or domain name) "QUIT"`,
 		}
 
 		count := 0
-//		buf := new(bytes.Buffer)
 
 		SetupInterruptHandler(cmnder)
 
@@ -145,7 +152,7 @@ Will end the loop on the operation (or domain name) "QUIT"`,
 		var td tapir.Domain
 		var tmsg tapir.TapirMsg
 		var snames, stags []string
-		
+
 		fmt.Printf("Exit query loop by using the domain name \"QUIT\"\n")
 
 		for {
@@ -159,29 +166,36 @@ Will end the loop on the operation (or domain name) "QUIT"`,
 
 			var tds []tapir.Domain
 			if addop == "yes" {
-			   tags = TtyQuestion("Tags", tags, false)
-			   stags = strings.Fields(tags)
-			
-			   for _, name := range snames {
-			       tds = append(tds, tapir.Domain{ Name: dns.Fqdn(name), Tags: stags })
-			   }
-			   tmsg = tapir.TapirMsg{
-					Added:		tds,
-					Msg:		"it is greater to give than to take",
-					TimeStamp:	time.Now(),
-			   	  }
+				tags = TtyQuestion("Tags", tags, false)
+				tagmask, err := tapir.StringsToTagMask(strings.Fields(tags))
+				if err != nil {
+				   fmt.Printf("Error from StringToTagMask: %v", err)
+				   os.Exit(1)
+				}
+				if tapir.GlobalCF.Verbose {
+				   fmt.Printf("TagMask: %032b\n", tagmask)
+				}
+
+				for _, name := range snames {
+					tds = append(tds, tapir.Domain{Name: dns.Fqdn(name), Tags: stags, Tagmask: tagmask })
+				}
+				tmsg = tapir.TapirMsg{
+					Added:     tds,
+					Msg:       "it is greater to give than to take",
+					TimeStamp: time.Now(),
+				}
 			} else {
-			   for _, name := range snames {
-			       tds = append(tds, tapir.Domain{ Name: dns.Fqdn(name) })
-			   }
-			   tmsg = tapir.TapirMsg{
-					Removed:	[]tapir.Domain{ td },
-					Msg:		"happiness is a negative diff",
-					TimeStamp:	time.Now(),
-			   	  }
+				for _, name := range snames {
+					tds = append(tds, tapir.Domain{Name: dns.Fqdn(name)})
+				}
+				tmsg = tapir.TapirMsg{
+					Removed:   []tapir.Domain{td},
+					Msg:       "happiness is a negative diff",
+					TimeStamp: time.Now(),
+				}
 			}
 
-//			buf.Reset()
+			//			buf.Reset()
 			outbox <- tapir.MqttPkg{
 				Type: "data",
 				Data: tmsg,

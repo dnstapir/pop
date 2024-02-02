@@ -16,9 +16,9 @@ import (
 )
 
 type TemData struct {
-	Blacklists             []*tapir.WBGlist
-	Whitelists             []*tapir.WBGlist
-	Greylists              []*tapir.WBGlist
+	Blacklists             map[string]*tapir.WBGlist
+	Whitelists             map[string]*tapir.WBGlist
+	Greylists              map[string]*tapir.WBGlist
 	RpzRefreshCh           chan RpzRefresh
 	RpzCommandCh           chan RpzCmdData
 	TapirMqttEngineRunning bool
@@ -31,6 +31,9 @@ type TemData struct {
 
 func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	td := TemData{
+	        Whitelists:	make(map[string]*tapir.WBGlist, 1000),
+	        Blacklists:	make(map[string]*tapir.WBGlist, 1000),
+	        Greylists:	make(map[string]*tapir.WBGlist, 1000),
 		Logger:       lg,
 		RpzRefreshCh: make(chan RpzRefresh, 10),
 		RpzCommandCh: make(chan RpzCmdData, 10),
@@ -129,10 +132,10 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 		   TEMExiter("ParseLocalFile: error parsing file %s: %v", s.Filename, err)
 		}
 
-		s.Names = map[string]string{}
+		s.Names = map[string]tapir.TapirName{}
 		s.Format = "map"
 		for _, name := range names {
-		    s.Names[name] = "x"
+		    s.Names[name] = tapir.TapirName{ Name: name }
 		}
 
 	case "dawg":
@@ -153,11 +156,11 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 
 	switch s.Type {
 	case "whitelist":
-		td.Whitelists = append(td.Whitelists, s)
+		td.Whitelists[s.Name] = s
 	case "blacklist":
-		td.Blacklists = append(td.Blacklists, s)
+		td.Blacklists[s.Name] = s
 	case "greylist":
-		td.Greylists = append(td.Greylists, s)
+		td.Greylists[s.Name] = s
 	}
 
 	return nil
@@ -176,7 +179,7 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
 			sourceid)
 	}
 
-	s.Names = map[string]string{}	// must initialize
+	s.Names = map[string]tapir.TapirName{}	// must initialize
 	s.Format = "map"
 	s.RpzZoneName = dns.Fqdn(zone)
 	s.RpzUpstream = upstream
@@ -190,11 +193,11 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
 	}
 	switch s.Type {
 	case "whitelist":
-		td.Whitelists = append(td.Whitelists, s)
+		td.Whitelists[s.Name] = s
 	case "blacklist":
-		td.Blacklists = append(td.Blacklists, s)
+		td.Blacklists[s.Name] = s
 	case "greylist":
-		td.Greylists = append(td.Greylists, s)
+		td.Greylists[s.Name] = s
 	}
 	return nil
 }
@@ -238,12 +241,12 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 			case "whitelist":
 				if action == "WHITELIST" {
 					zd.RpzData[name] = "x" // drop all other actions
-					s.Names[name] = "x" // drop all other actions
+					s.Names[name] = tapir.TapirName{ Name: name } // drop all other actions
 				}
 			case "blacklist":
 				if action != "WHITELIST" {
 					zd.RpzData[name] = "x" // drop all other actions
-					s.Names[name] = "x" // drop all other actions
+					s.Names[name] = tapir.TapirName{ Name: name } // drop all other actions
 				} else {
 					log.Printf("Warning: blacklist RPZ source %s has whitelisted name: %s",
 							     s.RpzZoneName, name)
@@ -251,7 +254,7 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 			case "greylist":
 				if action != "WHITELIST" {
 					zd.RpzData[name] = action
-					s.Names[name] = action
+					s.Names[name] = tapir.TapirName{ Name: name, Action: action }
 				} else {
 					log.Printf("Warning: greylist RPZ source %s has whitelisted name: %s",
 							     s.RpzZoneName, name)

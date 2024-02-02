@@ -16,6 +16,7 @@ import (
 	"github.com/miekg/dns"
 )
 
+
 type ZoneData struct {
 	ZoneName   string
 	ZoneType   uint8 // 1 = "xfr", 2 = "map", 3 = "slice". An xfr zone only supports xfr related ops
@@ -87,9 +88,9 @@ type DebugResponse struct {
 //	ZoneData   ZoneData
 	OwnerIndex map[string]int
 	RRset      RRset
-	Whitelists []*WBGlist
-	Blacklists []*WBGlist
-	Greylists  []*WBGlist
+	Whitelists map[string]*WBGlist
+	Blacklists map[string]*WBGlist
+	Greylists  map[string]*WBGlist
 	Msg        string
 	Error      bool
 	ErrorMsg   string
@@ -130,24 +131,27 @@ type PingResponse struct {
 
 type MqttPkg struct {
 	Type      string	// text | data, only used on sender side
-	Error     bool   // only used for sub.
-	ErrorMsg  string // only used for sub.
+	Error     bool   	// only used for sub.
+	ErrorMsg  string 	// only used for sub.
 	Msg       string
 	Data      TapirMsg
-	TimeStamp time.Time		// time mqtt packet was sent or received, mgmt by MQTT Engine
+	TimeStamp time.Time	// time mqtt packet was sent or received, mgmt by MQTT Engine
 }
 
 type TapirMsg struct {
-	Type      string // "intelupdate", "reset", ...
+     	SrcName	  string	// must match a defined source
+	MsgType   string	// "intelupdate", "reset", ...
+	ListType  string	// "{white|black|grey}list"
 	Added     []Domain
 	Removed   []Domain
 	Msg       string
-	TimeStamp time.Time		// time encoded in the payload by the sender, not touched by MQTT
+	TimeStamp time.Time	// time encoded in the payload by the sender, not touched by MQTT
 }
 
 type Domain struct {
-	Name string
-	Tags []string // this should become a bit field in the future
+	Name	string
+	Tags	[]string		// this should become a bit field in the future
+	Tagmask	TagMask			// here is the bitfield
 }
 
 type MqttEngine struct {
@@ -191,15 +195,18 @@ type WBGlist struct {
 	Dawgf       dawg.Finder
 
 	// greylist sources needs more complex stuff here:
-	GreyNames   map[string]GreyName
+//	GreyNames   map[string]GreyName
 	RpzZoneName string
 	RpzUpstream string
 	RpzSerial   int
-	Names	    map[string]string	// XXX: same data as in ZoneData.RpzData, should only keep one
+	Names	    map[string]TapirName	// XXX: same data as in ZoneData.RpzData, should only keep one
 }
 
-type GreyName struct {
-	SrcFormat string          // "tapir-feed-v1" | ...
-	Tags   map[string]bool // XXX: extremely wasteful, a bitfield would be better,
+type TapirName struct {
+//	SrcFormat string          // "tapir-feed-v1" | ...
+	Name	  string
+	Tags	  []string // XXX: extremely wasteful, a bitfield would be better,
+	Tagmask	  TagMask  // bitfield
 	//      but don't know how many tags there can be
+	Action	  string  // NXDOMAIN|NODATA|DROP|...
 }

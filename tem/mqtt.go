@@ -5,7 +5,7 @@
 package main
 
 import (
-	//        "fmt"
+	"fmt"
 	"log"
 	//	"os"
 	//	"os/signal"
@@ -25,7 +25,7 @@ func (td *TemData) StartMqttEngine() error {
 	if clientid == "" {
 		TEMExiter("Error starting MQTT Engine: clientid not specified in config")
 	}
-	meng, err := tapir.NewMqttEngine(clientid, false, true) // sub, but no pub
+	meng, err := tapir.NewMqttEngine(clientid, tapir.TapirSub) // sub, but no pub
 	if err != nil {
 		TEMExiter("Error from NewMqttEngine: %v\n", err)
 	}
@@ -39,29 +39,6 @@ func (td *TemData) StartMqttEngine() error {
 	td.TapirMqttEngineRunning = true
 
 	meng.SetupInterruptHandler()
-
-	// 		respch := make(chan tapir.MqttEngineResponse, 2)
-	//
-	// 		ic := make(chan os.Signal, 1)
-	// 		signal.Notify(ic, os.Interrupt, syscall.SIGTERM)
-	// 		go func() {
-	// 			for {
-	// 				select {
-	//
-	// 				case <-ic:
-	// 					fmt.Println("SIGTERM interrupt received, sending stop signal to MQTT Engine")
-	// 					cmnder <- tapir.MqttEngineCmd{Cmd: "stop", Resp: respch}
-	// 					r := <-respch
-	// 					if r.Error {
-	// 					   fmt.Printf("Error: %s\n", r.ErrorMsg)
-	// 					} else {
-	// 					   fmt.Printf("MQTT Engine: %s\n", r.Status)
-	// 					}
-	// 					os.Exit(1)
-	// 				}
-	// 			}
-	// 		}()
-
 	return nil
 }
 
@@ -71,27 +48,60 @@ func (td *TemData) StartMqttEngine() error {
 
 // XXX: This code does not yet reflect this.
 
-func (td *TemData) EvaluateTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
-	td.Logger.Printf("EvaluateTapirUpdate: update contains %d adds and %d removes",
-		len(tpkg.Data.Added), len(tpkg.Data.Removed))
+func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
+	td.Logger.Printf("EvaluateTapirUpdate: update of MQTT source %s contains %d adds and %d removes",
+		tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
 
-	for _, add := range tpkg.Data.Added {
-		if td.Whitelisted(add.Name) {
-			td.Logger.Printf("EvaluateTapirUpdate: name %s is whitelisted, update ignored.", add.Name)
-//			return false, nil // rejected
-		} else {
-			td.Logger.Printf("EvaluateTapirUpdate: name %s is NOT whitelisted, update accepted.", add.Name)
-		}
+	var wbgl *tapir.WBGlist
+	var exists bool
 
-		//     if td.Greylisted(name) {
-		//     	return true, nil
-		//     }
+	switch tpkg.Data.ListType {
+	case "greylist":
+	     wbgl, exists = td.Greylists[tpkg.Data.SrcName]
+	case "whitelist":
+	     wbgl, exists = td.Whitelists[tpkg.Data.SrcName]
+	case "blacklist":
+	     wbgl, exists = td.Blacklists[tpkg.Data.SrcName]
+	default:
+	   td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tpkg.Data.SrcName)
+	   return false, fmt.Errorf("MQTT ListType %s is unknown, update rejected", tpkg.Data.ListType)
+	}
+	if !exists {
+	   td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tpkg.Data.SrcName)
+	   return false, fmt.Errorf("MQTT Source %s is unknown, update rejected", tpkg.Data.SrcName)
 	}
 
-	for _, rem := range tpkg.Data.Removed {
-		td.Logger.Printf("EvaluateTapirUpdate: name %s is removed from tapir greylist", rem.Name)
-//		return true, nil // rejected
+	for _, name := range tpkg.Data.Added {
+	    wbgl.Names[name.Name] = tapir.TapirName{
+					Name:	 name.Name,
+					Tags:	 name.Tags,
+					Tagmask: name.Tagmask,
+				    }
 	}
 
+	for _, name := range tpkg.Data.Removed {
+	    delete(wbgl.Names, name.Name)
+	}
 	return true, nil
 }
+
+// func (td *TemData) UpdateOutboundRpz()
+// 		if td.Whitelisted(add.Name) {
+// 			td.Logger.Printf("EvaluateTapirUpdate: name %s is whitelisted, update ignored.", add.Name)
+// //			return false, nil // rejected
+// 		} else {
+// 			td.Logger.Printf("EvaluateTapirUpdate: name %s is NOT whitelisted, update accepted.", add.Name)
+// 		}
+// 
+// 		//     if td.Greylisted(name) {
+// 		//     	return true, nil
+// 		//     }
+// 	}
+// 
+// 	for _, rem := range tpkg.Data.Removed {
+// 		td.Logger.Printf("EvaluateTapirUpdate: name %s is removed from tapir greylist", rem.Name)
+// //		return true, nil // rejected
+// 	}
+// 
+// 	return true, nil
+// }
