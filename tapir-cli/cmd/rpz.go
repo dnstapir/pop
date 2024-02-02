@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
 	"github.com/spf13/cobra"
 )

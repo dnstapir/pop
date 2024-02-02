@@ -5,9 +5,7 @@
 package main
 
 import (
-//       "log"
-
-	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/dnstapir/tapir"
 )
 
 // XXX: Generatin a complete new RPZ zone for output to downstream

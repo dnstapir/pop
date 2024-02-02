@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/dnstapir/tapir"
 )
 
 var imr string

@@ -16,7 +16,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/spf13/viper"
 
-	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/dnstapir/tapir"
 )
 
 type RpzCmdData struct {

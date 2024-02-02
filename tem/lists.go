@@ -7,7 +7,7 @@ package main
 import (
         "fmt"
 	"github.com/smhanov/dawg"
-	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/dnstapir/tapir"
 )
 
 type xxxWBGlist struct {

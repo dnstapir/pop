@@ -2,10 +2,10 @@ module tem
 
 go 1.21.0
 
-replace github.com/dnstapir/tapir-em/tapir => ../tapir
+replace github.com/dnstapir/tapir => ../tapir
 
 require (
-	github.com/dnstapir/tapir-em/tapir v0.0.0-00010101000000-000000000000
+	github.com/dnstapir/tapir v0.0.0-00010101000000-000000000000
 	github.com/go-playground/validator/v10 v10.9.0
 	github.com/gorilla/mux v1.8.0
 	github.com/mattn/go-sqlite3 v1.14.17

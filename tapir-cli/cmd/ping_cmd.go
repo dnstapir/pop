@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/dnstapir/tapir"
 )
 
 var newapi bool

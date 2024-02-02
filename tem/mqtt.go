@@ -7,11 +7,8 @@ package main
 import (
 	"fmt"
 	"log"
-	//	"os"
-	//	"os/signal"
-	//	"syscall"
 
-	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/dnstapir/tapir"
 	"github.com/spf13/viper"
 )
 

@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
 	"github.com/smhanov/dawg"
 	"github.com/spf13/viper"

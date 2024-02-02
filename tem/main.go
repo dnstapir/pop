@@ -22,7 +22,7 @@ import (
 	"github.com/spf13/viper"
 	_ "unsafe" // to use constants from linker
 
-	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/dnstapir/tapir"
 )
 
 var (

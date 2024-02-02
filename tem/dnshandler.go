@@ -13,7 +13,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/spf13/viper"
 
-	"github.com/dnstapir/tapir-em/tapir"
+	"github.com/dnstapir/tapir"
 )
 
 var RpzZones = make(map[string]*tapir.ZoneData, 5)
