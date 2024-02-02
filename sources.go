@@ -26,7 +26,9 @@ type TemData struct {
 	TapirMqttSubCh         chan tapir.MqttPkg
 	TapirMqttPubCh         chan tapir.MqttPkg // not used ATM
 	Logger                 *log.Logger
-	Output                 *tapir.ZoneData
+	BlacklistedNames       map[string]bool
+	GreylistedNames        map[string]bool
+	RpzOutput              []dns.RR
 }
 
 func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
@@ -81,6 +83,7 @@ func (td *TemData) ParseSources() error {
 			Type:        listtype,
 			SrcFormat:      format,
 			Datasource:  datasource,
+			Names:	     map[string]tapir.TapirName{},
 		}
 
 		td.Logger.Printf("---> parsing source %s (datasource %s)", sourceid, datasource)
@@ -95,6 +98,8 @@ func (td *TemData) ParseSources() error {
 					TEMExiter("Error starting MQTT Engine: %v", err)
 				}
 			}
+			newsource.Format = "map" // for now
+			td.Greylists[newsource.Name] = &newsource
 			td.Logger.Printf("*** MQTT sources are only managed via RefreshEngine.")
 		case "file":
 			err = td.ParseLocalFile(sourceid, &newsource)
@@ -148,6 +153,7 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 			TEMExiter("Error from dawg.Load(%s): %v", s.Filename, err)
 		}
 		td.Logger.Printf("ParseLocalFile: DAWG loaded")
+		s.Format = "dawg"
 		s.Dawgf = df
 
 	default:
@@ -264,3 +270,39 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 		return true
 	}
 }
+
+// Generate the RPZ output based on the currently loaded sources.
+// The output is a tapir.ZoneData, but with only the RRs (i.e. a []dns.RR) populated.
+// Output should consist of:
+// 1. Walk all blacklists:
+//    a) remove any whitelisted names
+//    b) rest goes straight into output
+// 2. Walk all greylists:
+//    a) collect complete grey data on each name
+//    b) remove any whitelisted name
+//    c) evalutate the grey data to make a decision on inclusion or not
+
+// func (td *TemData) xxxGenerateRpzOutput() {
+// 
+//      var res = make(map[string]bool, 10000)
+//      
+//      for bname, blist := range td.Blacklists {
+// 		switch blist.Format {
+// 		case "dawg":
+// 		     td.Logger.Printf("Cannot list DAWG lists. Ignoring blacklist %s.", bname)
+// 		case "map":
+// 		     for k, _ := range blist.Names {
+// 		     	 td.Logger.Printf("Adding name %s from blacklist %s to tentative output.", k, bname)
+// 			 if td.Whitelisted(k) {
+// 			    td.Logger.Printf("Blacklisted name %s is also whitelisted. Dropped from output.", k)
+// 			 } else {
+// 			    td.Logger.Printf("Blacklisted name %s is not whitelisted. Added to output.", k)
+// 			   res[k] = true
+// 			 }
+// 		     }
+// 		}
+// 	}
+// 	td.BlacklistedNames = res
+// 	td.Logger.Printf("Complete set of blacklisted names: %v", res)
+// 	
+// }

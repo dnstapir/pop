@@ -170,6 +170,8 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 }
 
 func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
+	td := conf.TemData
+
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		resp := tapir.DebugResponse{
@@ -225,14 +227,20 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "colourlists":
 			log.Printf("TEM debug white/black/grey lists")
-			td := conf.TemData
 			resp.Whitelists = td.Whitelists
 			for _, wl := range resp.Whitelists {
 			    wl.Dawgf = nil
 			}
 			resp.Blacklists = td.Blacklists
 			resp.Greylists = td.Greylists
-			
+
+		case "gen-output":
+			log.Printf("TEM debug generate RPZ output")
+			td.GenerateRpzOutput()
+			resp.BlacklistedNames = td.BlacklistedNames
+			resp.GreylistedNames = td.GreylistedNames
+			resp.RpzOutput = td.RpzOutput
+
 		default:
 			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", dp.Command)
 			resp.Error = true

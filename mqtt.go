@@ -40,13 +40,16 @@ func (td *TemData) StartMqttEngine() error {
 }
 
 // Evaluating an update consists of two steps:
-// 1. Add the data to the correct list.
-// 2. Check the name against complete current data to decide whether it should change the output
-
-// XXX: This code does not yet reflect this.
+// 1. Iterate through the update, adding and/or removing the data in the update to the correct list(s). 
+//
+// 2. Iterate through the update a second time:
+//    - fetch the current output for each name
+//    - recompute the output for that name, given new data
+//    - if different, add the diff (DEL+ADD) to a growing "IXFR" describing the consequences of the update.
+// 
 
 func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
-	td.Logger.Printf("EvaluateTapirUpdate: update of MQTT source %s contains %d adds and %d removes",
+	td.Logger.Printf("ProcessTapirUpdate: update of MQTT source %s contains %d adds and %d removes",
 		tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
 
 	var wbgl *tapir.WBGlist

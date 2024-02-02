@@ -6,44 +6,20 @@ package main
 
 import (
         "fmt"
-	"github.com/smhanov/dawg"
-	"github.com/dnstapir/tapir"
+//	"github.com/smhanov/dawg"
+//	"github.com/dnstapir/tapir"
 )
-
-type xxxWBGlist struct {
-	Name        string
-	Description string
-	Type        string // whitelist | blacklist | greylist
-	Mutable     bool   // true = is possible to update. Only local text file sources are mutable
-	SrcFormat   string // Format of external source: dawg | rpz | tapir-mqtt-v1 | ...
-	Format	    string // Format of internal storage: dawg | map | slice | trie | rbtree | ...
-	Datasource  string // file | xfr | mqtt | https | api | ...
-	Filename    string
-	Dawgf       dawg.Finder
-
-	// greylist sources needs more complex stuff here:
-//	GreyNames   map[string]tapir.GreyName
-	RpzZoneName string
-	RpzUpstream string
-	RpzSerial   int
-	Names	    map[string]tapir.TapirName	// XXX: same data as in ZoneData.RpzData, should only keep one
-}
-
-type xxxGreyName struct {
-	SrcFormat string          // "tapir-feed-v1" | ...
-	Tags   map[string]bool // XXX: extremely wasteful, a bitfield would be better,
-	//      but don't know how many tags there can be
-}
 
 func (td *TemData) Whitelisted(name string) bool {
 	for _, list := range td.Whitelists {
-		td.Logger.Printf("Whitelisted: checking %s in whitelist %s", name, list.Name)
 		switch list.Format {
 		case "dawg":
+		     td.Logger.Printf("Whitelisted: DAWG: checking %s in whitelist %s", name, list.Name)
 		     if list.Dawgf.IndexOf(name) != -1 {
 			return true
 		     }
 		case "map":
+		     td.Logger.Printf("Whitelisted: MAP: checking %s in whitelist %s", name, list.Name)
 		     if _, exists := list.Names[name]; exists {
 		     	return true
 		     }
