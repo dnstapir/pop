@@ -201,7 +201,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		switch dp.Command {
 		case "rrset":
 			log.Printf("TEM debug rrset inquiry")
-			if zd, ok := RpzZones[dp.Zone]; ok {
+			if zd, ok := td.RpzZones[dp.Zone]; ok {
 				if owner := &zd.Owners[zd.OwnerIndex[dp.Qname]]; owner != nil {
 					if rrset, ok := owner.RRtypes[dp.Qtype]; ok {
 						resp.RRset = rrset
@@ -214,7 +214,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "zonedata":
 			log.Printf("TEM debug zone inquiry")
-			if zd, ok := RpzZones[dp.Zone]; ok {
+			if zd, ok := td.RpzZones[dp.Zone]; ok {
 //			       resp.ZoneData = *zd
 //			       resp.ZoneData.RRKeepFunc = nil
 //			       resp.ZoneData.RRParseFunc = nil
@@ -227,16 +227,36 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "colourlists":
 			log.Printf("TEM debug white/black/grey lists")
-			resp.Whitelists = td.Whitelists
-			for _, wl := range resp.Whitelists {
-			    wl.Dawgf = nil
+// 			resp.Whitelists = td.Whitelists
+// 			for _, wl := range resp.Whitelists {
+// 			    wl.Dawgf = nil
+// 			}
+// 			resp.Blacklists = td.Blacklists
+// 			resp.Greylists = td.Greylists
+			resp.Lists = map[string]map[string]*tapir.WBGlist{}
+			for t, l := range td.Lists {
+			    resp.Lists[t] = map[string]*tapir.WBGlist{}
+			    for n, v := range l {
+			    	resp.Lists[t][n] = &tapir.WBGlist{
+							Name:		v.Name,
+							Description:	td.Lists[t][n].Description,
+							Type:		td.Lists[t][n].Type,
+							Format:		td.Lists[t][n].Format,
+							Names:		td.Lists[t][n].Names,
+							Filename:	td.Lists[t][n].Filename,
+							RpzZoneName:	td.Lists[t][n].RpzZoneName,
+							RpzSerial:	td.Lists[t][n].RpzSerial,
+						   }
+			    }
 			}
-			resp.Blacklists = td.Blacklists
-			resp.Greylists = td.Greylists
 
 		case "gen-output":
 			log.Printf("TEM debug generate RPZ output")
-			td.GenerateRpzOutput()
+			err = td.GenerateRpzOutput()
+			if err != nil {
+			   resp.Error = true
+			   resp.ErrorMsg = err.Error()
+			}
 			resp.BlacklistedNames = td.BlacklistedNames
 			resp.GreylistedNames = td.GreylistedNames
 			resp.RpzOutput = td.RpzOutput

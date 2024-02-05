@@ -16,9 +16,10 @@ import (
 )
 
 type TemData struct {
-	Blacklists             map[string]*tapir.WBGlist
-	Whitelists             map[string]*tapir.WBGlist
-	Greylists              map[string]*tapir.WBGlist
+        Lists		       map[string]map[string]*tapir.WBGlist
+//	Blacklists             map[string]*tapir.WBGlist
+//	Whitelists             map[string]*tapir.WBGlist
+//	Greylists              map[string]*tapir.WBGlist
 	RpzRefreshCh           chan RpzRefresh
 	RpzCommandCh           chan RpzCmdData
 	TapirMqttEngineRunning bool
@@ -27,19 +28,36 @@ type TemData struct {
 	TapirMqttPubCh         chan tapir.MqttPkg // not used ATM
 	Logger                 *log.Logger
 	BlacklistedNames       map[string]bool
-	GreylistedNames        map[string]bool
+	GreylistedNames        map[string]*tapir.TapirName
+	RpzZone		       *tapir.ZoneData
 	RpzOutput              []dns.RR
+	RpzZones	       map[string]*tapir.ZoneData
 }
+
+type WBGC map[string]*tapir.WBGlist
 
 func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	td := TemData{
-	        Whitelists:	make(map[string]*tapir.WBGlist, 1000),
-	        Blacklists:	make(map[string]*tapir.WBGlist, 1000),
-	        Greylists:	make(map[string]*tapir.WBGlist, 1000),
-		Logger:       lg,
-		RpzRefreshCh: make(chan RpzRefresh, 10),
-		RpzCommandCh: make(chan RpzCmdData, 10),
+	        Lists:		map[string]map[string]*tapir.WBGlist{},
+//	        Whitelists:	make(map[string]*tapir.WBGlist, 1000),
+//	        Blacklists:	make(map[string]*tapir.WBGlist, 1000),
+//	        Greylists:	make(map[string]*tapir.WBGlist, 1000),
+		Logger:		lg,
+		RpzRefreshCh:	make(chan RpzRefresh, 10),
+		RpzCommandCh:	make(chan RpzCmdData, 10),
 	}
+
+	td.Lists["whitelist"] = make(map[string]*tapir.WBGlist, 1000)
+	td.Lists["greylist"] = make(map[string]*tapir.WBGlist, 1000)
+	td.Lists["blacklist"] = make(map[string]*tapir.WBGlist, 1000)
+
+	td.RpzZones = map[string]*tapir.ZoneData{}
+
+	err := td.BootstrapRpzOutput()
+	if err != nil {
+	   td.Logger.Printf("Error from BootstrapRpzOutput(): %v", err)
+	}
+
 	// Note: We can not parse data sources here, as RefreshEngine has not yet started.
 	conf.TemData = &td
 	return &td, nil
@@ -48,6 +66,27 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 func (td *TemData) ParseSources() error {
 	sources := viper.GetStringSlice("sources.active")
 	log.Printf("Defined policy sources: %v", sources)
+
+	td.Lists["whitelist"]["white_catchall"] = 
+		&tapir.WBGlist{
+			Name:        "white_catchall",
+			Description: "Whitelist consisting of white names found in black- or greylist sources",
+			Type:        "whitelist",
+			SrcFormat:   "none",
+			Format:	     "map",
+			Datasource:  "Data misplaced in other sources",
+			Names:	     map[string]tapir.TapirName{},
+		}
+	td.Lists["greylist"]["grey_catchall"] =
+		&tapir.WBGlist{
+			Name:        "grey_catchall",
+			Description: "Greylist consisting of grey names found in whitelist sources",
+			Type:        "greylist",
+			SrcFormat:   "none",
+			Format:      "map",
+			Datasource:  "Data misplaced in other sources",
+			Names:	     map[string]tapir.TapirName{},
+		}
 
 	for _, sourceid := range sources {
 		listtype := viper.GetString(fmt.Sprintf("sources.%s.type", sourceid))
@@ -99,7 +138,8 @@ func (td *TemData) ParseSources() error {
 				}
 			}
 			newsource.Format = "map" // for now
-			td.Greylists[newsource.Name] = &newsource
+			// td.Greylists[newsource.Name] = &newsource
+			td.Lists["greylist"][newsource.Name] = &newsource
 			td.Logger.Printf("*** MQTT sources are only managed via RefreshEngine.")
 		case "file":
 			err = td.ParseLocalFile(sourceid, &newsource)
@@ -160,14 +200,15 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 		TEMExiter("ParseLocalFile: SrcFormat \"%s\" is unknown.", s.SrcFormat)
 	}
 
-	switch s.Type {
-	case "whitelist":
-		td.Whitelists[s.Name] = s
-	case "blacklist":
-		td.Blacklists[s.Name] = s
-	case "greylist":
-		td.Greylists[s.Name] = s
-	}
+//	switch s.Type {
+// 	case "whitelist":
+// 		td.Whitelists[s.Name] = s
+// 	case "blacklist":
+// 		td.Blacklists[s.Name] = s
+// 	case "greylist":
+// 		td.Greylists[s.Name] = s
+// 	}
+	td.Lists[s.Type][s.Name] = s
 
 	return nil
 }
@@ -195,16 +236,18 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
 		Upstream:    upstream,
 		RRKeepFunc:  RpzKeepFunc,
 		RRParseFunc: td.RpzParseFuncFactory(s),
-		ZoneType:    3,
+		ZoneType:    tapir.RpzZone,
 	}
-	switch s.Type {
-	case "whitelist":
-		td.Whitelists[s.Name] = s
-	case "blacklist":
-		td.Blacklists[s.Name] = s
-	case "greylist":
-		td.Greylists[s.Name] = s
-	}
+// 	switch s.Type {
+// 	case "whitelist":
+// 		td.Whitelists[s.Name] = s
+// 	case "blacklist":
+// 		td.Blacklists[s.Name] = s
+// 	case "greylist":
+// 		td.Greylists[s.Name] = s
+// 	}
+	td.Lists[s.Type][s.Name] = s
+
 	return nil
 }
 
@@ -216,54 +259,80 @@ func RpzKeepFunc(rrtype uint16) bool {
 	return false
 }
 
+// Parse the CNAME (in the shape of a dns.RR) that is found in the RPZ and sort the data into the
+// appropriate list in TemData. Note that there are two special cases:
+// 1. If a "whitelist" RPZ source has a rule with an action other than "rpz-passthru." then that rule doesn't
+//    really belong in a "whitelist" source. So we take that rule an put it in the grey_catchall bucket instead.
+// 2. If a "{grey|black}list" RPZ source has a rule with an "rpz-passthru." (i.e. whitelist) action then that
+//    rule doesn't really belong in a "{grey|black}list" source. So we take that rule an put it in the
+//    white_catchall bucket instead.
+//
 func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.ZoneData) bool {
 	return func(rr *dns.RR, zd *tapir.ZoneData) bool {
-		var action string
+		var action tapir.Action
 		name := strings.TrimSuffix((*rr).Header().Name, zd.ZoneName)
 		switch (*rr).Header().Rrtype {
 		case dns.TypeSOA, dns.TypeNS:
-			log.Printf("ParseFunc: zone %s: looking at %s", zd.ZoneName,
+		     if tapir.GlobalCF.Debug {
+			td.Logger.Printf("ParseFunc: zone %s: looking at %s", zd.ZoneName,
 					       dns.TypeToString[(*rr).Header().Rrtype])
+		     }
 			return true
 		case dns.TypeCNAME:
 			switch (*rr).(*dns.CNAME).Target {
 			case ".":
-				action = "NXDOMAIN"
+//				action = "NXDOMAIN"
+				action = tapir.NXDOMAIN
 			case "*.":
-				action = "NODATA"
-			case "rpz-passthru.":
-				action = "WHITELIST"
-				if s.Type != "whitelist" {
-					log.Printf("Name %s is whitelisted, but this is not a whitelist RPZ, adding to local", (*rr).Header().Name)
-				}
+//				action = "NODATA"
+				action = tapir.NODATA
 			case "rpz-drop.":
-				action = "DROP"
+//				action = "DROP"
+				action = tapir.DROP
+			case "rpz-passthru.":
+				action = tapir.WHITELIST
+//				if s.Type != "whitelist" {
+// 					td.Logger.Printf("Name %s is whitelisted, but this is not a whitelist RPZ, adding to local", (*rr).Header().Name)
+// 					td.Lists["whitelist"]["white_catchall"].Names[name] = tapir.TapirName{ Name: name }
+// 				} else {
+// 					s.Names[name] = tapir.TapirName{ Name: name } // drop all other actions
+// 				}
+// 				return true
 			default:
-				action = fmt.Sprintf("UNKNOWN target: \"%s\"", (*rr).(*dns.CNAME).Target)
+				td.Logger.Printf("UNKNOWN RPZ action: \"%s\"", (*rr).(*dns.CNAME).Target)
+				action = tapir.UnknownAction
 			}
-			log.Printf("ParseFunc: zone %s: name %s action: %s", zd.ZoneName,
-					       (*rr).Header().Name, action)
+			if tapir.GlobalCF.Debug {
+			   td.Logger.Printf("ParseFunc: zone %s: name %s action: %s", zd.ZoneName,
+					       name, action)
+			}
 			switch s.Type {
 			case "whitelist":
-				if action == "WHITELIST" {
-					zd.RpzData[name] = "x" // drop all other actions
+				if action == tapir.WHITELIST {
 					s.Names[name] = tapir.TapirName{ Name: name } // drop all other actions
+				} else {
+					td.Logger.Printf("Warning: whitelist RPZ source %s has blacklisted name: %s",
+							     s.RpzZoneName, name)
+					td.Lists["greylist"]["grey_catchall"].Names[name] =
+								tapir.TapirName{ Name: 	 name,
+										 Action: action,
+								} // drop all other actions
 				}
 			case "blacklist":
-				if action != "WHITELIST" {
-					zd.RpzData[name] = "x" // drop all other actions
-					s.Names[name] = tapir.TapirName{ Name: name } // drop all other actions
-				} else {
-					log.Printf("Warning: blacklist RPZ source %s has whitelisted name: %s",
-							     s.RpzZoneName, name)
-				}
-			case "greylist":
-				if action != "WHITELIST" {
-					zd.RpzData[name] = action
+				if action != tapir.WHITELIST {
 					s.Names[name] = tapir.TapirName{ Name: name, Action: action }
 				} else {
-					log.Printf("Warning: greylist RPZ source %s has whitelisted name: %s",
+					td.Logger.Printf("Warning: blacklist RPZ source %s has whitelisted name: %s",
 							     s.RpzZoneName, name)
+					td.Lists["whitelist"]["white_catchall"].Names[name] = tapir.TapirName{ Name: name }
+				}
+			case "greylist":
+				if action != tapir.WHITELIST {
+					s.Names[name] = tapir.TapirName{ Name: name, Action: action }
+				} else {
+					td.Logger.Printf("Warning: greylist RPZ source %s has whitelisted name: %s",
+							     s.RpzZoneName, name)
+					td.Lists["whitelist"]["white_catchall"].Names[name] = tapir.TapirName{ Name: name }
 				}
 			}
 		}
