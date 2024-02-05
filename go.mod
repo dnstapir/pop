@@ -11,7 +11,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.17
 	github.com/miekg/dns v1.1.57
 	github.com/smhanov/dawg v0.0.0-20220118194912-66057bdbf2e3
-	github.com/spf13/viper v1.18.1
+	github.com/spf13/viper v1.18.2
 )
 
 require (
