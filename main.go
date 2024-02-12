@@ -99,7 +99,7 @@ func main() {
 	var conf Config
 	var cfgFileUsed string
 
-	cfgFile := "/etc/dnstapir/tem.yaml"
+	var cfgFile string
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
@@ -121,6 +121,13 @@ func main() {
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
 		TEMExiter("Could not load config %s: Error: %v", tapir.TemSourcesCfgFile, err)
+	}
+	viper.SetConfigFile(tapir.TemPolicyCfgFile)
+	if err := viper.MergeInConfig(); err == nil {
+		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		cfgFileUsed = viper.ConfigFileUsed()
+	} else {
+		TEMExiter("Could not load config %s: Error: %v", tapir.TemPolicyCfgFile, err)
 	}
 
 

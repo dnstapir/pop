@@ -45,20 +45,21 @@ import (
 //    a) iterate through the list generating dns.RR and put them in a []dns.RR
 //    b) add a header SOA+NS
 
-func (td *TemData) GenerateRpzOutput() error {
-	rpzzone := viper.GetString("output.rpz.zonename")
+func (td *TemData) GenerateRpzAxfrData() error {
 	var black = make(map[string]bool, 10000)
 	var grey = make(map[string]*tapir.TapirName, 10000)
 
 	//    for bname, blist := range td.Blacklists {
 	for bname, blist := range td.Lists["blacklist"] {
-		td.Logger.Printf("---> GenerateRpzOutput: working on blacklist %s", bname)
+		td.Logger.Printf("---> GenerateRpzOutput: working on blacklist %s (%d names)", bname, len(blist.Names))
 		switch blist.Format {
 		case "dawg":
 			td.Logger.Printf("Cannot list DAWG lists. Ignoring blacklist %s.", bname)
 		case "map":
 			for k, _ := range blist.Names {
+	       if tapir.GlobalCF.Debug {
 				td.Logger.Printf("Adding name %s from blacklist %s to tentative output.", k, bname)
+				}
 				if td.Whitelisted(k) {
 					td.Logger.Printf("Blacklisted name %s is also whitelisted. Dropped from output.", k)
 				} else {
@@ -73,7 +74,8 @@ func (td *TemData) GenerateRpzOutput() error {
 
 	//     for gname, glist := range td.Greylists {
 	for gname, glist := range td.Lists["greylist"] {
-		td.Logger.Printf("---> GenerateRpzOutput: working on greylist %s", gname)
+		td.Logger.Printf("---> GenerateRpzOutput: working on greylist %s (%d names)",
+				       gname, len(glist.Names))
 		switch glist.Format {
 		case "map":
 			for k, v := range glist.Names {
@@ -101,18 +103,26 @@ func (td *TemData) GenerateRpzOutput() error {
 	}
 	td.GreylistedNames = grey
 
-	td.RpzOutput = []dns.RR{}
+	newaxfrdata := []*tapir.RpzName{}
+	td.Rpz.RpzMap = map[string]*tapir.RpzName{}
 	for n, _ := range td.BlacklistedNames {
 		cname := new(dns.CNAME)
 		cname.Hdr = dns.RR_Header{
-			Name:   n + rpzzone,
+			Name:   n + td.Rpz.ZoneName,
 			Rrtype: dns.TypeCNAME,
 			Class:  dns.ClassINET,
 			Ttl:    3600,
 		}
-		cname.Target = "." // NXDOMAIN
+		cname.Target = tapir.ActionToCNAMETarget[td.Policy.BlacklistAction]
+		rr := dns.RR(cname)
 
-		td.RpzOutput = append(td.RpzOutput, cname)
+		rpzn := tapir.RpzName{
+				Name:	n,
+				RR:	&rr,
+				Action:	td.Policy.BlacklistAction,
+		     	}
+		newaxfrdata = append(newaxfrdata, &rpzn)
+		td.Rpz.RpzMap[n + td.Rpz.ZoneName] = &rpzn
 	}
 
 	for n, v := range td.GreylistedNames {
@@ -121,41 +131,29 @@ func (td *TemData) GenerateRpzOutput() error {
 		if rpzaction != "" {
 			cname := new(dns.CNAME)
 			cname.Hdr = dns.RR_Header{
-				Name:     n + rpzzone,
+				Name:     n + td.Rpz.ZoneName,
 				Rrtype:   dns.TypeCNAME,
 				Class:    dns.ClassINET,
 				Ttl:      3600,
 				Rdlength: 1,
 			}
-			cname.Target = rpzaction
-			td.RpzOutput = append(td.RpzOutput, cname)
+			cname.Target = rpzaction	// XXX: wrong
+			rr := dns.RR(cname)
+			
+			rpzn := tapir.RpzName{
+					Name:	n,
+					RR:	&rr,
+					Action:	td.Policy.BlacklistAction,
+		     		}
+			newaxfrdata = append(newaxfrdata, &rpzn)
+			td.Rpz.RpzMap[n + td.Rpz.ZoneName] = &rpzn
 		}
 	}
-	td.RpzZones[viper.GetString("output.rpz.zonename")].RRs = td.RpzOutput
-	td.Logger.Printf("GenerateRpzOutput: put %d RRs in td.RpzZones[%s].RRs",
-		len(td.RpzOutput), viper.GetString("output.rpz.zonename"))
+//	td.RpzZones[viper.GetString("output.rpz.zonename")].RRs = td.RpzOutput
+	td.Rpz.Axfr.Data = td.Rpz.RpzMap
+	td.Logger.Printf("GenerateRpzAxfrData: put %d RRs in td.RpzZones[%s].RRs",
+		len(td.Rpz.Axfr.Data), td.Rpz.ZoneName)
 	return nil
-}
-
-// Decision to block a greylisted name:
-// 1. More than N tags present
-// 2. Name is present in more than M sources
-// 3. Name 
-
-func ApplyGreyPolicy(name string, v *tapir.TapirName) string {
-	var rpzaction string
-	if v.HasAction(tapir.NXDOMAIN) {
-		rpzaction = "."
-	} else if v.HasAction(tapir.NODATA) {
-		rpzaction = "*."
-	} else if v.HasAction(tapir.DROP) {
-		rpzaction = "rpz-drop."
-	} else if v.Tagmask != 0 {
-		log.Printf("there are tags")
-		rpzaction = "rpz-drop."
-	}
-
-	return rpzaction
 }
 
 func (td *TemData) BootstrapRpzOutput() error {
@@ -189,7 +187,100 @@ ns2.${ZONE}	IN	AAAA	::1`
 	}
 	zd.IncomingSerial = serial
 
-	td.RpzZones[rpzzone] = &zd // XXX: This is not thread safe
-	td.RpzZone = &zd
+	td.Rpz.Axfr.ZoneData = &zd // XXX: This is not thread safe
+//	td.RpzZone = &zd
 	return nil
 }
+
+// Decision to block a greylisted name:
+// 1. More than N tags present
+// 2. Name is present in more than M sources
+// 3. Name 
+
+func ApplyGreyPolicy(name string, v *tapir.TapirName) string {
+	var rpzaction string
+	if v.HasAction(tapir.NXDOMAIN) {
+		rpzaction = "."
+	} else if v.HasAction(tapir.NODATA) {
+		rpzaction = "*."
+	} else if v.HasAction(tapir.DROP) {
+		rpzaction = "rpz-drop."
+	} else if v.Tagmask != 0 {
+		log.Printf("there are tags")
+		rpzaction = "rpz-drop."
+	}
+
+	return rpzaction
+}
+
+func (td *TemData) ComputeRpzPolicy(name string) tapir.Action {
+     if td.Whitelisted(name) {
+     	return td.Policy.WhitelistAction
+     } else if td.Blacklisted(name) {
+        return td.Policy.BlacklistAction
+     } else if td.Greylisted(name) {
+        return td.Policy.BlacklistAction	// This is not complete, only a placeholder for now.
+     }
+     return tapir.WHITELIST	
+}
+
+// Generate the RPZ representation of the names in the TapirMsg combined with the currently loaded sources.
+// The output is a []dns.RR with the additions and removals, but without the IXFR SOA serial magic.
+// Algorithm:
+// 1. For each name that is removed in the update:
+//    a) is the name NOT present in current RPZ?
+//          => do nothing
+//    b) if name is present in current RPZ:
+//          - do a policy evaluation of the name.
+//          - is the name present in current RPZ with a different policy/action:
+//            => DELETE current + ADD new
+//          - is the name present in current RPZ with same poicy/action?
+//            => do nothing
+//
+// 2. For each name that is added in the update:
+//    a) do a policy evaluation of the name. the result is either "has RPZ policy or does not have RPZ policy"
+//    b) if "no RPZ":
+//          - is the name present in current output?
+//              => DELETE current
+//    b) if "RPZ":
+//          - is the name NOT present in current RPZ?
+//              => ADD new
+//          - is the name present in current RPZ with different policy/action:
+//              => DELETE current + ADD new
+//          - is the name present in current RPZ with same policy/action:
+//              => do nothing
+
+
+
+func (td *TemData) GenerateDiffRpzOutput(data *tapir.TapirMsg) error {
+
+     var removedata, adddata []*tapir.RpzName
+     for _, tn := range data.Removed {
+     	 if cur, exist := td.Rpz.RpzMap[tn.Name]; exist {
+	    newaction := td.ComputeRpzPolicy(tn.Name)
+	    oldaction := cur.Action
+	    if newaction != oldaction {
+	       removedata = append(removedata, cur)
+
+		cname := new(dns.CNAME)
+		cname.Hdr = dns.RR_Header{
+			Name:     tn.Name + td.Rpz.ZoneName,
+			Rrtype:   dns.TypeCNAME,
+			Class:    dns.ClassINET,
+			Ttl:      3600,
+			Rdlength: 1,
+		}
+		cname.Target = tapir.ActionToCNAMETarget[newaction]
+		rr := dns.RR(cname)
+
+	       adddata = append(adddata, &tapir.RpzName{
+						Name: tn.Name,
+						RR:   &rr,
+						Action:	newaction,
+	       	       	 		 })
+	    }
+	 }
+     }
+     return nil     
+}
+

@@ -15,6 +15,7 @@ require (
 )
 
 require (
+	github.com/Pashugan/trie v0.0.0-20230121015024-96f8fcbb2af1 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 // indirect
 	github.com/eclipse/paho.golang v0.12.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect

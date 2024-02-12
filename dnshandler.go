@@ -78,12 +78,6 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 
 	return func(w dns.ResponseWriter, r *dns.Msg) {
 		qname := r.Question[0].Name
-		var dnssec_ok bool
-		opt := r.IsEdns0()
-		if opt != nil {
-			dnssec_ok = opt.Do()
-		}
-		log.Printf("DNSSEC OK: %v", dnssec_ok)
 
 		switch r.Opcode {
 		case dns.OpcodeNotify:
@@ -94,18 +88,12 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 			m.SetReply(r)
 			w.WriteMsg(m)
 
-			if _, ok := td.RpzZones[qname]; ok {
+			if _, ok := td.RpzSources[qname]; ok {
 				log.Printf("Received Notify for known zone %s. Fetching from upstream", qname)
 				zonech <- RpzRefresh{
 					Name:     qname, // send zone name into RefreshEngine
-					ZoneType: td.RpzZones[qname].ZoneType,
+					ZoneType: td.RpzSources[qname].ZoneType,
 				}
-//			} else {
-// 				log.Printf("Received Notify for unknown zone %s. Fetching from upstream", qname)
-// 				zonech <- RpzRefresh{
-// 					Name:     qname,
-// 					ZoneType: 1, // unknown zones are stored as xfr zones
-// 				}
 			}
 			fmt.Printf("Notify message: %v\n", m.String())
 
@@ -114,14 +102,14 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 		case dns.OpcodeQuery:
 			qtype := r.Question[0].Qtype
 			log.Printf("Zone %s %s request from %s", qname, dns.TypeToString[qtype], w.RemoteAddr())
-			if zd, ok := td.RpzZones[qname]; ok {
+			if zd, ok := td.RpzSources[qname]; ok {
 				// The qname is equal to the name of a zone we have
 
-				ApexResponder(w, r, zd, qname, qtype, dnssec_ok)
+				ApexResponder(w, r, zd, qname, qtype)
 			} else {
 				log.Printf("DnsHandler: Qname is '%s', which is not a known zone.", qname)
 				known_zones := []string{}
-				for z, _ := range td.RpzZones {
+				for z, _ := range td.RpzSources {
 					known_zones = append(known_zones, z)
 				}
 				log.Printf("DnsHandler: Known zones are: %v", known_zones)
@@ -143,7 +131,7 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 					return // didn't find any zone for that qname or found zone, but it is an XFR zone only
 				}
 				log.Printf("Found matching full zone for qname %s: %s", qname, zd.ZoneName)
-				QueryResponder(w, r, zd, qname, qtype, dnssec_ok)
+				QueryResponder(w, r, zd, qname, qtype)
 				return
 			}
 			return
@@ -155,7 +143,7 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 	}
 }
 
-func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname string, qtype uint16, dnssec_ok bool) error {
+func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname string, qtype uint16) error {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.MsgHdr.Authoritative = true
@@ -180,24 +168,8 @@ func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname s
 		// 			   zd.ZoneName, apex.RRtypes[dns.TypeSOA])
 		m.Answer = append(m.Answer, dns.RR(&zd.SOA))
 		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRs...)
-		glue = *zd.FindGlue(apex.RRtypes[dns.TypeNS], dnssec_ok)
+		glue = *zd.FindGlue(apex.RRtypes[dns.TypeNS])
 		m.Extra = append(m.Extra, glue.RRs...)
-// 	case dns.TypeMX, dns.TypeTLSA, dns.TypeSRV, dns.TypeA, dns.TypeAAAA,
-// 				dns.TypeNS, dns.TypeTXT, dns.TypeZONEMD,
-// 				dns.TypeNSEC, dns.TypeNSEC3, dns.TypeNSEC3PARAM, dns.TypeRRSIG, 
-// 				dns.TypeDNSKEY, dns.TypeCSYNC, dns.TypeCDS, dns.TypeCDNSKEY:
-// 				if rrset, ok := apex.RRtypes[qtype]; ok {
-// 					if len(rrset.RRs) > 0 {
-// 						m.Answer = append(m.Answer, rrset.RRs...)
-// 						m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRs...)
-// 						glue = *zd.FindGlue(apex.RRtypes[dns.TypeNS], dnssec_ok)
-// 						m.Extra = append(m.Extra, glue.RRs...)
-// 					} else {
-// 						m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
-// 					}
-// 				} else {
-// 					m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
-// 				}
 
 	default:
 		// every apex query we don't want to deal with
@@ -215,7 +187,7 @@ func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname s
 // 4. If no CNAME match, check for wild card match
 // 5. Give up.
 
-func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname string, qtype uint16, dnssec_ok bool) error {
+func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname string, qtype uint16) error {
 
 	m := new(dns.Msg)
 	m.SetReply(r)
@@ -234,12 +206,6 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 		// return NXDOMAIN
 		m.MsgHdr.Rcode = dns.RcodeNameError
 		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
-//		if dnssec_ok {
-//			m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRSIGs...)
-			// XXX: Here we need to also add the proof of non-existence via NSEC+RRSIG(NSEC)
-			// or NSEC3+RRSIG(NSEC3)... at some point
-			// covering NSEC+RRSIG(that NSEC) + // apex NSEC + RRSIG(apex NSEC)
-//		}
 		w.WriteMsg(m)
 		return
 	}
@@ -261,11 +227,6 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 			// return NXDOMAIN
 			m.MsgHdr.Rcode = dns.RcodeNameError
 			m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
-//			if dnssec_ok {
-//				m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRSIGs...)
-				// XXX: Here we need to also add the proof of non-existence via NSEC+RRSIG(NSEC) or NSEC3+RRSIG(NSEC3)... at some point
-				// covering NSEC+RRSIG(that NSEC) + // apex NSEC + RRSIG(apex NSEC)
-//			}
 			w.WriteMsg(m)
 			return nil
 		}
@@ -281,11 +242,6 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 	if len(owner.RRtypes) == 0 {
 		m.MsgHdr.Rcode = dns.RcodeNameError
 		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
-//		if dnssec_ok {
-//			m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRSIGs...)
-			// XXX: Here we need to also add the proof of non-existence via NSEC+RRSIG(NSEC) or NSEC3+RRSIG(NSEC3)... at some point
-			// covering NSEC+RRSIG(that NSEC) + // apex NSEC + RRSIG(apex NSEC)
-//		}
 		w.WriteMsg(m)
 		return nil
 	}
@@ -299,23 +255,14 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 					// XXX: NSD will not even load a zone with multiple CNAMEs. Better to check during load...
 					log.Printf("QueryResponder: Zone %s: Illegal content: multiple CNAME RRs: %v", zd.ZoneName, v)
 				}
-				// m.Answer = append(m.Answer, FilterRRSIG(v, dnssec_ok)...)
 				m.Answer = append(m.Answer, v.RRs...)
-//				if dnssec_ok {
-//					m.Answer = append(m.Answer, v.RRSIGs...)
-//				}
 				tgt := v.RRs[0].(*dns.CNAME).Target
 				if strings.HasSuffix(tgt, zd.ZoneName) {
 					if tgtrrset, ok := zd.Owners[zd.OwnerIndex[tgt]].RRtypes[qtype]; ok {
 						m.Answer = append(m.Answer, tgtrrset.RRs...)
 						m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRs...)
-						glue = zd.FindGlue(apex.RRtypes[dns.TypeNS], dnssec_ok)
+						glue = zd.FindGlue(apex.RRtypes[dns.TypeNS])
 						m.Extra = append(m.Extra, glue.RRs...)
-//						if dnssec_ok {
-//							m.Answer = append(m.Answer, tgtrrset.RRSIGs...)
-//							m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRSIGs...)
-//							m.Extra = append(m.Extra, glue.RRSIGs...)
-//						}
 					}
 					w.WriteMsg(m)
 					return nil
@@ -324,21 +271,9 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 		}
 	}
 
-	// 1. Check for child delegation
-	//	childns, glue := zd.FindDelegation(qname, dnssec_ok)
-	//	log.Printf("Checking for child delegation for %s", qname)
-	//	if childns != nil {
-	//		m.MsgHdr.Authoritative = false
-	//		m.Ns = append(m.Ns, childns.RRs...)
-	//		m.Extra = append(m.Extra, glue.RRs...)
-	//		w.WriteMsg(m)
-	//		return nil
-	//	}
-
 	// 2. Check for exact match qname+qtype
 	switch qtype {
 	case dns.TypeTXT, dns.TypeMX, dns.TypeA, dns.TypeAAAA:
-		//		dns.TypeDS, dns.TypeNSEC, dns.TypeNSEC3, dns.TypeRRSIG:
 		log.Printf("Apex data[%s]:\n", zd.ZoneName)
 		for rrt, d := range apex.RRtypes {
 			log.Printf("%s: %v", dns.TypeToString[rrt], d)
@@ -352,18 +287,10 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 		if _, ok := owner.RRtypes[qtype]; ok && len(owner.RRtypes[qtype].RRs) > 0 {
 			m.Answer = append(m.Answer, owner.RRtypes[qtype].RRs...)
 			m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRs...)
-			glue = zd.FindGlue(apex.RRtypes[dns.TypeNS], dnssec_ok)
+			glue = zd.FindGlue(apex.RRtypes[dns.TypeNS])
 			m.Extra = append(m.Extra, glue.RRs...)
-//			if dnssec_ok {
-//				m.Answer = append(m.Answer, owner.RRtypes[qtype].RRSIGs...)
-//				m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRSIGs...)
-//				m.Extra = append(m.Extra, glue.RRSIGs...)
-//			}
 		} else {
 			m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
-//			if dnssec_ok {
-//				m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRSIGs...)
-//			}
 		}
 		w.WriteMsg(m)
 		return nil
@@ -372,15 +299,14 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 		// everything we don't want to deal with
 		m.MsgHdr.Rcode = dns.RcodeRefused
 		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRs...)
-		glue = zd.FindGlue(apex.RRtypes[dns.TypeNS], dnssec_ok)
+		glue = zd.FindGlue(apex.RRtypes[dns.TypeNS])
 		m.Extra = append(m.Extra, glue.RRs...)
-//		if dnssec_ok {
-//			m.Extra = append(m.Extra, glue.RRSIGs...)
-//		}
 		w.WriteMsg(m)
 	}
 	return nil
 }
+
+
 
 func (td *TemData) FindZone(qname string) *tapir.ZoneData {
 	var tzone string
@@ -388,7 +314,7 @@ func (td *TemData) FindZone(qname string) *tapir.ZoneData {
 	for i := 1; i < len(labels)-1; i++ {
 		tzone = strings.Join(labels[i:], ".")
 		log.Printf("FindZone for qname='%s': testing '%s'", qname, tzone)
-		if z, ok := td.RpzZones[tzone]; ok {
+		if z, ok := td.RpzSources[tzone]; ok {
 			log.Printf("Yes, zone=%s for qname=%s", tzone, qname)
 			return z
 		}
@@ -404,7 +330,7 @@ func (td *TemData) FindZoneNG(qname string) *tapir.ZoneData {
 			break // done
 		}
 		log.Printf("FindZone for qname='%s': testing '%s'", qname, qname[i:])
-		if z, ok := td.RpzZones[qname[i:]]; ok {
+		if z, ok := td.RpzSources[qname[i:]]; ok {
 			log.Printf("Yes, zone=%s for qname=%s", qname[i:], qname)
 			return z
 		}

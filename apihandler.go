@@ -201,7 +201,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		switch dp.Command {
 		case "rrset":
 			log.Printf("TEM debug rrset inquiry")
-			if zd, ok := td.RpzZones[dp.Zone]; ok {
+			if zd, ok := td.RpzSources[dp.Zone]; ok {
 				if owner := &zd.Owners[zd.OwnerIndex[dp.Qname]]; owner != nil {
 					if rrset, ok := owner.RRtypes[dp.Qtype]; ok {
 						resp.RRset = rrset
@@ -214,7 +214,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "zonedata":
 			log.Printf("TEM debug zone inquiry")
-			if zd, ok := td.RpzZones[dp.Zone]; ok {
+			if zd, ok := td.RpzSources[dp.Zone]; ok {
 //			       resp.ZoneData = *zd
 //			       resp.ZoneData.RRKeepFunc = nil
 //			       resp.ZoneData.RRParseFunc = nil
@@ -252,14 +252,16 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "gen-output":
 			log.Printf("TEM debug generate RPZ output")
-			err = td.GenerateRpzOutput()
+			err = td.GenerateRpzAxfrData()
 			if err != nil {
 			   resp.Error = true
 			   resp.ErrorMsg = err.Error()
 			}
 			resp.BlacklistedNames = td.BlacklistedNames
 			resp.GreylistedNames = td.GreylistedNames
-			resp.RpzOutput = td.RpzOutput
+			for _, rpzn := range td.Rpz.Axfr.Data {
+			    resp.RpzOutput = append(resp.RpzOutput, *rpzn)
+			}
 
 		default:
 			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", dp.Command)

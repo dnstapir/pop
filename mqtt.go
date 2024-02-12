@@ -63,17 +63,6 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
  	   return false, fmt.Errorf("MQTT ListType %s is unknown, update rejected", tpkg.Data.ListType)
 	}
 
-// 	switch tpkg.Data.ListType {
-// 	case "greylist":
-// 	     wbgl, exists = td.Greylists[tpkg.Data.SrcName]
-// 	case "whitelist":
-// 	     wbgl, exists = td.Whitelists[tpkg.Data.SrcName]
-// 	case "blacklist":
-// 	     wbgl, exists = td.Blacklists[tpkg.Data.SrcName]
-// 	default:
-// 	   td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tpkg.Data.SrcName)
-// 	   return false, fmt.Errorf("MQTT ListType %s is unknown, update rejected", tpkg.Data.ListType)
-// 	}
 	if !exists {
 	   td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tpkg.Data.SrcName)
 	   return false, fmt.Errorf("MQTT Source %s is unknown, update rejected", tpkg.Data.SrcName)
@@ -90,6 +79,8 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	for _, name := range tpkg.Data.Removed {
 	    delete(wbgl.Names, name.Name)
 	}
+
+	td.GenerateDiffRpzOutput(&tpkg.Data)
 	return true, nil
 }
 

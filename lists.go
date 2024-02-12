@@ -7,20 +7,23 @@ package main
 import (
         "fmt"
 //	"github.com/smhanov/dawg"
-//	"github.com/dnstapir/tapir"
+	"github.com/dnstapir/tapir"
 )
 
 func (td *TemData) Whitelisted(name string) bool {
-//	for _, list := range td.Whitelists {
 	for _, list := range td.Lists["whitelist"] {
 		switch list.Format {
 		case "dawg":
+	       if tapir.GlobalCF.Debug {
 		     td.Logger.Printf("Whitelisted: DAWG: checking %s in whitelist %s", name, list.Name)
+		     }
 		     if list.Dawgf.IndexOf(name) != -1 {
 			return true
 		     }
 		case "map":
+	       if tapir.GlobalCF.Debug {
 		     td.Logger.Printf("Whitelisted: MAP: checking %s in whitelist %s", name, list.Name)
+		     }
 		     if _, exists := list.Names[name]; exists {
 		     	return true
 		     }
@@ -30,9 +33,10 @@ func (td *TemData) Whitelisted(name string) bool {
 }
 
 func (td *TemData) Blacklisted(name string) bool {
-//	for _, list := range td.Blacklists {
-	for _, list := range td.Lists["whitelist"] {
+	for _, list := range td.Lists["blacklist"] {
+	       if tapir.GlobalCF.Debug {
 		td.Logger.Printf("Blacklisted: checking %s in blacklist %s", name, list.Name)
+		}
 		switch list.Format {
 		case "dawg":
 		     if list.Dawgf.IndexOf(name) != -1 {
@@ -42,6 +46,27 @@ func (td *TemData) Blacklisted(name string) bool {
 		     if _, exists := list.Names[name]; exists {
 		     	return true
 		     }
+		}
+	}
+	return false
+}
+
+func (td *TemData) Greylisted(name string) bool {
+	for _, list := range td.Lists["greylist"] {
+	       if tapir.GlobalCF.Debug {
+		td.Logger.Printf("Blacklisted: checking %s in blacklist %s", name, list.Name)
+		}
+		switch list.Format {
+		case "dawg":
+		     if list.Dawgf.IndexOf(name) != -1 {
+			return true
+		     }
+		case "map":
+		     if _, exists := list.Names[name]; exists {
+		     	return true
+		     }
+		case "trie":
+		     return list.Trie.Search(name) != nil 
 		}
 	}
 	return false

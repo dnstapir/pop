@@ -17,9 +17,6 @@ import (
 
 type TemData struct {
         Lists		       map[string]map[string]*tapir.WBGlist
-//	Blacklists             map[string]*tapir.WBGlist
-//	Whitelists             map[string]*tapir.WBGlist
-//	Greylists              map[string]*tapir.WBGlist
 	RpzRefreshCh           chan RpzRefresh
 	RpzCommandCh           chan RpzCmdData
 	TapirMqttEngineRunning bool
@@ -29,33 +26,115 @@ type TemData struct {
 	Logger                 *log.Logger
 	BlacklistedNames       map[string]bool
 	GreylistedNames        map[string]*tapir.TapirName
-	RpzZone		       *tapir.ZoneData
-	RpzOutput              []dns.RR
-	RpzZones	       map[string]*tapir.ZoneData
+	Policy		       TemPolicy
+	Rpz		       RpzData
+	RpzSources	       map[string]*tapir.ZoneData
+}
+
+type RpzData struct {
+     CurrentSerial  uint32
+     ZoneName       string
+     Axfr	    RpzAxfr
+     IxfrChain	    map[uint32]RpzIxfr
+     RpzZone	    *tapir.ZoneData
+     RpzMap	    map[string]*tapir.RpzName
+}
+
+type RpzIxfr struct {
+     FromSerial	    uint32
+     ToSerial	    uint32
+     Removed	    []*tapir.RpzName
+     Added	    []*tapir.RpzName
+}
+
+type RpzAxfr struct {
+     Serial  uint32
+     Data    map[string]*tapir.RpzName
+     ZoneData	*tapir.ZoneData
+}
+
+type TemPolicy struct {
+     WhitelistAction  tapir.Action
+     BlacklistAction  tapir.Action
+     Greylist	      GreylistPolicy
+}
+
+type GreylistPolicy struct {
+     NumSources	    	int
+     NumSourcesAction	tapir.Action
+     NumTapirTags	int
+     NumTapirTagsAction	tapir.Action
+     BlackTapirTags	tapir.TagMask
+     BlackTapirAction	tapir.Action
 }
 
 type WBGC map[string]*tapir.WBGlist
 
 func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
+     rpzdata := RpzData{
+			CurrentSerial:	1,
+			ZoneName:	viper.GetString("output.rpz.zonename"),
+			IxfrChain:	map[uint32]RpzIxfr{},
+			RpzMap:		map[string]*tapir.RpzName{},
+     	     	}
+
 	td := TemData{
 	        Lists:		map[string]map[string]*tapir.WBGlist{},
-//	        Whitelists:	make(map[string]*tapir.WBGlist, 1000),
-//	        Blacklists:	make(map[string]*tapir.WBGlist, 1000),
-//	        Greylists:	make(map[string]*tapir.WBGlist, 1000),
 		Logger:		lg,
 		RpzRefreshCh:	make(chan RpzRefresh, 10),
 		RpzCommandCh:	make(chan RpzCmdData, 10),
+		Rpz:		rpzdata,
 	}
 
 	td.Lists["whitelist"] = make(map[string]*tapir.WBGlist, 1000)
 	td.Lists["greylist"] = make(map[string]*tapir.WBGlist, 1000)
 	td.Lists["blacklist"] = make(map[string]*tapir.WBGlist, 1000)
 
-	td.RpzZones = map[string]*tapir.ZoneData{}
+	td.Rpz.IxfrChain = map[uint32]RpzIxfr{}
+	td.RpzSources = map[string]*tapir.ZoneData{}
 
 	err := td.BootstrapRpzOutput()
 	if err != nil {
 	   td.Logger.Printf("Error from BootstrapRpzOutput(): %v", err)
+	}
+
+	td.Policy.WhitelistAction, err = tapir.StringToAction(viper.GetString("policy.whitelist.action"))
+	if err != nil {
+	   TEMExiter("Error parsing whitelist policy: %v", err)
+	}
+	td.Policy.BlacklistAction, err = tapir.StringToAction(viper.GetString("policy.blacklist.action"))
+	if err != nil {
+	   TEMExiter("Error parsing blacklist policy: %v", err)
+	}
+	td.Policy.Greylist.NumSources = viper.GetInt("policy.greylist.numsources.limit")
+	if td.Policy.Greylist.NumSources == 0 {
+	   TEMExiter("Error parsing policy: greylist.numsources.limit cannot be 0")
+	}
+	td.Policy.Greylist.NumSourcesAction, err =
+			tapir.StringToAction(viper.GetString("policy.greylist.numsources.action"))
+	if err != nil {
+	   TEMExiter("Error parsing policy: %v", err)
+	}
+
+	td.Policy.Greylist.NumTapirTags = viper.GetInt("policy.greylist.numtapirtags.limit")
+	if td.Policy.Greylist.NumTapirTags == 0 {
+	   TEMExiter("Error parsing policy: greylist.numtapirtags.limit cannot be 0")
+	}
+	td.Policy.Greylist.NumTapirTagsAction, err =
+			tapir.StringToAction(viper.GetString("policy.greylist.numtapirtags.action"))
+	if err != nil {
+	   TEMExiter("Error parsing policy: %v", err)
+	}
+
+	tmp := viper.GetStringSlice("policy.greylist.blacktapir.tags")
+	td.Policy.Greylist.BlackTapirTags, err = tapir.StringsToTagMask(tmp)
+	if err != nil {
+	   TEMExiter("Error parsing policy: %v", err)
+	}
+	td.Policy.Greylist.BlackTapirAction, err =
+			tapir.StringToAction(viper.GetString("policy.greylist.blacktapir.action"))
+	if err != nil {
+	   TEMExiter("Error parsing policy: %v", err)
 	}
 
 	// Note: We can not parse data sources here, as RefreshEngine has not yet started.
@@ -200,14 +279,6 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 		TEMExiter("ParseLocalFile: SrcFormat \"%s\" is unknown.", s.SrcFormat)
 	}
 
-//	switch s.Type {
-// 	case "whitelist":
-// 		td.Whitelists[s.Name] = s
-// 	case "blacklist":
-// 		td.Blacklists[s.Name] = s
-// 	case "greylist":
-// 		td.Greylists[s.Name] = s
-// 	}
 	td.Lists[s.Type][s.Name] = s
 
 	return nil
@@ -238,14 +309,6 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
 		RRParseFunc: td.RpzParseFuncFactory(s),
 		ZoneType:    tapir.RpzZone,
 	}
-// 	switch s.Type {
-// 	case "whitelist":
-// 		td.Whitelists[s.Name] = s
-// 	case "blacklist":
-// 		td.Blacklists[s.Name] = s
-// 	case "greylist":
-// 		td.Greylists[s.Name] = s
-// 	}
 	td.Lists[s.Type][s.Name] = s
 
 	return nil
@@ -281,23 +344,13 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 		case dns.TypeCNAME:
 			switch (*rr).(*dns.CNAME).Target {
 			case ".":
-//				action = "NXDOMAIN"
 				action = tapir.NXDOMAIN
 			case "*.":
-//				action = "NODATA"
 				action = tapir.NODATA
 			case "rpz-drop.":
-//				action = "DROP"
 				action = tapir.DROP
 			case "rpz-passthru.":
 				action = tapir.WHITELIST
-//				if s.Type != "whitelist" {
-// 					td.Logger.Printf("Name %s is whitelisted, but this is not a whitelist RPZ, adding to local", (*rr).Header().Name)
-// 					td.Lists["whitelist"]["white_catchall"].Names[name] = tapir.TapirName{ Name: name }
-// 				} else {
-// 					s.Names[name] = tapir.TapirName{ Name: name } // drop all other actions
-// 				}
-// 				return true
 			default:
 				td.Logger.Printf("UNKNOWN RPZ action: \"%s\"", (*rr).(*dns.CNAME).Target)
 				action = tapir.UnknownAction
@@ -351,27 +404,3 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 //    b) remove any whitelisted name
 //    c) evalutate the grey data to make a decision on inclusion or not
 
-// func (td *TemData) xxxGenerateRpzOutput() {
-// 
-//      var res = make(map[string]bool, 10000)
-//      
-//      for bname, blist := range td.Blacklists {
-// 		switch blist.Format {
-// 		case "dawg":
-// 		     td.Logger.Printf("Cannot list DAWG lists. Ignoring blacklist %s.", bname)
-// 		case "map":
-// 		     for k, _ := range blist.Names {
-// 		     	 td.Logger.Printf("Adding name %s from blacklist %s to tentative output.", k, bname)
-// 			 if td.Whitelisted(k) {
-// 			    td.Logger.Printf("Blacklisted name %s is also whitelisted. Dropped from output.", k)
-// 			 } else {
-// 			    td.Logger.Printf("Blacklisted name %s is not whitelisted. Added to output.", k)
-// 			   res[k] = true
-// 			 }
-// 		     }
-// 		}
-// 	}
-// 	td.BlacklistedNames = res
-// 	td.Logger.Printf("Complete set of blacklisted names: %v", res)
-// 	
-// }
