@@ -71,7 +71,7 @@ func GetKeepFunc(zone string) (string, func(uint16) bool) {
 
 func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 
-       td := conf.TemData
+	td := conf.TemData
 	zonech := conf.TemData.RpzRefreshCh
 
 	//	var rrtypes []string
@@ -159,7 +159,7 @@ func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname s
 		log.Printf("BodyRRs: %d (+ %d apex RRs)", len(zd.BodyRRs), zd.ApexLen)
 
 		zd.Logger.Printf("ApexResponder: sending zone %s with %d body RRs to XfrOut",
-						 zd.ZoneName, len(zd.RRs))
+			zd.ZoneName, len(zd.RRs))
 
 		zd.ZoneTransferOut(w, r)
 		return nil
@@ -305,8 +305,6 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 	}
 	return nil
 }
-
-
 
 func (td *TemData) FindZone(qname string) *tapir.ZoneData {
 	var tzone string

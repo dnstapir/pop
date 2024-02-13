@@ -4,7 +4,7 @@
 package main
 
 import (
-        "crypto/tls"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -20,20 +20,20 @@ import (
 )
 
 type RpzCmdData struct {
-     	Command	string
-	Zone   	string
-	Domain 	string
-	ListType	string
-	RpzSource	string	// Name of one feed
-	Policy	string
-	Action 	string
-	Result 	chan RpzCmdResponse
+	Command   string
+	Zone      string
+	Domain    string
+	ListType  string
+	RpzSource string // Name of one feed
+	Policy    string
+	Action    string
+	Result    chan RpzCmdResponse
 }
 
 type RpzCmdResponse struct {
 	Time      time.Time
 	Zone      string
-	Domain	  string
+	Domain    string
 	Msg       string
 	OldSerial uint32
 	NewSerial uint32
@@ -58,9 +58,9 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		resp := tapir.CommandResponse{}
 
 		defer func() {
-		      // log.Printf("defer: resp: %v", resp)
-		      w.Header().Set("Content-Type", "application/json")
-		      json.NewEncoder(w).Encode(resp)
+			// log.Printf("defer: resp: %v", resp)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
 		}()
 
 		switch cp.Command {
@@ -78,80 +78,80 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "rpz-add":
 			log.Printf("Received RPZ-ADD %s policy %s RPZ source %s command", cp.Name, cp.Policy, cp.RpzSource)
-			
+
 			log.Printf("apihandler: RPZ-ADD 1. Len(ch): %d", len(conf.TemData.RpzCommandCh))
 			var respch = make(chan RpzCmdResponse, 1)
 			conf.TemData.RpzCommandCh <- RpzCmdData{
-							Command:   "RPZ-ADD",
-							Domain:    cp.Name,
-							Policy:	   cp.Policy,
-							RpzSource: cp.RpzSource,
-							Result:    respch,
-						  }
+				Command:   "RPZ-ADD",
+				Domain:    cp.Name,
+				Policy:    cp.Policy,
+				RpzSource: cp.RpzSource,
+				Result:    respch,
+			}
 			log.Printf("apihandler: RPZ-ADD 2")
 			rpzresp := <-respch
 
 			log.Printf("apihandler: RPZ-ADD 3")
 			if rpzresp.Error {
-			   log.Printf("RPZ-ADD: Error from RefreshEngine: %s", resp.ErrorMsg)
-			   resp.Error = true
-			   resp.ErrorMsg = rpzresp.ErrorMsg
-	 		}
+				log.Printf("RPZ-ADD: Error from RefreshEngine: %s", resp.ErrorMsg)
+				resp.Error = true
+				resp.ErrorMsg = rpzresp.ErrorMsg
+			}
 			log.Printf("apihandler: RPZ-ADD 4")
 			resp.Msg = rpzresp.Msg
 
 		case "rpz-lookup":
 			log.Printf("Received RPZ-LOOKUP %s command", cp.Name)
-			
+
 			var respch = make(chan RpzCmdResponse, 1)
 			conf.TemData.RpzCommandCh <- RpzCmdData{
-							Command:   "RPZ-LOOKUP",
-							Domain:    cp.Name,
-							Result:    respch,
-						  }
+				Command: "RPZ-LOOKUP",
+				Domain:  cp.Name,
+				Result:  respch,
+			}
 			rpzresp := <-respch
 
 			if rpzresp.Error {
-			   log.Printf("RPZ-REMOVE: Error from RefreshEngine: %s", resp.ErrorMsg)
-			   resp.Error = true
-			   resp.ErrorMsg = rpzresp.ErrorMsg
-	 		}
+				log.Printf("RPZ-REMOVE: Error from RefreshEngine: %s", resp.ErrorMsg)
+				resp.Error = true
+				resp.ErrorMsg = rpzresp.ErrorMsg
+			}
 			resp.Msg = rpzresp.Msg
 
 		case "rpz-remove":
 			log.Printf("Received RPZ-REMOVE %s source %s command", cp.Name, cp.RpzSource)
-			
+
 			var respch = make(chan RpzCmdResponse, 1)
 			conf.TemData.RpzCommandCh <- RpzCmdData{
-							Command:   "RPZ-REMOVE",
-							Domain:    cp.Name,
-							RpzSource: cp.RpzSource,
-							Result:    respch,
-						  }
+				Command:   "RPZ-REMOVE",
+				Domain:    cp.Name,
+				RpzSource: cp.RpzSource,
+				Result:    respch,
+			}
 			rpzresp := <-respch
 
 			if rpzresp.Error {
-			   log.Printf("RPZ-REMOVE: Error from RefreshEngine: %s", resp.ErrorMsg)
-			   resp.Error = true
-			   resp.ErrorMsg = rpzresp.ErrorMsg
-	 		}
+				log.Printf("RPZ-REMOVE: Error from RefreshEngine: %s", resp.ErrorMsg)
+				resp.Error = true
+				resp.ErrorMsg = rpzresp.ErrorMsg
+			}
 			resp.Msg = rpzresp.Msg
 
 		case "rpz-list-sources":
 			log.Printf("Received RPZ-LIST-SOURCES command")
-			
+
 			var respch = make(chan RpzCmdResponse, 1)
 			conf.TemData.RpzCommandCh <- RpzCmdData{
-							Command:   "RPZ-LIST-SOURCES",
-							Result:    respch,
-						  }
+				Command: "RPZ-LIST-SOURCES",
+				Result:  respch,
+			}
 			rpzresp := <-respch
 
 			if rpzresp.Error {
-			   log.Printf("RPZ-LIST-SOURCS: Error from RefreshEngine: %s", resp.ErrorMsg)
-			   resp.Error = true
-			   resp.ErrorMsg = rpzresp.ErrorMsg
-	 		}
+				log.Printf("RPZ-LIST-SOURCS: Error from RefreshEngine: %s", resp.ErrorMsg)
+				resp.Error = true
+				resp.ErrorMsg = rpzresp.ErrorMsg
+			}
 			resp.Msg = rpzresp.Msg
 
 		case "stop":
@@ -215,52 +215,51 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		case "zonedata":
 			log.Printf("TEM debug zone inquiry")
 			if zd, ok := td.RpzSources[dp.Zone]; ok {
-//			       resp.ZoneData = *zd
-//			       resp.ZoneData.RRKeepFunc = nil
-//			       resp.ZoneData.RRParseFunc = nil
-			       log.Printf("TEM debug zone: name: %s rrs: %d owners: %d", dp.Zone,
-			       		       len(zd.RRs), len(zd.Owners))
+				//			       resp.ZoneData = *zd
+				//			       resp.ZoneData.RRKeepFunc = nil
+				//			       resp.ZoneData.RRParseFunc = nil
+				log.Printf("TEM debug zone: name: %s rrs: %d owners: %d", dp.Zone,
+					len(zd.RRs), len(zd.Owners))
 			} else {
 				resp.Msg = fmt.Sprintf("Zone %s is unknown", dp.Zone)
 			}
 
-
 		case "colourlists":
 			log.Printf("TEM debug white/black/grey lists")
-// 			resp.Whitelists = td.Whitelists
-// 			for _, wl := range resp.Whitelists {
-// 			    wl.Dawgf = nil
-// 			}
-// 			resp.Blacklists = td.Blacklists
-// 			resp.Greylists = td.Greylists
+			// 			resp.Whitelists = td.Whitelists
+			// 			for _, wl := range resp.Whitelists {
+			// 			    wl.Dawgf = nil
+			// 			}
+			// 			resp.Blacklists = td.Blacklists
+			// 			resp.Greylists = td.Greylists
 			resp.Lists = map[string]map[string]*tapir.WBGlist{}
 			for t, l := range td.Lists {
-			    resp.Lists[t] = map[string]*tapir.WBGlist{}
-			    for n, v := range l {
-			    	resp.Lists[t][n] = &tapir.WBGlist{
-							Name:		v.Name,
-							Description:	td.Lists[t][n].Description,
-							Type:		td.Lists[t][n].Type,
-							Format:		td.Lists[t][n].Format,
-							Names:		td.Lists[t][n].Names,
-							Filename:	td.Lists[t][n].Filename,
-							RpzZoneName:	td.Lists[t][n].RpzZoneName,
-							RpzSerial:	td.Lists[t][n].RpzSerial,
-						   }
-			    }
+				resp.Lists[t] = map[string]*tapir.WBGlist{}
+				for n, v := range l {
+					resp.Lists[t][n] = &tapir.WBGlist{
+						Name:        v.Name,
+						Description: td.Lists[t][n].Description,
+						Type:        td.Lists[t][n].Type,
+						Format:      td.Lists[t][n].Format,
+						Names:       td.Lists[t][n].Names,
+						Filename:    td.Lists[t][n].Filename,
+						RpzZoneName: td.Lists[t][n].RpzZoneName,
+						RpzSerial:   td.Lists[t][n].RpzSerial,
+					}
+				}
 			}
 
 		case "gen-output":
 			log.Printf("TEM debug generate RPZ output")
 			err = td.GenerateRpzAxfrData()
 			if err != nil {
-			   resp.Error = true
-			   resp.ErrorMsg = err.Error()
+				resp.Error = true
+				resp.ErrorMsg = err.Error()
 			}
 			resp.BlacklistedNames = td.BlacklistedNames
 			resp.GreylistedNames = td.GreylistedNames
 			for _, rpzn := range td.Rpz.Axfr.Data {
-			    resp.RpzOutput = append(resp.RpzOutput, *rpzn)
+				resp.RpzOutput = append(resp.RpzOutput, *rpzn)
 			}
 
 		default:
@@ -364,9 +363,9 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 func BumpSerial(conf *Config, zone string) (string, error) {
 	var respch = make(chan RpzCmdResponse, 1)
 	conf.TemData.RpzCommandCh <- RpzCmdData{
-		Command:   "BUMP",
-		Zone:      zone,
-		Result:    respch,
+		Command: "BUMP",
+		Zone:    zone,
+		Result:  respch,
 	}
 
 	resp := <-respch
@@ -382,4 +381,3 @@ func BumpSerial(conf *Config, zone string) (string, error) {
 	}
 	return resp.Msg, nil
 }
-

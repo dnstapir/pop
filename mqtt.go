@@ -40,13 +40,13 @@ func (td *TemData) StartMqttEngine() error {
 }
 
 // Evaluating an update consists of two steps:
-// 1. Iterate through the update, adding and/or removing the data in the update to the correct list(s). 
+// 1. Iterate through the update, adding and/or removing the data in the update to the correct list(s).
 //
 // 2. Iterate through the update a second time:
 //    - fetch the current output for each name
 //    - recompute the output for that name, given new data
 //    - if different, add the diff (DEL+ADD) to a growing "IXFR" describing the consequences of the update.
-// 
+//
 
 func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	td.Logger.Printf("ProcessTapirUpdate: update of MQTT source %s contains %d adds and %d removes",
@@ -59,25 +59,25 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	case "whitelist", "greylist", "blacklist":
 		wbgl, exists = td.Lists[tpkg.Data.ListType][tpkg.Data.SrcName]
 	default:
- 	   td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tpkg.Data.SrcName)
- 	   return false, fmt.Errorf("MQTT ListType %s is unknown, update rejected", tpkg.Data.ListType)
+		td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tpkg.Data.SrcName)
+		return false, fmt.Errorf("MQTT ListType %s is unknown, update rejected", tpkg.Data.ListType)
 	}
 
 	if !exists {
-	   td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tpkg.Data.SrcName)
-	   return false, fmt.Errorf("MQTT Source %s is unknown, update rejected", tpkg.Data.SrcName)
+		td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tpkg.Data.SrcName)
+		return false, fmt.Errorf("MQTT Source %s is unknown, update rejected", tpkg.Data.SrcName)
 	}
 
 	for _, name := range tpkg.Data.Added {
-	    wbgl.Names[name.Name] = tapir.TapirName{
-					Name:	 name.Name,
-					Tags:	 name.Tags,
-					Tagmask: name.Tagmask,
-				    }
+		wbgl.Names[name.Name] = tapir.TapirName{
+			Name:    name.Name,
+			Tags:    name.Tags,
+			Tagmask: name.Tagmask,
+		}
 	}
 
 	for _, name := range tpkg.Data.Removed {
-	    delete(wbgl.Names, name.Name)
+		delete(wbgl.Names, name.Name)
 	}
 
 	td.GenerateDiffRpzOutput(&tpkg.Data)
@@ -91,16 +91,16 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 // 		} else {
 // 			td.Logger.Printf("EvaluateTapirUpdate: name %s is NOT whitelisted, update accepted.", add.Name)
 // 		}
-// 
+//
 // 		//     if td.Greylisted(name) {
 // 		//     	return true, nil
 // 		//     }
 // 	}
-// 
+//
 // 	for _, rem := range tpkg.Data.Removed {
 // 		td.Logger.Printf("EvaluateTapirUpdate: name %s is removed from tapir greylist", rem.Name)
 // //		return true, nil // rejected
 // 	}
-// 
+//
 // 	return true, nil
 // }
