@@ -29,13 +29,15 @@ type TemData struct {
 	Policy                 TemPolicy
 	Rpz                    RpzData
 	RpzSources             map[string]*tapir.ZoneData
+	Verbose		       bool
+	Debug		       bool
 }
 
 type RpzData struct {
 	CurrentSerial uint32
 	ZoneName      string
 	Axfr          RpzAxfr
-	IxfrChain     map[uint32]RpzIxfr
+	IxfrChain     []RpzIxfr		// NOTE: the IxfrChain is in reverse order, newest first!
 	RpzZone       *tapir.ZoneData
 	RpzMap        map[string]*tapir.RpzName
 }
@@ -49,6 +51,8 @@ type RpzIxfr struct {
 
 type RpzAxfr struct {
 	Serial   uint32
+	SOA	 dns.SOA
+	NSrrs	 []dns.RR
 	Data     map[string]*tapir.RpzName
 	ZoneData *tapir.ZoneData
 }
@@ -74,7 +78,10 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	rpzdata := RpzData{
 		CurrentSerial: 1,
 		ZoneName:      viper.GetString("output.rpz.zonename"),
-		IxfrChain:     map[uint32]RpzIxfr{},
+		IxfrChain:     []RpzIxfr{},
+		Axfr:	       RpzAxfr{
+					Data:	map[string]*tapir.RpzName{},
+			       },
 		RpzMap:        map[string]*tapir.RpzName{},
 	}
 
@@ -84,13 +91,15 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 		RpzRefreshCh: make(chan RpzRefresh, 10),
 		RpzCommandCh: make(chan RpzCmdData, 10),
 		Rpz:          rpzdata,
+		Verbose:      viper.GetBool("log.verbose"),
+		Debug:	      viper.GetBool("log.debug"),
 	}
 
 	td.Lists["whitelist"] = make(map[string]*tapir.WBGlist, 1000)
 	td.Lists["greylist"] = make(map[string]*tapir.WBGlist, 1000)
 	td.Lists["blacklist"] = make(map[string]*tapir.WBGlist, 1000)
 
-	td.Rpz.IxfrChain = map[uint32]RpzIxfr{}
+//	td.Rpz.IxfrChain = map[uint32]RpzIxfr{}
 	td.RpzSources = map[string]*tapir.ZoneData{}
 
 	err := td.BootstrapRpzOutput()
@@ -305,7 +314,7 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
 	td.RpzRefreshCh <- RpzRefresh{
 		Name:        dns.Fqdn(zone),
 		Upstream:    upstream,
-		RRKeepFunc:  RpzKeepFunc,
+//		RRKeepFunc:  RpzKeepFunc,
 		RRParseFunc: td.RpzParseFuncFactory(s),
 		ZoneType:    tapir.RpzZone,
 	}

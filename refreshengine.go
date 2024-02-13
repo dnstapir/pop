@@ -18,7 +18,7 @@ import (
 type RpzRefresh struct {
 	Name        string
 	Upstream    string
-	RRKeepFunc  func(uint16) bool
+//	RRKeepFunc  func(uint16) bool
 	RRParseFunc func(*dns.RR, *tapir.ZoneData) bool
 	ZoneType    tapir.ZoneType // 1=xfr, 2=map, 3=slice
 	Resp        chan RpzRefreshResult
@@ -35,7 +35,7 @@ type RefreshCounter struct {
 	SOARefresh     uint32
 	CurRefresh     uint32
 	IncomingSerial uint32
-	RRKeepFunc     func(uint16) bool
+//	RRKeepFunc     func(uint16) bool
 	RRParseFunc    func(*dns.RR, *tapir.ZoneData) bool
 	Upstream       string
 	Downstreams    []string
@@ -66,7 +66,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	var upstream, zone string
 	var downstreams []string
 	var refresh uint32
-	var keepfunc func(uint16) bool
+//	var keepfunc func(uint16) bool
 	var parsefunc func(*dns.RR, *tapir.ZoneData) bool
 	var rc *RefreshCounter
 	var updated bool
@@ -80,7 +80,8 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	for {
 		select {
 		case tpkg = <-TapirIntelCh:
-			log.Printf("RefreshEngine: received a Tapir IntelUpdate: Message: %v\n", tpkg.Data)
+			log.Printf("RefreshEngine: Tapir IntelUpdate: (src: %s) %d additions and %d removals\n",
+						   tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
 			td.ProcessTapirUpdate(tpkg)
 			log.Printf("RefreshEngine: Tapir IntelUpdate evaluated.")
 
@@ -100,11 +101,11 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 							zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "Upstream unspecified"}
 						}
 
-						keepfunc = zr.RRKeepFunc
-						if keepfunc == nil && zr.Resp != nil {
-							log.Printf("RefreshEngine: %s: KeepFunc unspecified", zone)
-							zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "KeepFunc unspecified"}
-						}
+//						keepfunc = zr.RRKeepFunc
+//						if keepfunc == nil && zr.Resp != nil {
+//							log.Printf("RefreshEngine: %s: KeepFunc unspecified", zone)
+//							zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "KeepFunc unspecified"}
+//						}
 
 						parsefunc = zr.RRParseFunc
 						if parsefunc == nil && zr.Resp != nil {
@@ -116,7 +117,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 							Name:        zone,
 							SOARefresh:  refresh,
 							CurRefresh:  1, // force immediate refresh
-							RRKeepFunc:  keepfunc,
+//							RRKeepFunc:  keepfunc,
 							RRParseFunc: parsefunc,
 							Upstream:    upstream,
 							Downstreams: downstreams,
@@ -150,16 +151,16 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						continue
 					}
 
-					keepfunc = zr.RRKeepFunc
-					if keepfunc == nil {
-						log.Printf("RefreshEngine: %s: RRKeepFunc unspecified", zone)
-						zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "RRKeepFunc unspecified"}
-						continue
-					}
+//					keepfunc = zr.RRKeepFunc
+//					if keepfunc == nil {
+//						log.Printf("RefreshEngine: %s: RRKeepFunc unspecified", zone)
+//						zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "RRKeepFunc unspecified"}
+//						continue
+//					}
 
 					parsefunc = zr.RRParseFunc
-					if keepfunc == nil {
-						log.Printf("RefreshEngine: %s: KeepFunc unspecified", zone)
+					if parsefunc == nil {
+						log.Printf("RefreshEngine: %s: RRParseFunc unspecified", zone)
 						zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "RRParseFunc unspecified"}
 						continue
 					}
@@ -167,9 +168,9 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					zonedata = &tapir.ZoneData{
 						ZoneName:    zone,
 						ZoneType:    zr.ZoneType,
-						RRKeepFunc:  keepfunc,
+//						RRKeepFunc:  keepfunc,
 						RRParseFunc: parsefunc,
-						RpzData:     map[string]string{}, // must be initialized
+//						RpzData:     map[string]string{}, // must be initialized
 						Logger:      log.Default(),
 					}
 					// log.Printf("RefEng: New zone %s, keepfunc: %v", zone, keepfunc)
@@ -190,7 +191,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						Name:        zone,
 						SOARefresh:  refresh,
 						CurRefresh:  refresh,
-						RRKeepFunc:  keepfunc,
+//						RRKeepFunc:  keepfunc,
 						RRParseFunc: parsefunc,
 						Upstream:    upstream,
 						Downstreams: downstreams,
@@ -220,9 +221,9 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				rc.CurRefresh--
 				if rc.CurRefresh <= 0 {
 					upstream = rc.Upstream
-					if rc.RRKeepFunc == nil {
-						panic("RefreshEngine: keepfunc=nil")
-					}
+//					if rc.RRKeepFunc == nil {
+//						panic("RefreshEngine: keepfunc=nil")
+//					}
 					if rc.RRParseFunc == nil {
 						panic("RefreshEngine: parsefunc=nil")
 					}

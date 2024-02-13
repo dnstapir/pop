@@ -20,7 +20,6 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	//	"github.com/miekg/dns"
 	"github.com/spf13/viper"
-	_ "unsafe" // to use constants from linker
 
 	"github.com/dnstapir/tapir"
 )

@@ -49,8 +49,11 @@ func (td *TemData) StartMqttEngine() error {
 //
 
 func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
-	td.Logger.Printf("ProcessTapirUpdate: update of MQTT source %s contains %d adds and %d removes",
+        if td.Debug {
+	   td.Logger.Printf("ProcessTapirUpdate: update of MQTT source %s contains %d adds and %d removes",
 		tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
+	   tapir.PrintTapirMqttPkg(tpkg, td.Logger)
+	}
 
 	var wbgl *tapir.WBGlist
 	var exists bool
@@ -59,7 +62,7 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	case "whitelist", "greylist", "blacklist":
 		wbgl, exists = td.Lists[tpkg.Data.ListType][tpkg.Data.SrcName]
 	default:
-		td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tpkg.Data.SrcName)
+		td.Logger.Printf("TapirUpdate for unknown listtype from source \"%s\" rejected.", tpkg.Data.SrcName)
 		return false, fmt.Errorf("MQTT ListType %s is unknown, update rejected", tpkg.Data.ListType)
 	}
 
@@ -72,7 +75,7 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 		wbgl.Names[name.Name] = tapir.TapirName{
 			Name:    name.Name,
 			Tags:    name.Tags,
-			Tagmask: name.Tagmask,
+			TagMask: name.TagMask,
 		}
 	}
 
@@ -80,27 +83,32 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 		delete(wbgl.Names, name.Name)
 	}
 
-	td.GenerateDiffRpzOutput(&tpkg.Data)
-	return true, nil
+	ixfr, err := td.GenerateRpzIxfr(&tpkg.Data)
+	if err != nil {
+	   return false, err
+	}
+	err = td.ProcessIxfrIntoAxfr(ixfr)
+	return true, err
 }
 
-// func (td *TemData) UpdateOutboundRpz()
-// 		if td.Whitelisted(add.Name) {
-// 			td.Logger.Printf("EvaluateTapirUpdate: name %s is whitelisted, update ignored.", add.Name)
-// //			return false, nil // rejected
-// 		} else {
-// 			td.Logger.Printf("EvaluateTapirUpdate: name %s is NOT whitelisted, update accepted.", add.Name)
-// 		}
-//
-// 		//     if td.Greylisted(name) {
-// 		//     	return true, nil
-// 		//     }
-// 	}
-//
-// 	for _, rem := range tpkg.Data.Removed {
-// 		td.Logger.Printf("EvaluateTapirUpdate: name %s is removed from tapir greylist", rem.Name)
-// //		return true, nil // rejected
-// 	}
-//
-// 	return true, nil
-// }
+func (td *TemData) ProcessIxfrIntoAxfr(ixfr RpzIxfr) error {
+     for _, tn := range ixfr.Removed {
+     	  delete(td.Rpz.Axfr.Data, tn.Name)
+	  if td.Debug {
+	     td.Logger.Printf("PIIA: Deleting domain %s", tn.Name)
+	  }
+     }
+     for _, tn := range ixfr.Added {
+     	 if _, exist := td.Rpz.Axfr.Data[tn.Name]; exist {
+	    // XXX: this should not happen.
+	    td.Logger.Printf("Error: ProcessIxfrIntoAxfr: domain %s already exists. This should not happen.",
+	    			     tn.Name)
+	 } else {
+	   td.Rpz.Axfr.Data[tn.Name] = tn
+	  if td.Debug {
+	     td.Logger.Printf("PIIA: Adding domain %s", tn.Name)
+	  }
+	 }
+     }
+     return nil
+}

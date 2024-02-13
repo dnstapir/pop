@@ -251,7 +251,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "gen-output":
 			log.Printf("TEM debug generate RPZ output")
-			err = td.GenerateRpzAxfrData()
+			err = td.GenerateRpzAxfr()
 			if err != nil {
 				resp.Error = true
 				resp.ErrorMsg = err.Error()

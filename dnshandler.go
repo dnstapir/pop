@@ -102,9 +102,10 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 		case dns.OpcodeQuery:
 			qtype := r.Question[0].Qtype
 			log.Printf("Zone %s %s request from %s", qname, dns.TypeToString[qtype], w.RemoteAddr())
-			if zd, ok := td.RpzSources[qname]; ok {
+			if qname == td.Rpz.ZoneName {
+				td.RpzResponder(w, r, qtype)
+			} else if zd, ok := td.RpzSources[qname]; ok {
 				// The qname is equal to the name of a zone we have
-
 				ApexResponder(w, r, zd, qname, qtype)
 			} else {
 				log.Printf("DnsHandler: Qname is '%s', which is not a known zone.", qname)
@@ -143,7 +144,57 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 	}
 }
 
-func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname string, qtype uint16) error {
+func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16) error {
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.MsgHdr.Authoritative = true
+
+//	apex := zd.Owners[zd.OwnerIndex[zd.ZoneName]]
+	// zd.Logger.Printf("*** Ownerindex(%s)=%d apex: %v", zd.ZoneName, zd.OwnerIndex[zd.ZoneName], apex)
+	zd := td.Rpz.Axfr.ZoneData
+	// XXX: we need this, but later var glue tapir.RRset
+
+	switch qtype {
+	case dns.TypeAXFR:
+		log.Printf("We have the zone %s, so let's try to serve it", td.Rpz.ZoneName)
+//		log.Printf("SOA: %s", zd.SOA.String())
+//		log.Printf("BodyRRs: %d (+ %d apex RRs)", len(zd.BodyRRs), zd.ApexLen)
+
+//		td.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
+//			zd.ZoneName, len(zd.RRs))
+
+		td.RpzAxfrOut(w, r)
+		return nil
+	case dns.TypeIXFR:
+		td.Logger.Printf("RpzResponder: %s is our RPZ output", td.Rpz.ZoneName)
+
+//		td.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
+//			zd.ZoneName, len(zd.RRs))
+
+		td.RpzIxfrOut(w, r)
+		return nil
+	case dns.TypeSOA:
+		// zd.Logger.Printf("There are %d SOA RRs in %s. rrset: %v", len(apex.RRtypes[dns.TypeSOA].RRs),
+		// 			   zd.ZoneName, apex.RRtypes[dns.TypeSOA])
+//		m.Answer = append(m.Answer, dns.RR(&zd.SOA))
+		td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial
+		m.Answer = append(m.Answer, dns.RR(&td.Rpz.Axfr.SOA))
+//		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRs...)
+		m.Ns = append(m.Ns, td.Rpz.Axfr.ZoneData.NSrrs...)
+//		glue = *zd.FindGlue(apex.RRtypes[dns.TypeNS])
+//		m.Extra = append(m.Extra, glue.RRs...)
+
+	default:
+		// every apex query we don't want to deal with
+		m.MsgHdr.Rcode = dns.RcodeRefused
+		m.Ns = append(m.Ns, zd.NSrrs...)
+	}
+	w.WriteMsg(m)
+	return nil
+}
+
+func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData,
+     qname string, qtype uint16) error {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.MsgHdr.Authoritative = true
@@ -303,6 +354,42 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 		m.Extra = append(m.Extra, glue.RRs...)
 		w.WriteMsg(m)
 	}
+	return nil
+}
+
+func (td *TemData) QueryResponder(w dns.ResponseWriter, r *dns.Msg, qname string, qtype uint16) error {
+
+	m := new(dns.Msg)
+	m.SetReply(r)
+	m.MsgHdr.Authoritative = true
+
+	returnNXDOMAIN := func() {
+		// return NXDOMAIN
+		m.MsgHdr.Rcode = dns.RcodeNameError
+//		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
+		m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
+		w.WriteMsg(m)
+		return
+	}
+
+	// log.Printf("Zone %s Data: %v", zd.ZoneName, zd.Data)
+
+//	var err error
+	var exist bool
+	var tn *tapir.RpzName
+
+	if tn, exist = td.Rpz.Axfr.Data[qname]; exist {
+	   m.MsgHdr.Rcode = dns.RcodeSuccess
+	   if qtype == dns.TypeCNAME {
+		m.Answer = append(m.Answer, *tn.RR)
+		m.Ns = append(m.Ns, td.Rpz.Axfr.NSrrs...)
+	   } else {
+	        m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
+	   }
+	   w.WriteMsg(m)
+	   return nil
+	} 
+	returnNXDOMAIN()
 	return nil
 }
 
