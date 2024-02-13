@@ -80,10 +80,10 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	for {
 		select {
 		case tpkg = <-TapirIntelCh:
-			log.Printf("RefreshEngine: received a Tapir IntelUpdate: Message: %s\n", tpkg.Data)
+			log.Printf("RefreshEngine: received a Tapir IntelUpdate: Message: %v\n", tpkg.Data)
 			td.ProcessTapirUpdate(tpkg)
 			log.Printf("RefreshEngine: Tapir IntelUpdate evaluated.")
-			
+
 		case zr = <-zonerefch:
 			zone = zr.Name
 			log.Printf("RefreshEngine: Requested to refresh zone \"%s\"", zone)
@@ -338,21 +338,21 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			case "RPZ-LIST-SOURCES":
 				log.Printf("RefreshEngine: recieved an RPZ LIST-SOURCES command")
 				list := []string{}
-//				for _, wl := range td.Whitelists {
+				//				for _, wl := range td.Whitelists {
 				for _, wl := range td.Lists["whitelist"] {
 					list = append(list, wl.Name)
 				}
 				resp.Msg += fmt.Sprintf("Whitelist srcs: %s\n", strings.Join(list, ", "))
 
 				list = []string{}
-//				for _, bl := range td.Blacklists {
+				//				for _, bl := range td.Blacklists {
 				for _, bl := range td.Lists["blacklist"] {
 					list = append(list, bl.Name)
 				}
 				resp.Msg += fmt.Sprintf("Blacklist srcs: %s\n", strings.Join(list, ", "))
 
 				list = []string{}
-//				for _, gl := range td.Greylists {
+				//				for _, gl := range td.Greylists {
 				for _, gl := range td.Lists["greylist"] {
 					list = append(list, gl.Name)
 				}

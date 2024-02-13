@@ -16,13 +16,13 @@ type Config struct {
 	Service   ServiceConf
 	Server    ServerConf
 	Apiserver ApiserverConf
-	Sources	  []SourceConf
+	Sources   []SourceConf
 	Log       struct {
 		File string `validate:"required"`
 	}
 	Internal InternalConf
-	TemData	 *TemData
-	BootTime time.Time	
+	TemData  *TemData
+	BootTime time.Time
 }
 
 type ServiceConf struct {
@@ -34,23 +34,23 @@ type ServiceConf struct {
 }
 
 type ServerConf struct {
-	Listen      string   `validate:"required"`
-	Port        string   `validate:"required"`
-//	Upstreams   []string `validate:"required"`
-//	Downstreams []string `validate:"required"`
-	//     Zones	   []string		`validate:"required"`
-//	XferZones  []string `validate:"required"`
-//	MapZones   []string `validate:"required"`
-//	SliceZones []string `validate:"required"`
+	Listen string `validate:"required"`
+	Port   string `validate:"required"`
+	//		Upstreams   []string `validate:"required"`
+	//		Downstreams []string `validate:"required"`
+	//	    Zones	   []string		`validate:"required"`
+	//		XferZones  []string `validate:"required"`
+	//		MapZones   []string `validate:"required"`
+	//		SliceZones []string `validate:"required"`
 }
 
 type SourceConf struct {
-        Name	        string	`validate:"required"`
-	Description	string	`validate:"required"`
-	Type		string	`validate:"required"`
-	Format		string	`validate:"required"`
-	Source		string	`validate:"required"`
-	Filename	string
+	Name        string `validate:"required"`
+	Description string `validate:"required"`
+	Type        string `validate:"required"`
+	Format      string `validate:"required"`
+	Source      string `validate:"required"`
+	Filename    string
 }
 
 type ApiserverConf struct {
@@ -59,8 +59,8 @@ type ApiserverConf struct {
 }
 
 type InternalConf struct {
-//	RefreshZoneCh chan RpzRefresher
-//	RpzCmdCh      chan RpzCmdData
+	// RefreshZoneCh chan RpzRefresher
+	// RpzCmdCh      chan RpzCmdData
 }
 
 func ValidateConfig(v *viper.Viper, cfgfile string) error {

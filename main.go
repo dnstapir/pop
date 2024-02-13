@@ -8,17 +8,17 @@ import (
 	"flag"
 	"fmt"
 	"log"
-//	"net"
+	//	"net"
 	"os"
 	"os/signal"
-//	"strconv"
-//	"strings"
+	//	"strconv"
+	//	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-//	"github.com/miekg/dns"
+	//	"github.com/miekg/dns"
 	"github.com/spf13/viper"
 	_ "unsafe" // to use constants from linker
 
@@ -86,7 +86,7 @@ func mainloop(conf *Config, configfile *string) {
 
 				log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
 				log.Printf("mainloop: Requesting refresh of all RPZ zones")
-				conf.TemData.RpzRefreshCh <- RpzRefresh{ Name: "" }
+				conf.TemData.RpzRefreshCh <- RpzRefresh{Name: ""}
 			}
 		}
 	}()
@@ -130,7 +130,6 @@ func main() {
 		TEMExiter("Could not load config %s: Error: %v", tapir.TemPolicyCfgFile, err)
 	}
 
-
 	logfile := viper.GetString("log.file")
 	tapir.SetupLogging(logfile)
 	fmt.Printf("Logging to file: %s\n", logfile)
@@ -148,12 +147,12 @@ func main() {
 
 	td, err := NewTemData(&conf, log.Default())
 	if err != nil {
-	   TEMExiter("Error from NewTemData: %v", err)
+		TEMExiter("Error from NewTemData: %v", err)
 	}
 	go td.RefreshEngine(&conf, stopch)
 	err = td.ParseSources()
 	if err != nil {
-	   TEMExiter("Error from ParseSources: %v", err)
+		TEMExiter("Error from ParseSources: %v", err)
 	}
 
 	apistopper := make(chan struct{}) //
@@ -194,4 +193,3 @@ func main() {
 // 	}
 // 	return stream
 // }
-
