@@ -7,7 +7,7 @@ replace github.com/dnstapir/tapir => ../tapir
 require (
 	github.com/dnstapir/tapir v0.0.0-00010101000000-000000000000
 	github.com/go-playground/validator/v10 v10.9.0
-	github.com/gorilla/mux v1.8.0
+	github.com/gorilla/mux v1.8.1
 	github.com/mattn/go-sqlite3 v1.14.17
 	github.com/miekg/dns v1.1.58
 	github.com/smhanov/dawg v0.0.0-20220118194912-66057bdbf2e3
