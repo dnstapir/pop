@@ -109,7 +109,7 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 				ApexResponder(w, r, zd, qname, qtype)
 			} else {
 				log.Printf("DnsHandler: Qname is '%s', which is not a known zone.", qname)
-				known_zones := []string{ td.Rpz.ZoneName }
+				known_zones := []string{td.Rpz.ZoneName}
 				for z, _ := range td.RpzSources {
 					known_zones = append(known_zones, z)
 				}
@@ -118,9 +118,9 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 				// Let's see if we can find the zone
 				if strings.HasSuffix(qname, td.Rpz.ZoneName) {
 					log.Printf("Query for qname %s belongs in our own RPZ \"%s\"",
-							  qname, td.Rpz.ZoneName)
-				   td.QueryResponder(w, r, qname, qtype)
-				   return
+						qname, td.Rpz.ZoneName)
+					td.QueryResponder(w, r, qname, qtype)
+					return
 				}
 				zd := td.FindZone(qname)
 				if zd == nil {
@@ -155,7 +155,7 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16) 
 	m.SetReply(r)
 	m.MsgHdr.Authoritative = true
 
-//	apex := zd.Owners[zd.OwnerIndex[zd.ZoneName]]
+	//	apex := zd.Owners[zd.OwnerIndex[zd.ZoneName]]
 	// zd.Logger.Printf("*** Ownerindex(%s)=%d apex: %v", zd.ZoneName, zd.OwnerIndex[zd.ZoneName], apex)
 	zd := td.Rpz.Axfr.ZoneData
 	// XXX: we need this, but later var glue tapir.RRset
@@ -163,32 +163,32 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16) 
 	switch qtype {
 	case dns.TypeAXFR:
 		log.Printf("We have the zone %s, so let's try to serve it", td.Rpz.ZoneName)
-//		log.Printf("SOA: %s", zd.SOA.String())
-//		log.Printf("BodyRRs: %d (+ %d apex RRs)", len(zd.BodyRRs), zd.ApexLen)
+		//		log.Printf("SOA: %s", zd.SOA.String())
+		//		log.Printf("BodyRRs: %d (+ %d apex RRs)", len(zd.BodyRRs), zd.ApexLen)
 
-//		td.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
-//			zd.ZoneName, len(zd.RRs))
+		//		td.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
+		//			zd.ZoneName, len(zd.RRs))
 
 		td.RpzAxfrOut(w, r)
 		return nil
 	case dns.TypeIXFR:
 		td.Logger.Printf("RpzResponder: %s is our RPZ output", td.Rpz.ZoneName)
 
-//		td.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
-//			zd.ZoneName, len(zd.RRs))
+		//		td.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
+		//			zd.ZoneName, len(zd.RRs))
 
 		td.RpzIxfrOut(w, r)
 		return nil
 	case dns.TypeSOA:
 		// zd.Logger.Printf("There are %d SOA RRs in %s. rrset: %v", len(apex.RRtypes[dns.TypeSOA].RRs),
 		// 			   zd.ZoneName, apex.RRtypes[dns.TypeSOA])
-//		m.Answer = append(m.Answer, dns.RR(&zd.SOA))
+		//		m.Answer = append(m.Answer, dns.RR(&zd.SOA))
 		td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial
 		m.Answer = append(m.Answer, dns.RR(&td.Rpz.Axfr.SOA))
-//		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRs...)
+		//		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRs...)
 		m.Ns = append(m.Ns, td.Rpz.Axfr.ZoneData.NSrrs...)
-//		glue = *zd.FindGlue(apex.RRtypes[dns.TypeNS])
-//		m.Extra = append(m.Extra, glue.RRs...)
+		//		glue = *zd.FindGlue(apex.RRtypes[dns.TypeNS])
+		//		m.Extra = append(m.Extra, glue.RRs...)
 
 	default:
 		// every apex query we don't want to deal with
@@ -200,7 +200,7 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16) 
 }
 
 func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData,
-     qname string, qtype uint16) error {
+	qname string, qtype uint16) error {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.MsgHdr.Authoritative = true
@@ -372,7 +372,7 @@ func (td *TemData) QueryResponder(w dns.ResponseWriter, r *dns.Msg, qname string
 	returnNXDOMAIN := func() {
 		// return NXDOMAIN
 		m.MsgHdr.Rcode = dns.RcodeNameError
-//		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
+		//		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
 		m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
 		w.WriteMsg(m)
 		return
@@ -380,22 +380,22 @@ func (td *TemData) QueryResponder(w dns.ResponseWriter, r *dns.Msg, qname string
 
 	// log.Printf("Zone %s Data: %v", zd.ZoneName, zd.Data)
 
-//	var err error
+	//	var err error
 	var exist bool
 	var tn *tapir.RpzName
 
 	if tn, exist = td.Rpz.Axfr.Data[qname]; exist {
-	   m.MsgHdr.Rcode = dns.RcodeSuccess
-	   switch qtype {
-	   case dns.TypeCNAME, dns.TypeANY:
-		m.Answer = append(m.Answer, *tn.RR)
-		m.Ns = append(m.Ns, td.Rpz.Axfr.NSrrs...)
-	   default:
-	        m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
-	   }
-	   w.WriteMsg(m)
-	   return nil
-	} 
+		m.MsgHdr.Rcode = dns.RcodeSuccess
+		switch qtype {
+		case dns.TypeCNAME, dns.TypeANY:
+			m.Answer = append(m.Answer, *tn.RR)
+			m.Ns = append(m.Ns, td.Rpz.Axfr.NSrrs...)
+		default:
+			m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
+		}
+		w.WriteMsg(m)
+		return nil
+	}
 	returnNXDOMAIN()
 	return nil
 }

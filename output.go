@@ -33,7 +33,7 @@ func (td *TemData) GenerateRpzAxfr() error {
 
 	for bname, blist := range td.Lists["blacklist"] {
 		td.Logger.Printf("---> GenerateRpzAxfr: working on blacklist %s (%d names)",
-				       bname, len(blist.Names))
+			bname, len(blist.Names))
 		switch blist.Format {
 		case "dawg":
 			td.Logger.Printf("Cannot list DAWG lists. Ignoring blacklist %s.", bname)
@@ -41,7 +41,7 @@ func (td *TemData) GenerateRpzAxfr() error {
 			for k, _ := range blist.Names {
 				if tapir.GlobalCF.Debug {
 					td.Logger.Printf("Adding name %s from blacklist %s to tentative output.",
-								 k, bname)
+						k, bname)
 				}
 				if td.Whitelisted(k) {
 					td.Logger.Printf("Blacklisted name %s is also whitelisted. Dropped from output.", k)
@@ -129,7 +129,7 @@ func (td *TemData) GenerateRpzAxfr() error {
 			rpzn := tapir.RpzName{
 				Name:   name,
 				RR:     &rr,
-				Action: td.Policy.BlacklistAction,	// XXX: naa
+				Action: td.Policy.BlacklistAction, // XXX: naa
 			}
 			newaxfrdata = append(newaxfrdata, &rpzn)
 			// td.Rpz.RpzMap[name+td.Rpz.ZoneName] = &rpzn
@@ -139,7 +139,7 @@ func (td *TemData) GenerateRpzAxfr() error {
 		}
 	}
 
-//	td.Rpz.Axfr.Data = td.Rpz.RpzMap
+	//	td.Rpz.Axfr.Data = td.Rpz.RpzMap
 	td.Logger.Printf("GenerateRpzAxfrData: put %d RRs in %s",
 		len(td.Rpz.Axfr.Data), td.Rpz.ZoneName)
 	return nil
@@ -220,22 +220,22 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 				removedata = append(removedata, cur)
 
 				if newaction != tapir.WHITELIST {
-				cname := new(dns.CNAME)
-				cname.Hdr = dns.RR_Header{
-					Name:     tn.Name + td.Rpz.ZoneName,
-					Rrtype:   dns.TypeCNAME,
-					Class:    dns.ClassINET,
-					Ttl:      3600,
-					Rdlength: 1,
-				}
-				cname.Target = tapir.ActionToCNAMETarget[newaction]
-				rr := dns.RR(cname)
+					cname := new(dns.CNAME)
+					cname.Hdr = dns.RR_Header{
+						Name:     tn.Name + td.Rpz.ZoneName,
+						Rrtype:   dns.TypeCNAME,
+						Class:    dns.ClassINET,
+						Ttl:      3600,
+						Rdlength: 1,
+					}
+					cname.Target = tapir.ActionToCNAMETarget[newaction]
+					rr := dns.RR(cname)
 
-				adddata = append(adddata, &tapir.RpzName{
-					Name:   tn.Name,
-					RR:     &rr,
-					Action: newaction,
-				})
+					adddata = append(adddata, &tapir.RpzName{
+						Name:   tn.Name,
+						RR:     &rr,
+						Action: newaction,
+					})
 				}
 			} else {
 				if td.Debug {
@@ -309,20 +309,19 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 		curserial := td.Rpz.CurrentSerial
 		newserial := curserial + 1 // XXX: not dealing with serial wraps
 		thisixfr := RpzIxfr{
-				FromSerial: curserial,
-				ToSerial:   newserial,
-				Removed:    removedata,
-				Added:      adddata,
-   			    }
+			FromSerial: curserial,
+			ToSerial:   newserial,
+			Removed:    removedata,
+			Added:      adddata,
+		}
 		td.Rpz.IxfrChain = append(td.Rpz.IxfrChain, thisixfr)
 		td.Rpz.CurrentSerial = newserial
 		if td.Verbose {
-		   td.Logger.Printf("GenRpzIxfr: added new IXFR (from: %d to: %d) to chain. Chain has %d IXFRs",
-		   				 curserial, newserial, len(td.Rpz.IxfrChain))
+			td.Logger.Printf("GenRpzIxfr: added new IXFR (from: %d to: %d) to chain. Chain has %d IXFRs",
+				curserial, newserial, len(td.Rpz.IxfrChain))
 		}
 		return thisixfr, nil
 	}
 
 	return RpzIxfr{}, nil
 }
-

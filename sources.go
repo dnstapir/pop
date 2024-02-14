@@ -17,7 +17,7 @@ import (
 )
 
 type TemData struct {
-     	mu		       sync.RWMutex
+	mu                     sync.RWMutex
 	Lists                  map[string]map[string]*tapir.WBGlist
 	RpzRefreshCh           chan RpzRefresh
 	RpzCommandCh           chan RpzCmdData
@@ -180,9 +180,13 @@ func (td *TemData) ParseSources() error {
 		}
 	td.mu.Unlock()
 
-	td.Logger.Printf("*** ParseSources: using new style config, under key \"sources2\"")
 	srcs := viper.GetStringMap("sources")
 	td.Logger.Printf("*** ParseSources: there are %d items in spec.", len(srcs))
+
+	threads := 0
+
+	var rptchan = make(chan string, 5)
+
 	for name, src := range srcs {
 		switch src.(type) {
 		case map[string]any:
@@ -208,40 +212,58 @@ func (td *TemData) ParseSources() error {
 			td.Logger.Printf("=== Source: %s (%s) will be used (list type %s)",
 				name, s["name"], s["type"])
 
+			var params = map[string]string{}
+
+			for _, key := range []string{"upstream", "filename", "zone"} {
+				if tmp, ok := s[key].(string); ok {
+					params[key] = tmp
+				} else {
+					params[key] = ""
+				}
+			}
+
+			threads++
 			newsource := tapir.WBGlist{
-				Name:        s["name"].(string),
+				Name:        name,
 				Description: s["description"].(string),
 				Type:        s["type"].(string),
 				SrcFormat:   s["format"].(string),
 				Datasource:  s["source"].(string),
 				Names:       map[string]tapir.TapirName{},
+				Filename:    params["filename"],
+				RpzUpstream: params["upstream"],
+				RpzZoneName: dns.Fqdn(params["zone"]),
 			}
 
 			var err error
 
-			switch s["source"] {
-			case "mqtt":
-				if !td.TapirMqttEngineRunning {
-					err := td.StartMqttEngine()
-					if err != nil {
-						TEMExiter("Error starting MQTT Engine: %v", err)
+			go func(name string, threads int) {
+				td.Logger.Printf("Thread: parsing source \"%s\"", name)
+				switch s["source"] {
+				case "mqtt":
+					if !td.TapirMqttEngineRunning {
+						err := td.StartMqttEngine()
+						if err != nil {
+							TEMExiter("Error starting MQTT Engine: %v", err)
+						}
 					}
+					newsource.Format = "map" // for now
+					// td.Greylists[newsource.Name] = &newsource
+					td.mu.Lock()
+					td.Lists["greylist"][newsource.Name] = &newsource
+					td.mu.Unlock()
+					td.Logger.Printf("*** MQTT sources are only managed via RefreshEngine.")
+					rptchan <- name
+				case "file":
+					err = td.ParseLocalFile(name, &newsource, rptchan)
+				case "xfr":
+					err = td.ParseRpzFeed(name, &newsource, rptchan)
 				}
-				newsource.Format = "map" // for now
-				// td.Greylists[newsource.Name] = &newsource
-				td.mu.Lock()
-				td.Lists["greylist"][newsource.Name] = &newsource
-				td.mu.Unlock()
-				td.Logger.Printf("*** MQTT sources are only managed via RefreshEngine.")
-			case "file":
-				err = td.ParseLocalFile(name, &newsource)
-			case "xfr":
-				err = td.ParseRpzFeed(name, &newsource)
-			}
-			if err != nil {
-				log.Printf("Error parsing source %s (datasource %s): %v",
-					name, s["source"], err)
-			}
+				if err != nil {
+					log.Printf("Error parsing source %s (datasource %s): %v",
+						name, s["source"], err)
+				}
+			}(name, threads)
 
 		default:
 			td.Logger.Printf("*** ParseSources: Error: failed to parse source \"%s\": %v",
@@ -249,10 +271,26 @@ func (td *TemData) ParseSources() error {
 		}
 	}
 
+	for {
+		tmp := <-rptchan
+		threads--
+		td.Logger.Printf("ParseSources: source \"%s\" is now complete. %d remaining", tmp, threads)
+		if threads == 0 {
+			break
+		}
+	}
+
+	td.Logger.Printf("ParseSources: static sources done.")
+
+	err := td.GenerateRpzAxfr()
+	if err != nil {
+		td.Logger.Printf("ParseSources: Error from GenerateRpzAxfr(): %v", err)
+	}
+
 	return nil
 }
 
-func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
+func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan string) error {
 	td.Logger.Printf("ParseLocalFile: %s (%s)", sourceid, s.Type)
 	var df dawg.Finder
 	var err error
@@ -267,8 +305,6 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 	case "domains":
 		s.Names = map[string]tapir.TapirName{}
 		s.Format = "map"
-		// XXX: Should be reworked to not build up the entire list in the names slice.
-		// names, err := tapir.ParseText(s.Filename, s.Names, true)
 		_, err := tapir.ParseText(s.Filename, s.Names, true)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -278,15 +314,9 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 			TEMExiter("ParseLocalFile: error parsing file %s: %v", s.Filename, err)
 		}
 
-//		for _, name := range names {
-//			s.Names[name] = tapir.TapirName{Name: name}
-//		}
-
 	case "csv":
 		s.Names = map[string]tapir.TapirName{}
 		s.Format = "map"
-		// XXX: Should be reworked to not build up the entire list in the names slice.
-		// names, err := tapir.ParseCSV(s.Filename, s.Names, true)
 		_, err := tapir.ParseCSV(s.Filename, s.Names, true)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -296,13 +326,10 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 			TEMExiter("ParseLocalFile: error parsing file %s: %v", s.Filename, err)
 		}
 
-//		for _, name := range names {
-//			s.Names[name] = tapir.TapirName{Name: name}
-//		}
-
 	case "dawg":
 		if s.Type != "whitelist" {
-			TEMExiter("Error: source %s (file %s): DAWG is only defined for whitelists.", sourceid, s.Filename)
+			TEMExiter("Error: source %s (file %s): DAWG is only defined for whitelists.",
+				sourceid, s.Filename)
 		}
 		td.Logger.Printf("ParseLocalFile: loading DAWG: %s", s.Filename)
 		df, err = dawg.Load(s.Filename)
@@ -320,16 +347,18 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 	td.mu.Lock()
 	td.Lists[s.Type][s.Name] = s
 	td.mu.Unlock()
+	rpt <- sourceid
 
 	return nil
 }
 
-func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
-	zone := viper.GetString(fmt.Sprintf("sources.%s.zone", sourceid))
-	if zone == "" {
-		return fmt.Errorf("Unable to load RPZ source %s, upstream zone not specified.",
-			sourceid)
-	}
+func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan string) error {
+	//	zone := viper.GetString(fmt.Sprintf("sources.%s.zone", sourceid)) // XXX: not the way to do it
+	//	if zone == "" {
+	//		return fmt.Errorf("Unable to load RPZ source %s, upstream zone not specified.",
+	//			sourceid)
+	//	}
+	//	td.Logger.Printf("ParseRpzFeed: zone: %s params[zone]: %s", zone, s.Zone)
 
 	upstream := viper.GetString(fmt.Sprintf("sources.%s.upstream", sourceid))
 	if upstream == "" {
@@ -339,24 +368,31 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
 
 	s.Names = map[string]tapir.TapirName{} // must initialize
 	s.Format = "map"
-	s.RpzZoneName = dns.Fqdn(zone)
-	s.RpzUpstream = upstream
-	td.Logger.Printf("---> SetupRPZFeed: about to transfer zone %s from %s", zone, upstream)
+	//	s.RpzZoneName = dns.Fqdn(zone)
+	//	s.RpzUpstream = upstream
+	td.Logger.Printf("---> SetupRPZFeed: about to transfer zone %s from %s", s.RpzZoneName, s.RpzUpstream)
+
+	var reRpt = make(chan RpzRefreshResult, 1)
 	td.RpzRefreshCh <- RpzRefresh{
-		Name:     dns.Fqdn(zone),
-		Upstream: upstream,
-		//		RRKeepFunc:  RpzKeepFunc,
+		Name:        s.RpzZoneName,
+		Upstream:    s.RpzUpstream,
 		RRParseFunc: td.RpzParseFuncFactory(s),
 		ZoneType:    tapir.RpzZone,
+		Resp:        reRpt,
 	}
+
+	<-reRpt
+	td.Logger.Printf("ParseRpzFeed: parsing RPZ %s complete", s.RpzZoneName)
+
 	td.mu.Lock()
 	td.Lists[s.Type][s.Name] = s
 	td.mu.Unlock()
+	rpt <- sourceid
 
 	return nil
 }
 
-func RpzKeepFunc(rrtype uint16) bool {
+func xxxRpzKeepFunc(rrtype uint16) bool {
 	switch rrtype {
 	case dns.TypeSOA, dns.TypeNS, dns.TypeCNAME:
 		return true
@@ -410,7 +446,7 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 					td.mu.Lock()
 					td.Lists["greylist"]["grey_catchall"].Names[name] =
 						tapir.TapirName{
-							Name: name,
+							Name:   name,
 							Action: action,
 						} // drop all other actions
 					td.mu.Unlock()
