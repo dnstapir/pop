@@ -16,7 +16,12 @@ type Config struct {
 	Service   ServiceConf
 	Server    ServerConf
 	Apiserver ApiserverConf
-	Sources   []SourceConf
+	Sources   map[string]SourceConf
+	OldSources   struct {
+		  	 Active	[]string	`validate:"required"`
+			 Spec			[]SourceConf
+		  }
+	Policy	  PolicyConf
 	Log       struct {
 		File string `validate:"required"`
 	}
@@ -36,21 +41,46 @@ type ServiceConf struct {
 type ServerConf struct {
 	Listen string `validate:"required"`
 	Port   string `validate:"required"`
-	//		Upstreams   []string `validate:"required"`
-	//		Downstreams []string `validate:"required"`
-	//	    Zones	   []string		`validate:"required"`
-	//		XferZones  []string `validate:"required"`
-	//		MapZones   []string `validate:"required"`
-	//		SliceZones []string `validate:"required"`
 }
 
 type SourceConf struct {
-	Name        string `validate:"required"`
-	Description string `validate:"required"`
-	Type        string `validate:"required"`
-	Format      string `validate:"required"`
-	Source      string `validate:"required"`
+     	Active	    *bool   `validate:"required"`
+	Name        string  `validate:"required"`
+	Description string  `validate:"required"`
+	Type        string  `validate:"required"`
+	Format      string  `validate:"required"`
+	Source      string  `validate:"required"`
 	Filename    string
+	Upstream    string
+	Zone	    string
+}
+
+type PolicyConf struct {
+     Whitelist	struct {
+     		       Action   string	`validate:"required"`
+     		}
+     Blacklist	struct {
+     		       Action   string	`validate:"required"`
+     		}
+     Greylist	GreylistConf
+}
+
+type ListConf struct {
+}
+
+type GreylistConf struct {
+     NumSources	  struct {
+     		  	 Limit	int	`validate:"required"`
+			 Action	string	`validate:"required"`
+		  }
+     NumTapirTags  struct {
+     		  	 Limit	int	`validate:"required"`
+			 Action	string	`validate:"required"`
+		  }
+     BlackTapir	  struct {
+     		  	 Tags	[]string	`validate:"required"`
+			 Action	string		`validate:"required"`
+		  }		  
 }
 
 type ApiserverConf struct {
@@ -82,6 +112,13 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 	configsections["service"] = config.Server
 	configsections["server"] = config.Server
 	configsections["apiserver"] = config.Apiserver
+	configsections["policy"] = config.Policy
+
+	// Cannot validate a map[string]foobar, must validate the individual foobars:
+	for key, val := range config.Sources {
+	    configsections["sources-"+key] = val
+	}
+	configsections["oldsources"] = config.OldSources
 
 	if err := ValidateBySection(&config, configsections, cfgfile); err != nil {
 		TEMExiter("Config \"%s\" is missing required attributes:\n%v\n", cfgfile, err)
@@ -95,7 +132,8 @@ func ValidateBySection(config *Config, configsections map[string]interface{}, cf
 	for k, data := range configsections {
 		log.Printf("%s: Validating config for %s section\n", config.Service.Name, k)
 		if err := validate.Struct(data); err != nil {
-			TEMExiter("Config %s, section %s: missing required attributes:\n%v\n",
+		        log.Printf("ValidateBySection: data that caused validation to fail:\n%v\n", data)
+			TEMExiter("ValidateBySection: Config %s, section %s: missing required attributes:\n%v\n",
 				cfgfile, k, err)
 		}
 	}

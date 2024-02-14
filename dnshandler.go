@@ -109,13 +109,19 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 				ApexResponder(w, r, zd, qname, qtype)
 			} else {
 				log.Printf("DnsHandler: Qname is '%s', which is not a known zone.", qname)
-				known_zones := []string{}
+				known_zones := []string{ td.Rpz.ZoneName }
 				for z, _ := range td.RpzSources {
 					known_zones = append(known_zones, z)
 				}
 				log.Printf("DnsHandler: Known zones are: %v", known_zones)
 
 				// Let's see if we can find the zone
+				if strings.HasSuffix(qname, td.Rpz.ZoneName) {
+					log.Printf("Query for qname %s belongs in our own RPZ \"%s\"",
+							  qname, td.Rpz.ZoneName)
+				   td.QueryResponder(w, r, qname, qtype)
+				   return
+				}
 				zd := td.FindZone(qname)
 				if zd == nil {
 					log.Printf("After FindZone: zd==nil")
@@ -380,10 +386,11 @@ func (td *TemData) QueryResponder(w dns.ResponseWriter, r *dns.Msg, qname string
 
 	if tn, exist = td.Rpz.Axfr.Data[qname]; exist {
 	   m.MsgHdr.Rcode = dns.RcodeSuccess
-	   if qtype == dns.TypeCNAME {
+	   switch qtype {
+	   case dns.TypeCNAME, dns.TypeANY:
 		m.Answer = append(m.Answer, *tn.RR)
 		m.Ns = append(m.Ns, td.Rpz.Axfr.NSrrs...)
-	   } else {
+	   default:
 	        m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
 	   }
 	   w.WriteMsg(m)

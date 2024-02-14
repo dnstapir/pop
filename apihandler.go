@@ -226,12 +226,6 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "colourlists":
 			log.Printf("TEM debug white/black/grey lists")
-			// 			resp.Whitelists = td.Whitelists
-			// 			for _, wl := range resp.Whitelists {
-			// 			    wl.Dawgf = nil
-			// 			}
-			// 			resp.Blacklists = td.Blacklists
-			// 			resp.Greylists = td.Greylists
 			resp.Lists = map[string]map[string]*tapir.WBGlist{}
 			for t, l := range td.Lists {
 				resp.Lists[t] = map[string]*tapir.WBGlist{}

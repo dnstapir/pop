@@ -88,10 +88,10 @@ func (td *TemData) GenerateRpzAxfr() error {
 
 	newaxfrdata := []*tapir.RpzName{}
 	td.Rpz.RpzMap = map[string]*tapir.RpzName{}
-	for n, _ := range td.BlacklistedNames {
+	for name, _ := range td.BlacklistedNames {
 		cname := new(dns.CNAME)
 		cname.Hdr = dns.RR_Header{
-			Name:   n + td.Rpz.ZoneName,
+			Name:   name + td.Rpz.ZoneName,
 			Rrtype: dns.TypeCNAME,
 			Class:  dns.ClassINET,
 			Ttl:    3600,
@@ -100,21 +100,24 @@ func (td *TemData) GenerateRpzAxfr() error {
 		rr := dns.RR(cname)
 
 		rpzn := tapir.RpzName{
-			Name:   n,
+			Name:   name,
 			RR:     &rr,
 			Action: td.Policy.BlacklistAction,
 		}
 		newaxfrdata = append(newaxfrdata, &rpzn)
-		td.Rpz.RpzMap[n+td.Rpz.ZoneName] = &rpzn
+		// td.Rpz.RpzMap[nname+td.Rpz.ZoneName] = &rpzn
+		td.mu.Lock()
+		td.Rpz.Axfr.Data[name+td.Rpz.ZoneName] = &rpzn
+		td.mu.Unlock()
 	}
 
-	for n, v := range td.GreylistedNames {
-		rpzaction := ApplyGreyPolicy(n, v)
+	for name, v := range td.GreylistedNames {
+		rpzaction := ApplyGreyPolicy(name, v)
 
 		if rpzaction != "" {
 			cname := new(dns.CNAME)
 			cname.Hdr = dns.RR_Header{
-				Name:     n + td.Rpz.ZoneName,
+				Name:     name + td.Rpz.ZoneName,
 				Rrtype:   dns.TypeCNAME,
 				Class:    dns.ClassINET,
 				Ttl:      3600,
@@ -124,17 +127,20 @@ func (td *TemData) GenerateRpzAxfr() error {
 			rr := dns.RR(cname)
 
 			rpzn := tapir.RpzName{
-				Name:   n,
+				Name:   name,
 				RR:     &rr,
-				Action: td.Policy.BlacklistAction,
+				Action: td.Policy.BlacklistAction,	// XXX: naa
 			}
 			newaxfrdata = append(newaxfrdata, &rpzn)
-			td.Rpz.RpzMap[n+td.Rpz.ZoneName] = &rpzn
+			// td.Rpz.RpzMap[name+td.Rpz.ZoneName] = &rpzn
+			td.mu.Lock()
+			td.Rpz.Axfr.Data[name+td.Rpz.ZoneName] = &rpzn
+			td.mu.Unlock()
 		}
 	}
-	//	td.RpzZones[viper.GetString("output.rpz.zonename")].RRs = td.RpzOutput
-	td.Rpz.Axfr.Data = td.Rpz.RpzMap
-	td.Logger.Printf("GenerateRpzAxfrData: put %d RRs in td.RpzZones[%s].RRs",
+
+//	td.Rpz.Axfr.Data = td.Rpz.RpzMap
+	td.Logger.Printf("GenerateRpzAxfrData: put %d RRs in %s",
 		len(td.Rpz.Axfr.Data), td.Rpz.ZoneName)
 	return nil
 }
@@ -201,7 +207,6 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 
 	var removedata, adddata []*tapir.RpzName
 	for _, tn := range data.Removed {
-//		if cur, exist := td.Rpz.RpzMap[tn.Name]; exist {
 		if cur, exist := td.Rpz.Axfr.Data[tn.Name]; exist {
 			newaction := td.ComputeRpzPolicy(tn.Name)
 			oldaction := cur.Action
@@ -248,7 +253,6 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 	for _, tn := range data.Added {
 		addtorpz = false
 		newaction := td.ComputeRpzPolicy(tn.Name)
-//		if cur, exist := td.Rpz.RpzMap[tn.Name]; exist {
 		if cur, exist := td.Rpz.Axfr.Data[tn.Name]; exist {
 			if newaction == tapir.WHITELIST {
 				// delete from rpz
