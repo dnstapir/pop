@@ -1,0 +1,18 @@
+# manually maintained
+
+outputs:
+   mqtt1:
+      active:		true
+      name:		dns-tapir-out
+      description:	"local mqtt reflector"
+      type:		greylist
+      source:		mqtt
+      format:		tapir-mqtt-1
+   http1:
+      active:		true
+      name:		dns-tapir-bootstrapper
+      description:	"Updated bootstrap feed for the DNS TAPIR MQTT stream"
+      type:		greylist
+      source:		http
+      url:		http://127.0.0.1:5678/tapir/v1/bootstrap
+      

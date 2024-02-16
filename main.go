@@ -121,6 +121,13 @@ func main() {
 	} else {
 		TEMExiter("Could not load config %s: Error: %v", tapir.TemSourcesCfgFile, err)
 	}
+	viper.SetConfigFile(tapir.TemOutputsCfgFile)
+	if err := viper.MergeInConfig(); err == nil {
+		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+		cfgFileUsed = viper.ConfigFileUsed()
+	} else {
+		TEMExiter("Could not load config %s: Error: %v", tapir.TemOutputsCfgFile, err)
+	}
 	viper.SetConfigFile(tapir.TemPolicyCfgFile)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
@@ -157,6 +164,7 @@ func main() {
 	apistopper := make(chan struct{}) //
 	// conf.Internal.APIStopCh = apistopper
 	go APIdispatcher(&conf, apistopper)
+//	go httpsserver(&conf, apistopper)
 
 	go DnsEngine(&conf)
 	conf.BootTime = time.Now()
@@ -164,31 +172,3 @@ func main() {
 	mainloop(&conf, &cfgFileUsed)
 }
 
-// func ParseUpDownStreams(stream string) string {
-// 	parts := strings.Split(stream, ":")
-// 	if len(parts) > 1 {
-// 		portstr := parts[len(parts)-1]
-// 		_, err := strconv.Atoi(portstr)
-// 		if err != nil {
-// 			TEMExiter("Illegal port specification for AXFR src: %s", portstr)
-// 		}
-// 		if _, ok := dns.IsDomainName(parts[0]); ok {
-// 			ips, err := net.LookupHost(parts[0])
-// 			if err != nil {
-// 				TEMExiter("Error from net.LookupHost(%s): %v", parts[0], err)
-// 			}
-// 			parts[0] = ips[0]
-// 		}
-// 		stream = net.JoinHostPort(parts[0], portstr)
-// 	} else {
-// 		if _, ok := dns.IsDomainName(stream); ok {
-// 			ips, err := net.LookupHost(parts[0])
-// 			if err != nil {
-// 				TEMExiter("Error from net.LookupHost(%s): %v", parts[0], err)
-// 			}
-// 			parts[0] = ips[0]
-// 		}
-// 		stream = net.JoinHostPort(parts[0], "53")
-// 	}
-// 	return stream
-// }
