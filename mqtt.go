@@ -58,6 +58,8 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	var wbgl *tapir.WBGlist
 	var exists bool
 
+	td.Logger.Printf("ProcessTapirUpdate: looking up list [%s][%s]", tpkg.Data.ListType, tpkg.Data.SrcName)
+
 	switch tpkg.Data.ListType {
 	case "whitelist", "greylist", "blacklist":
 		wbgl, exists = td.Lists[tpkg.Data.ListType][tpkg.Data.SrcName]

@@ -214,7 +214,7 @@ func (td *TemData) ParseSources() error {
 
 			var params = map[string]string{}
 
-			for _, key := range []string{"upstream", "filename", "zone"} {
+			for _, key := range []string{"name", "upstream", "filename", "zone"} {
 				if tmp, ok := s[key].(string); ok {
 					params[key] = tmp
 				} else {
@@ -224,7 +224,7 @@ func (td *TemData) ParseSources() error {
 
 			threads++
 			newsource := tapir.WBGlist{
-				Name:        name,
+				Name:        params["name"],
 				Description: s["description"].(string),
 				Type:        s["type"].(string),
 				SrcFormat:   s["format"].(string),
@@ -251,6 +251,7 @@ func (td *TemData) ParseSources() error {
 					// td.Greylists[newsource.Name] = &newsource
 					td.mu.Lock()
 					td.Lists["greylist"][newsource.Name] = &newsource
+					td.Logger.Printf("Created list [greylist][%s]", newsource.Name)
 					td.mu.Unlock()
 					td.Logger.Printf("*** MQTT sources are only managed via RefreshEngine.")
 					rptchan <- name
