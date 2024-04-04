@@ -1,0 +1,20 @@
+# manually maintained
+
+# policies ONLY affect GREYLISTED sources. whitelisted and blacklisted
+# sources go stright into (or not) the resulting RPZ
+# known actions: passthru, drop, nxdomain, nodata, tapir, police
+policy:
+   whitelist:
+      action:		PASSTHRU
+   blacklist:
+      action:		NODATA	# present in any blacklist->action
+   greylist:
+      numsources:	# present in more than limit sources->action
+         limit:		3
+         action:	NXDOMAIN
+      numtapirtags:     # more than limit tags->action
+         limit:		4
+         action:	DROP
+      blacktapir:	# any of these->action
+         tags:		[ likelymalware, badip, childporn ]	
+         action:	REDIRECT

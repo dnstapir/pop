@@ -6,6 +6,8 @@ package main
 
 import (
 	"fmt"
+	"log"
+
 	//	"github.com/smhanov/dawg"
 	"github.com/dnstapir/tapir"
 )
@@ -54,19 +56,17 @@ func (td *TemData) Blacklisted(name string) bool {
 func (td *TemData) Greylisted(name string) bool {
 	for _, list := range td.Lists["greylist"] {
 		if tapir.GlobalCF.Debug {
-			td.Logger.Printf("Blacklisted: checking %s in blacklist %s", name, list.Name)
+			td.Logger.Printf("Greylisted: checking %s in greylist %s", name, list.Name)
 		}
 		switch list.Format {
-		case "dawg":
-			if list.Dawgf.IndexOf(name) != -1 {
-				return true
-			}
 		case "map":
 			if _, exists := list.Names[name]; exists {
 				return true
 			}
 		case "trie":
 			return list.Trie.Search(name) != nil
+		default:
+			log.Fatalf("Unknown greylist format %s", list.Format)
 		}
 	}
 	return false

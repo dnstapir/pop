@@ -5,12 +5,13 @@
 package main
 
 import (
-	"github.com/dnstapir/tapir"
-	"github.com/miekg/dns"
-	"github.com/spf13/viper"
 	"log"
 	"strings"
 	"sync"
+
+	"github.com/dnstapir/tapir"
+	"github.com/miekg/dns"
+	"github.com/spf13/viper"
 )
 
 func (td *TemData) BootstrapRpzOutput() error {
@@ -55,7 +56,7 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	zone := td.Rpz.ZoneName
 
 	if td.Verbose {
-		td.Logger.Printf("RpzAxfrOutOut: Will try to serve RPZ %s (%d RRs)", zone,
+		td.Logger.Printf("RpzAxfrOut: Will try to serve RPZ %s (%d RRs)", zone,
 			len(td.Rpz.Axfr.Data))
 	}
 
@@ -65,7 +66,10 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	wg.Add(1)
 
 	go func() {
-		tr.Out(w, r, outbound_xfr)
+		err := tr.Out(w, r, outbound_xfr)
+		if err != nil {
+			td.Logger.Printf("Error from transfer.Out(): %v", err)
+		}
 		wg.Done()
 	}()
 

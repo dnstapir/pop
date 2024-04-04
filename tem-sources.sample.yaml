@@ -3,7 +3,7 @@
 sources:
    active:	[ tapir, rpz2, black_as_sin, white_and_shiny, localwhitelist ]
    tapir:
-      name:		dns-tapir
+      name:		dns-tapir	# must have EXACTLY this name!
       description:	DNS TAPIR main intelligence feed
       type:		greylist
       source:		mqtt
