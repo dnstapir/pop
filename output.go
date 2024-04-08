@@ -82,7 +82,7 @@ func (td *TemData) GenerateRpzAxfr() error {
 							tmp.Action = tmp.Action | v.Action
 							grey[k] = tmp
 						} else {
-							grey[k] = &v
+							grey[k] = v
 						}
 					}
 				}
@@ -179,11 +179,12 @@ func ApplyGreyPolicy(name string, v *tapir.TapirName) string {
 func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
 	var greyHits = map[string]*tapir.TapirName{}
 	for listname, list := range td.Lists["greylist"] {
-		td.Logger.Printf("ComputeRpzGreylistAction: looking for %s in greylist %s (%d names)", name, listname, len(list.Names))
 		switch list.Format {
 		case "map":
 			if v, exists := list.Names[name]; exists {
-				greyHits[listname] = &v
+				td.Logger.Printf("ComputeRpzGreylistAction: found %s in greylist %s (%d names)",
+					name, listname, len(list.Names))
+				greyHits[listname] = v
 			}
 			//		case "trie":
 			//			if list.Trie.Search(name) != nil {
@@ -193,20 +194,21 @@ func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
 			log.Fatalf("Unknown greylist format %s", list.Format)
 		}
 	}
-	td.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d sources", name, len(greyHits))
 	if len(greyHits) > td.Policy.Greylist.NumSources {
 		td.Logger.Printf("ComputeRpzGreylistAction: name %s is in more than %d sources, action is %s",
 			name, td.Policy.Greylist.NumSources, tapir.ActionToString[td.Policy.Greylist.NumSourcesAction])
 		return td.Policy.Greylist.NumSourcesAction
 	}
+	td.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d sources, not enough for action", name, len(greyHits))
+
 	if _, exists := greyHits["dns-tapir"]; exists {
 		numtapirtags := greyHits["dns-tapir"].TagMask.NumTags()
-		td.Logger.Printf("ComputeRpzGreylistAction: name %s has %d tapir tags", name, numtapirtags)
 		if numtapirtags > td.Policy.Greylist.NumTapirTags {
 			td.Logger.Printf("ComputeRpzGreylistAction: name %s has more than %d tapir tags, action is %s",
 				name, td.Policy.Greylist.NumTapirTags, tapir.ActionToString[td.Policy.Greylist.NumTapirTagsAction])
 			return td.Policy.Greylist.NumTapirTagsAction
 		}
+		td.Logger.Printf("ComputeRpzGreylistAction: name %s has %d tapir tags, no enough for action", name, numtapirtags)
 	}
 	td.Logger.Printf("ComputeRpzGreylistAction: name %s is present in %d greylists, but does not trigger any action",
 		name, len(greyHits))

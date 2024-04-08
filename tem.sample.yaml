@@ -25,9 +25,9 @@ mqtt:
    validatorkey:        /etc/dnstapir/certs/mqttsigner-pub.pem
    qos:                 2
 
-server:
-   listen:	127.0.0.1
-   port:	9097
+# server:
+#    listen:	127.0.0.1
+#    port:	9097
 #   upstreams:	[ nsa.johani.org:53 ]
 #   downstreams:	[ 127.0.0.1:9999 ]  	# unbound
 #   xferzones:	[ ]  # not useful for TAPIR
@@ -39,6 +39,8 @@ dnsengine:
    addresses:	127.0.0.1:5359
 
 output:
+   reaper:
+      interval: 60 # seconds, time between runs of deleting expired data
    rpz:
       zonename:		rpz.
       primary:		127.0.0.1:5359	# must be an address that the dnsengine listens to

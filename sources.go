@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
@@ -31,6 +32,7 @@ type TemData struct {
 	Policy                 TemPolicy
 	Rpz                    RpzData
 	RpzSources             map[string]*tapir.ZoneData
+	ReaperInterval         time.Duration
 	Verbose                bool
 	Debug                  bool
 }
@@ -87,19 +89,25 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 		RpzMap: map[string]*tapir.RpzName{},
 	}
 
-	td := TemData{
-		Lists:        map[string]map[string]*tapir.WBGlist{},
-		Logger:       lg,
-		RpzRefreshCh: make(chan RpzRefresh, 10),
-		RpzCommandCh: make(chan RpzCmdData, 10),
-		Rpz:          rpzdata,
-		Verbose:      viper.GetBool("log.verbose"),
-		Debug:        viper.GetBool("log.debug"),
+	repint := viper.GetInt("output.reaper.interval")
+	if repint == 0 {
+		repint = 60
 	}
 
-	td.Lists["whitelist"] = make(map[string]*tapir.WBGlist, 1000)
-	td.Lists["greylist"] = make(map[string]*tapir.WBGlist, 1000)
-	td.Lists["blacklist"] = make(map[string]*tapir.WBGlist, 1000)
+	td := TemData{
+		Lists:          map[string]map[string]*tapir.WBGlist{},
+		Logger:         lg,
+		RpzRefreshCh:   make(chan RpzRefresh, 10),
+		RpzCommandCh:   make(chan RpzCmdData, 10),
+		Rpz:            rpzdata,
+		ReaperInterval: time.Duration(repint) * time.Second,
+		Verbose:        viper.GetBool("log.verbose"),
+		Debug:          viper.GetBool("log.debug"),
+	}
+
+	td.Lists["whitelist"] = make(map[string]*tapir.WBGlist, 3)
+	td.Lists["greylist"] = make(map[string]*tapir.WBGlist, 3)
+	td.Lists["blacklist"] = make(map[string]*tapir.WBGlist, 3)
 
 	//	td.Rpz.IxfrChain = map[uint32]RpzIxfr{}
 	td.RpzSources = map[string]*tapir.ZoneData{}
@@ -153,6 +161,45 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	return &td, nil
 }
 
+// 1. Iterate over all lists
+// 2. Delete all items from the list that is in the ReaperData bucket for this time slot
+// 3. Delete the bucket from the ReaperData map
+// 4. Generate a new IXFR for the deleted items
+// 5. Send the IXFR to the RPZ
+func (td *TemData) Reaper(full bool) error {
+	timekey := time.Now().Round(td.ReaperInterval)
+	tpkg := tapir.MqttPkg{}
+	td.Logger.Printf("Reaper: working on time bucket %v", timekey)
+	for _, listtype := range []string{"whitelist", "greylist", "blacklist"} {
+		for listname, wbgl := range td.Lists[listtype] {
+			// td.Logger.Printf("Reaper: working on %s %s", listtype, listname)
+			td.mu.Lock()
+			for _, item := range wbgl.ReaperData[timekey] {
+				td.Logger.Printf("Reaper: removing %s from %s %s", item.Name, listtype, listname)
+				delete(td.Lists[listtype][listname].Names, item.Name)
+				delete(wbgl.ReaperData[timekey], item.Name)
+				tpkg.Data.Removed = append(tpkg.Data.Removed, tapir.Domain{Name: item.Name})
+				// td.Logger.Printf("Reaper: %s %s now has %d items:", listtype, listname, len(td.Lists[listtype][listname].Names))
+				// for name, item := range td.Lists[listtype][listname].Names {
+				// 	td.Logger.Printf("Reaper: remaining: key: %s name: %s", name, item.Name)
+				// }
+			}
+			td.mu.Unlock()
+		}
+	}
+	if len(tpkg.Data.Removed) > 0 {
+		ixfr, err := td.GenerateRpzIxfr(&tpkg.Data)
+		if err != nil {
+			td.Logger.Printf("Reaper: Error from GenerateRpzIxfr(): %v", err)
+		}
+		err = td.ProcessIxfrIntoAxfr(ixfr)
+		if err != nil {
+			td.Logger.Printf("Reaper: Error from ProcessIxfrIntoAxfr(): %v", err)
+		}
+	}
+	return nil
+}
+
 func (td *TemData) ParseSources() error {
 	sources := viper.GetStringSlice("sources.active")
 	log.Printf("Defined policy sources: %v", sources)
@@ -166,7 +213,8 @@ func (td *TemData) ParseSources() error {
 			SrcFormat:   "none",
 			Format:      "map",
 			Datasource:  "Data misplaced in other sources",
-			Names:       map[string]tapir.TapirName{},
+			Names:       map[string]*tapir.TapirName{},
+			ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
 		}
 	td.Lists["greylist"]["grey_catchall"] =
 		&tapir.WBGlist{
@@ -176,7 +224,8 @@ func (td *TemData) ParseSources() error {
 			SrcFormat:   "none",
 			Format:      "map",
 			Datasource:  "Data misplaced in other sources",
-			Names:       map[string]tapir.TapirName{},
+			Names:       map[string]*tapir.TapirName{},
+			ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
 		}
 	td.mu.Unlock()
 
@@ -229,7 +278,8 @@ func (td *TemData) ParseSources() error {
 				Type:        s["type"].(string),
 				SrcFormat:   s["format"].(string),
 				Datasource:  s["source"].(string),
-				Names:       map[string]tapir.TapirName{},
+				Names:       map[string]*tapir.TapirName{},
+				ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
 				Filename:    params["filename"],
 				RpzUpstream: params["upstream"],
 				RpzZoneName: dns.Fqdn(params["zone"]),
@@ -304,7 +354,7 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 
 	switch s.SrcFormat {
 	case "domains":
-		s.Names = map[string]tapir.TapirName{}
+		s.Names = map[string]*tapir.TapirName{}
 		s.Format = "map"
 		_, err := tapir.ParseText(s.Filename, s.Names, true)
 		if err != nil {
@@ -316,7 +366,7 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 		}
 
 	case "csv":
-		s.Names = map[string]tapir.TapirName{}
+		s.Names = map[string]*tapir.TapirName{}
 		s.Format = "map"
 		_, err := tapir.ParseCSV(s.Filename, s.Names, true)
 		if err != nil {
@@ -367,7 +417,7 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan stri
 			sourceid)
 	}
 
-	s.Names = map[string]tapir.TapirName{} // must initialize
+	s.Names = map[string]*tapir.TapirName{} // must initialize
 	s.Format = "map"
 	//	s.RpzZoneName = dns.Fqdn(zone)
 	//	s.RpzUpstream = upstream
@@ -415,7 +465,7 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 		switch (*rr).Header().Rrtype {
 		case dns.TypeSOA, dns.TypeNS:
 			if tapir.GlobalCF.Debug {
-				td.Logger.Printf("ParseFunc: zone %s: looking at %s", zd.ZoneName,
+				td.Logger.Printf("ParseFunc: RPZ %s: looking at %s", zd.ZoneName,
 					dns.TypeToString[(*rr).Header().Rrtype])
 			}
 			return true
@@ -430,7 +480,7 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 			case "rpz-passthru.":
 				action = tapir.WHITELIST
 			default:
-				td.Logger.Printf("UNKNOWN RPZ action: \"%s\"", (*rr).(*dns.CNAME).Target)
+				td.Logger.Printf("UNKNOWN RPZ action: \"%s\" (src: %s)", (*rr).(*dns.CNAME).Target, s.Name)
 				action = tapir.UnknownAction
 			}
 			if tapir.GlobalCF.Debug {
@@ -440,13 +490,13 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 			switch s.Type {
 			case "whitelist":
 				if action == tapir.WHITELIST {
-					s.Names[name] = tapir.TapirName{Name: name} // drop all other actions
+					s.Names[name] = &tapir.TapirName{Name: name} // drop all other actions
 				} else {
 					td.Logger.Printf("Warning: whitelist RPZ source %s has blacklisted name: %s",
 						s.RpzZoneName, name)
 					td.mu.Lock()
 					td.Lists["greylist"]["grey_catchall"].Names[name] =
-						tapir.TapirName{
+						&tapir.TapirName{
 							Name:   name,
 							Action: action,
 						} // drop all other actions
@@ -454,22 +504,22 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 				}
 			case "blacklist":
 				if action != tapir.WHITELIST {
-					s.Names[name] = tapir.TapirName{Name: name, Action: action}
+					s.Names[name] = &tapir.TapirName{Name: name, Action: action}
 				} else {
 					td.Logger.Printf("Warning: blacklist RPZ source %s has whitelisted name: %s",
 						s.RpzZoneName, name)
 					td.mu.Lock()
-					td.Lists["whitelist"]["white_catchall"].Names[name] = tapir.TapirName{Name: name}
+					td.Lists["whitelist"]["white_catchall"].Names[name] = &tapir.TapirName{Name: name}
 					td.mu.Unlock()
 				}
 			case "greylist":
 				if action != tapir.WHITELIST {
-					s.Names[name] = tapir.TapirName{Name: name, Action: action}
+					s.Names[name] = &tapir.TapirName{Name: name, Action: action}
 				} else {
 					td.Logger.Printf("Warning: greylist RPZ source %s has whitelisted name: %s",
 						s.RpzZoneName, name)
 					td.mu.Lock()
-					td.Lists["whitelist"]["white_catchall"].Names[name] = tapir.TapirName{Name: name}
+					td.Lists["whitelist"]["white_catchall"].Names[name] = &tapir.TapirName{Name: name}
 					td.mu.Unlock()
 				}
 			}

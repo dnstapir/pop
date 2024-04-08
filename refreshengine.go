@@ -49,7 +49,15 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	var rpzcmdch = td.RpzCommandCh
 
 	var refreshCounters = make(map[string]*RefreshCounter, 5)
-	ticker := time.NewTicker(1 * time.Second)
+	refreshTicker := time.NewTicker(1 * time.Second)
+
+	reaperStart := time.Now().Truncate(td.ReaperInterval).Add(td.ReaperInterval)
+	reaperTicker := time.NewTicker(td.ReaperInterval)
+
+	go func() {
+		time.Sleep(reaperStart.Sub(time.Now()))
+		reaperTicker.Reset(td.ReaperInterval)
+	}()
 
 	if !viper.GetBool("service.refresh.active") {
 		log.Printf("Refresh Engine is NOT active. Zones will only be updated on receipt on Notifies.")
@@ -216,7 +224,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				}
 			}
 
-		case <-ticker.C:
+		case <-refreshTicker.C:
 			TapirIntelCh = td.TapirMqttSubCh // stupid kludge
 			// log.Printf("RefEng: ticker. refCounters: %v", refreshCounters)
 			for zone, rc := range refreshCounters {
@@ -250,6 +258,12 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						NotifyDownstreams(td.RpzSources[zone], rc.Downstreams)
 					}
 				}
+			}
+
+		case <-reaperTicker.C:
+			err := td.Reaper(false)
+			if err != nil {
+				log.Printf("Reaper: error: %v", err)
 			}
 
 		case cmd = <-rpzcmdch:

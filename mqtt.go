@@ -74,10 +74,31 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	}
 
 	for _, name := range tpkg.Data.Added {
-		wbgl.Names[name.Name] = tapir.TapirName{
-			Name:    name.Name,
-			Tags:    name.Tags,
+		tmp := tapir.TapirName{
+			Name:      name.Name,
+			TimeAdded: name.TimeAdded,
+			TTL:       name.TTL,
+			// Tags:    name.Tags,
 			TagMask: name.TagMask,
+		}
+		wbgl.Names[name.Name] = &tmp
+		repint := viper.GetInt("output.reaper.interval")
+		if repint < 60 {
+			repint = 60
+		}
+		reptime := name.TimeAdded.Add(name.TTL).Truncate(td.ReaperInterval)
+		if wbgl.ReaperData[reptime] == nil {
+			wbgl.ReaperData[reptime] = make(map[string]*tapir.TapirName)
+		}
+		wbgl.ReaperData[reptime][name.Name] = &tmp
+	}
+
+	td.Logger.Printf("ProcessTapirUpdate: current state of %s %s ReaperData:",
+		tpkg.Data.ListType, wbgl.Name)
+	for t, v := range wbgl.ReaperData {
+		td.Logger.Printf("== time %v:", t)
+		for _, item := range v {
+			td.Logger.Printf("  %s", item.Name)
 		}
 	}
 

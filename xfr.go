@@ -249,10 +249,10 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	td.Logger.Printf("ZoneTransferOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d)\n",
 		zone, len(env.RR), total_sent)
 
-	td.Logger.Printf("Sending %d RRs\n", len(env.RR))
-	for _, rr := range env.RR {
-		td.Logger.Printf("SEND FINAL: %s", rr.String())
-	}
+	//	td.Logger.Printf("Sending %d RRs\n", len(env.RR))
+	//	for _, rr := range env.RR {
+	//		td.Logger.Printf("SEND FINAL: %s", rr.String())
+	//	}
 	outbound_xfr <- &env
 
 	close(outbound_xfr)
