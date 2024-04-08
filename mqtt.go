@@ -78,14 +78,12 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 			Name:      name.Name,
 			TimeAdded: name.TimeAdded,
 			TTL:       name.TTL,
-			// Tags:    name.Tags,
-			TagMask: name.TagMask,
+			TagMask:   name.TagMask,
 		}
 		wbgl.Names[name.Name] = &tmp
-		repint := viper.GetInt("output.reaper.interval")
-		if repint < 60 {
-			repint = 60
-		}
+
+		td.Logger.Printf("ProcessTapirUpdate: adding name %s to %s (TimeAdded: %s ttl: %v)",
+			name.Name, wbgl.Name, name.TimeAdded.Format(tapir.TimeLayout), name.TTL)
 
 		// Time that the name will be removed from the list
 		reptime := name.TimeAdded.Add(name.TTL).Truncate(td.ReaperInterval)
@@ -112,7 +110,7 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	td.Logger.Printf("ProcessTapirUpdate: current state of %s %s ReaperData:",
 		tpkg.Data.ListType, wbgl.Name)
 	for t, v := range wbgl.ReaperData {
-		td.Logger.Printf("== time %v:", t)
+		td.Logger.Printf("== At time %s the following names will be removed from the dns-tapir list:", t.Format(tapir.TimeLayout))
 		for _, item := range v {
 			td.Logger.Printf("  %s", item.Name)
 		}
