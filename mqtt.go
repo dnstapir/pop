@@ -86,7 +86,23 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 		if repint < 60 {
 			repint = 60
 		}
+
+		// Time that the name will be removed from the list
 		reptime := name.TimeAdded.Add(name.TTL).Truncate(td.ReaperInterval)
+
+		// Ensure that there are no prior removal events for this name
+		for reaperTime, namesMap := range wbgl.ReaperData {
+			if reaperTime.Before(reptime) {
+				if _, exists := namesMap[name.Name]; exists {
+					delete(namesMap, name.Name)
+					if len(namesMap) == 0 {
+						delete(wbgl.ReaperData, reaperTime)
+					}
+				}
+			}
+		}
+
+		// Add the name to the removal list for the time it will be removed
 		if wbgl.ReaperData[reptime] == nil {
 			wbgl.ReaperData[reptime] = make(map[string]*tapir.TapirName)
 		}
