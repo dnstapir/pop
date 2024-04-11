@@ -6,10 +6,58 @@ package main
 
 import (
 	"log"
+	"os"
+	"strings"
 
 	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
+	"gopkg.in/yaml.v3"
 )
+
+type TemOutput struct {
+	Active      bool
+	Name        string
+	Description string
+	Type        string // listtype, usually "greylist"
+	Format      string // i.e. rpz, etc
+	Downstream  string
+}
+
+type TemOutputs struct {
+	Outputs map[string]TemOutput
+}
+
+func (td *TemData) ParseOutputs() error {
+	td.Logger.Printf("ParseOutputs: reading outputs from %s", tapir.TemOutputsCfgFile)
+	cfgdata, err := os.ReadFile(tapir.TemOutputsCfgFile)
+	if err != nil {
+		log.Fatalf("Error from ReadFile(%s): %v", tapir.TemOutputsCfgFile, err)
+	}
+
+	var oconf = TemOutputs{
+		Outputs: make(map[string]TemOutput),
+	}
+
+	td.Logger.Printf("ParseOutputs: config read: %s", cfgdata)
+	err = yaml.Unmarshal(cfgdata, &oconf)
+	if err != nil {
+		log.Fatalf("Error from yaml.Unmarshal(OutputsConfig): %v", err)
+	}
+
+	td.Logger.Printf("ParseOutputs: found %d outputs", len(oconf.Outputs))
+	for name, v := range oconf.Outputs {
+		td.Logger.Printf("ParseOutputs: output %s: type %s, format %s, downstream %s",
+			name, v.Type, v.Format, v.Downstream)
+	}
+
+	for name, output := range oconf.Outputs {
+		if output.Active && strings.ToLower(output.Format) == "rpz" {
+			td.Logger.Printf("Output %s: Adding RPZ downstream %s to list of Notify receivers", name, output.Downstream)
+			td.RpzDownstreams = append(td.RpzDownstreams, output.Downstream)
+		}
+	}
+	return nil
+}
 
 // XXX: Generating a complete new RPZ zone for output to downstream
 
@@ -41,13 +89,13 @@ func (td *TemData) GenerateRpzAxfr() error {
 		case "map":
 			for k, _ := range blist.Names {
 				if tapir.GlobalCF.Debug {
-					td.Logger.Printf("Adding name %s from blacklist %s to tentative output.",
-						k, bname)
+					// td.Logger.Printf("Adding name %s from blacklist %s to tentative output.",
+					// 	k, bname)
 				}
 				if td.Whitelisted(k) {
-					td.Logger.Printf("Blacklisted name %s is also whitelisted. Dropped from output.", k)
+					// td.Logger.Printf("Blacklisted name %s is also whitelisted. Dropped from output.", k)
 				} else {
-					td.Logger.Printf("Blacklisted name %s is not whitelisted. Added to output.", k)
+					// td.Logger.Printf("Blacklisted name %s is not whitelisted. Added to output.", k)
 					black[k] = true
 				}
 			}
@@ -150,7 +198,8 @@ func (td *TemData) GenerateRpzAxfr() error {
 	//	td.Rpz.Axfr.Data = td.Rpz.RpzMap
 	td.Logger.Printf("GenerateRpzAxfrData: put %d RRs in %s",
 		len(td.Rpz.Axfr.Data), td.Rpz.ZoneName)
-	return nil
+	err := td.NotifyDownstreams()
+	return err
 }
 
 // Decision to block a greylisted name:
@@ -182,8 +231,8 @@ func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
 		switch list.Format {
 		case "map":
 			if v, exists := list.Names[name]; exists {
-				td.Logger.Printf("ComputeRpzGreylistAction: found %s in greylist %s (%d names)",
-					name, listname, len(list.Names))
+				// td.Logger.Printf("ComputeRpzGreylistAction: found %s in greylist %s (%d names)",
+				// 	name, listname, len(list.Names))
 				greyHits[listname] = v
 			}
 			//		case "trie":

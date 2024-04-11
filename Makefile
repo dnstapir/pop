@@ -17,6 +17,25 @@ build:
 	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
 	$(GO) build $(GOFLAGS) -o ${PROG}
 
+linux:	
+	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
+	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -o ${PROG}
+
+gen-mqtt-msg-new-qname.go: checkout/events-mqtt-message-new_qname.json
+	go-jsonschema checkout/events-mqtt-message-new_qname.json --package main --tags json --only-models --output gen-mqtt-msg-new-qname.go
+
+gen-mqtt-msg.go: checkout/events-mqtt-message.json
+	go-jsonschema checkout/events-mqtt-message.json --package main --tags json --only-models --output gen-mqtt-msg.go
+
+checkout/events-mqtt-message-new_qname.json: checkout
+	cd checkout; python schemasplit.py events-mqtt-message-new_qname.yaml
+
+checkout/events-mqtt-message.json: checkout
+	cd checkout; python schemasplit.py events-mqtt-message.yaml
+
+checkout:
+	git clone git@github.com:dnstapir/protocols.git checkout
+
 clean:
 	@rm -f $(PROG) *~
 

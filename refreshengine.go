@@ -109,12 +109,6 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 							zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "Upstream unspecified"}
 						}
 
-						//						keepfunc = zr.RRKeepFunc
-						//						if keepfunc == nil && zr.Resp != nil {
-						//							log.Printf("RefreshEngine: %s: KeepFunc unspecified", zone)
-						//							zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "KeepFunc unspecified"}
-						//						}
-
 						parsefunc = zr.RRParseFunc
 						if parsefunc == nil && zr.Resp != nil {
 							log.Printf("RefreshEngine: %s: ParseFunc unspecified", zone)
@@ -144,7 +138,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 							log.Printf("RefreshEngine: %s updated from upstream. Resetting serial to unixtime: %d",
 								zone, td.RpzSources[zone].SOA.Serial)
 						}
-						NotifyDownstreams(td.RpzSources[zone], rc.Downstreams)
+						td.NotifyDownstreams()
 					}
 					// showing some apex details:
 					log.Printf("Showing some details for zone %s: ", zone)
@@ -159,13 +153,6 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "Upstream unspecified"}
 						continue
 					}
-
-					//					keepfunc = zr.RRKeepFunc
-					//					if keepfunc == nil {
-					//						log.Printf("RefreshEngine: %s: RRKeepFunc unspecified", zone)
-					//						zr.Resp <- RpzRefreshResult{Error: true, ErrorMsg: "RRKeepFunc unspecified"}
-					//						continue
-					//					}
 
 					parsefunc = zr.RRParseFunc
 					if parsefunc == nil {
@@ -255,7 +242,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						}
 					}
 					if updated {
-						NotifyDownstreams(td.RpzSources[zone], rc.Downstreams)
+						td.NotifyDownstreams()
 					}
 				}
 			}
@@ -283,7 +270,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						zd.SOA.Serial = uint32(time.Now().Unix())
 						resp.NewSerial = zd.SOA.Serial
 						rc = refreshCounters[zone]
-						NotifyDownstreams(zd, rc.Downstreams)
+						td.NotifyDownstreams()
 						resp.Msg = fmt.Sprintf("Zone %s: bumped serial from %d to %d. Notified downstreams: %v",
 							zone, resp.OldSerial, resp.NewSerial, rc.Downstreams)
 						log.Printf(resp.Msg)
@@ -388,21 +375,24 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	}
 }
 
-func NotifyDownstreams(zd *tapir.ZoneData, downstreams []string) error {
-	for _, d := range downstreams {
-		log.Printf("RefreshEngine: %s: Notifying downstream %s about new SOA serial", zd.ZoneName, d)
+func (td *TemData) NotifyDownstreams() error {
+	td.Logger.Printf("RefreshEngine: Notifying %d downstreams for RPZ zone %s", len(td.RpzDownstreams), td.Rpz.ZoneName)
+	for _, d := range td.RpzDownstreams {
+		log.Printf("RefreshEngine: %s: Notifying downstream %s about new SOA serial for RPZ zone %s", d, td.Rpz.ZoneName)
 		m := new(dns.Msg)
-		m.SetNotify(zd.ZoneName)
+		m.SetNotify(td.Rpz.ZoneName)
+		td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial
+		m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
 		r, err := dns.Exchange(m, d)
 		if err != nil {
 			// well, we tried
-			log.Printf("Error from downstream %s on Notify(%s): %v", d, zd.ZoneName, err)
+			log.Printf("Error from downstream %s on Notify(%s): %v", d, td.Rpz.ZoneName, err)
 			continue
 		}
 		if r.Opcode != dns.OpcodeNotify {
 			// well, we tried
 			log.Printf("Error: not a NOTIFY QR from downstream %s on Notify(%s): %s",
-				d, zd.ZoneName, dns.OpcodeToString[r.Opcode])
+				d, td.Rpz.ZoneName, dns.OpcodeToString[r.Opcode])
 		}
 	}
 	return nil

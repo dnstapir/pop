@@ -8,9 +8,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+
 	//	"net"
 	"os"
 	"os/signal"
+
 	//	"strconv"
 	//	"strings"
 	"sync"
@@ -161,14 +163,18 @@ func main() {
 		TEMExiter("Error from ParseSources: %v", err)
 	}
 
+	err = td.ParseOutputs()
+	if err != nil {
+		TEMExiter("Error from ParseOutputs: %v", err)
+	}
+
 	apistopper := make(chan struct{}) //
 	// conf.Internal.APIStopCh = apistopper
 	go APIdispatcher(&conf, apistopper)
-//	go httpsserver(&conf, apistopper)
+	//	go httpsserver(&conf, apistopper)
 
 	go DnsEngine(&conf)
 	conf.BootTime = time.Now()
 
 	mainloop(&conf, &cfgFileUsed)
 }
-

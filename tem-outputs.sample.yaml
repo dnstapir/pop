@@ -1,15 +1,20 @@
 # manually maintained
 
 outputs:
-   mqtt1:
+   rpz1:
       active:		true
+      downstream:	127.0.0.1:53	# local resolver
+
+   mqtt1:
+      active:		false
       name:		dns-tapir-out
       description:	"local mqtt reflector"
       type:		greylist
       source:		mqtt
       format:		tapir-mqtt-1
+
    http1:
-      active:		true
+      active:		false
       name:		dns-tapir-bootstrapper
       description:	"Updated bootstrap feed for the DNS TAPIR MQTT stream"
       type:		greylist

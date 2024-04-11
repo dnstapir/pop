@@ -7,25 +7,37 @@ package main
 import (
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/dnstapir/tapir"
-	"github.com/spf13/viper"
 )
 
-func (td *TemData) StartMqttEngine() error {
-	if td.TapirMqttEngineRunning {
-		return nil
-
-	}
-
-	clientid := viper.GetString("mqtt.clientid")
+func (td *TemData) CreateMqttEngine(clientid string) error {
 	if clientid == "" {
 		TEMExiter("Error starting MQTT Engine: clientid not specified in config")
 	}
-	meng, err := tapir.NewMqttEngine(clientid, tapir.TapirSub) // sub, but no pub
+	var err error
+	td.Logger.Printf("Creating MQTT Engine with clientid %s", clientid)
+	td.MqttEngine, err = tapir.NewMqttEngine(clientid, tapir.TapirSub) // sub, but no pub
 	if err != nil {
-		TEMExiter("Error from NewMqttEngine: %v\n", err)
+		td.Logger.Printf("Error from NewMqttEngine: %v\n", err)
 	}
+	return nil
+}
+
+func (td *TemData) StartMqttEngine(meng *tapir.MqttEngine) error {
+	if td.TapirMqttEngineRunning {
+		return nil
+	}
+
+	//	clientid := viper.GetString("mqtt.clientid")
+	// if clientid == "" {
+	//		TEMExiter("Error starting MQTT Engine: clientid not specified in config")
+	//}
+	//meng, err := tapir.NewMqttEngine(clientid, tapir.TapirSub) // sub, but no pub
+	//if err != nil {
+	//TEMExiter("Error from NewMqttEngine: %v\n", err)
+	//}
 
 	cmnder, _, inbox, err := meng.StartEngine()
 	if err != nil {
@@ -74,10 +86,11 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	}
 
 	for _, name := range tpkg.Data.Added {
+		ttl := time.Duration(name.TTL) * time.Second
 		tmp := tapir.TapirName{
 			Name:      name.Name,
 			TimeAdded: name.TimeAdded,
-			TTL:       name.TTL,
+			TTL:       ttl,
 			TagMask:   name.TagMask,
 		}
 		wbgl.Names[name.Name] = &tmp
@@ -86,7 +99,7 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 			name.Name, wbgl.Name, name.TimeAdded.Format(tapir.TimeLayout), name.TTL)
 
 		// Time that the name will be removed from the list
-		reptime := name.TimeAdded.Add(name.TTL).Truncate(td.ReaperInterval)
+		reptime := name.TimeAdded.Add(ttl).Truncate(td.ReaperInterval)
 
 		// Ensure that there are no prior removal events for this name
 		for reaperTime, namesMap := range wbgl.ReaperData {
@@ -110,9 +123,14 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	td.Logger.Printf("ProcessTapirUpdate: current state of %s %s ReaperData:",
 		tpkg.Data.ListType, wbgl.Name)
 	for t, v := range wbgl.ReaperData {
-		td.Logger.Printf("== At time %s the following names will be removed from the dns-tapir list:", t.Format(tapir.TimeLayout))
-		for _, item := range v {
-			td.Logger.Printf("  %s", item.Name)
+		if len(v) > 0 {
+			td.Logger.Printf("== At time %s the following names will be removed from the dns-tapir list:", t.Format(tapir.TimeLayout))
+			for _, item := range v {
+				td.Logger.Printf("  %s", item.Name)
+			}
+		} else {
+			td.Logger.Printf("ReaperData: timekey %s is empty, deleting", t.Format(tapir.TimeLayout))
+			delete(wbgl.ReaperData, t)
 		}
 	}
 
@@ -125,7 +143,7 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 		return false, err
 	}
 	err = td.ProcessIxfrIntoAxfr(ixfr)
-	return true, err
+	return true, err // return to RefreshEngine
 }
 
 func (td *TemData) ProcessIxfrIntoAxfr(ixfr RpzIxfr) error {
@@ -147,5 +165,8 @@ func (td *TemData) ProcessIxfrIntoAxfr(ixfr RpzIxfr) error {
 			}
 		}
 	}
-	return nil
+
+	td.Logger.Printf("PIIA Notifying %d downstreams for RPZ zone %s", len(td.RpzDownstreams), td.Rpz.ZoneName)
+	err := td.NotifyDownstreams()
+	return err
 }

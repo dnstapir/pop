@@ -4,6 +4,7 @@
 package main
 
 import (
+	"crypto/ecdsa"
 	"fmt"
 	"log"
 	"os"
@@ -32,7 +33,9 @@ type TemData struct {
 	Policy                 TemPolicy
 	Rpz                    RpzData
 	RpzSources             map[string]*tapir.ZoneData
+	RpzDownstreams         []string
 	ReaperInterval         time.Duration
+	MqttEngine             *tapir.MqttEngine
 	Verbose                bool
 	Debug                  bool
 }
@@ -169,24 +172,29 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 func (td *TemData) Reaper(full bool) error {
 	timekey := time.Now().Round(td.ReaperInterval)
 	tpkg := tapir.MqttPkg{}
-	td.Logger.Printf("Reaper: working on time bucket %v", timekey)
+	td.Logger.Printf("Reaper: working on time slot %v across all lists", timekey)
 	for _, listtype := range []string{"whitelist", "greylist", "blacklist"} {
 		for listname, wbgl := range td.Lists[listtype] {
 			// td.Logger.Printf("Reaper: working on %s %s", listtype, listname)
-			td.mu.Lock()
-			for _, item := range wbgl.ReaperData[timekey] {
-				td.Logger.Printf("Reaper: removing %s from %s %s", item.Name, listtype, listname)
-				delete(td.Lists[listtype][listname].Names, item.Name)
-				delete(wbgl.ReaperData[timekey], item.Name)
-				tpkg.Data.Removed = append(tpkg.Data.Removed, tapir.Domain{Name: item.Name})
+			if len(wbgl.ReaperData[timekey]) > 0 {
+				td.Logger.Printf("Reaper: list [%s][%s] has %d timekeys stored", listtype, listname,
+					len(wbgl.ReaperData[timekey]))
+				td.mu.Lock()
+				for _, item := range wbgl.ReaperData[timekey] {
+					td.Logger.Printf("Reaper: removing %s from %s %s", item.Name, listtype, listname)
+					delete(td.Lists[listtype][listname].Names, item.Name)
+					delete(wbgl.ReaperData[timekey], item.Name)
+					tpkg.Data.Removed = append(tpkg.Data.Removed, tapir.Domain{Name: item.Name})
+				}
 				// td.Logger.Printf("Reaper: %s %s now has %d items:", listtype, listname, len(td.Lists[listtype][listname].Names))
 				// for name, item := range td.Lists[listtype][listname].Names {
 				// 	td.Logger.Printf("Reaper: remaining: key: %s name: %s", name, item.Name)
 				// }
+				td.mu.Unlock()
 			}
-			td.mu.Unlock()
 		}
 	}
+
 	if len(tpkg.Data.Removed) > 0 {
 		ixfr, err := td.GenerateRpzIxfr(&tpkg.Data)
 		if err != nil {
@@ -235,6 +243,18 @@ func (td *TemData) ParseSources() error {
 	threads := 0
 
 	var rptchan = make(chan string, 5)
+	var mqttdetails = tapir.MqttDetails{
+		ValidatorKeys: make(map[string]*ecdsa.PublicKey),
+	}
+
+	if td.MqttEngine == nil {
+		td.mu.Lock()
+		err := td.CreateMqttEngine(viper.GetString("mqtt.clientid"))
+		if err != nil {
+			TEMExiter("Error creating MQTT Engine: %v", err)
+		}
+		td.mu.Unlock()
+	}
 
 	for name, src := range srcs {
 		switch src.(type) {
@@ -263,7 +283,7 @@ func (td *TemData) ParseSources() error {
 
 			var params = map[string]string{}
 
-			for _, key := range []string{"name", "upstream", "filename", "zone"} {
+			for _, key := range []string{"name", "upstream", "filename", "zone", "topic", "validatorkey"} {
 				if tmp, ok := s[key].(string); ok {
 					params[key] = tmp
 				} else {
@@ -285,18 +305,27 @@ func (td *TemData) ParseSources() error {
 				RpzZoneName: dns.Fqdn(params["zone"]),
 			}
 
+			if newsource.Datasource == "mqtt" {
+				key, err := tapir.FetchMqttValidatorKey(params["topic"], params["validatorkey"])
+				if err != nil {
+					td.Logger.Printf("ParseSources: Error fetching MQTT validator key for topic %s: %v",
+						params["topic"], err)
+				} else {
+					mqttdetails.ValidatorKeys[params["topic"]] = key
+				}
+			}
+
 			var err error
 
 			go func(name string, threads int) {
 				td.Logger.Printf("Thread: parsing source \"%s\"", name)
 				switch s["source"] {
 				case "mqtt":
-					if !td.TapirMqttEngineRunning {
-						err := td.StartMqttEngine()
-						if err != nil {
-							TEMExiter("Error starting MQTT Engine: %v", err)
-						}
+					err = td.MqttEngine.AddTopic(params["topic"], mqttdetails.ValidatorKeys[params["topic"]])
+					if err != nil {
+						TEMExiter("Error adding topic %s to MQTT Engine: %v", params["topic"], err)
 					}
+
 					newsource.Format = "map" // for now
 					// td.Greylists[newsource.Name] = &newsource
 					td.mu.Lock()
@@ -319,6 +348,13 @@ func (td *TemData) ParseSources() error {
 		default:
 			td.Logger.Printf("*** ParseSources: Error: failed to parse source \"%s\": %v",
 				name, src)
+		}
+	}
+
+	if td.MqttEngine != nil && !td.TapirMqttEngineRunning {
+		err := td.StartMqttEngine(td.MqttEngine)
+		if err != nil {
+			TEMExiter("Error starting MQTT Engine: %v", err)
 		}
 	}
 
@@ -441,14 +477,6 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan stri
 	rpt <- sourceid
 
 	return nil
-}
-
-func xxxRpzKeepFunc(rrtype uint16) bool {
-	switch rrtype {
-	case dns.TypeSOA, dns.TypeNS, dns.TypeCNAME:
-		return true
-	}
-	return false
 }
 
 // Parse the CNAME (in the shape of a dns.RR) that is found in the RPZ and sort the data into the
