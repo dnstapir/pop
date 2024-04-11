@@ -19,10 +19,10 @@ func (td *TemData) BootstrapRpzOutput() error {
 $TTL 3600
 ${ZONE}		IN	SOA	mname. hostmaster.dnstapir.se. (
 				123
-				900
-				300
+				60
+				60
 				86400
-				300 )
+				60 )
 ${ZONE}		IN	NS	ns1.${ZONE}
 ${ZONE}		IN	NS	ns2.${ZONE}
 ns1.${ZONE}	IN	A	127.0.0.1
