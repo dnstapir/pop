@@ -421,5 +421,6 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 		return thisixfr, nil
 	}
 
+	td.Logger.Printf("GenRpzIxfr: no changes in RPZ policy, no new IXFR")
 	return RpzIxfr{}, nil
 }
