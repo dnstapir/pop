@@ -382,17 +382,19 @@ func (td *TemData) NotifyDownstreams() error {
 		m.SetNotify(td.Rpz.ZoneName)
 		td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial
 		m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
-		log.Printf("RefreshEngine: Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", d, td.Rpz.Axfr.SOA.Serial, td.Rpz.ZoneName)
+		td.Logger.Printf("RefreshEngine: Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", d, td.Rpz.Axfr.SOA.Serial, td.Rpz.ZoneName)
 		r, err := dns.Exchange(m, d)
 		if err != nil {
 			// well, we tried
-			log.Printf("Error from downstream %s on Notify(%s): %v", d, td.Rpz.ZoneName, err)
+			td.Logger.Printf("Error from downstream %s on Notify(%s): %v", d, td.Rpz.ZoneName, err)
 			continue
 		}
 		if r.Opcode != dns.OpcodeNotify {
 			// well, we tried
-			log.Printf("Error: not a NOTIFY QR from downstream %s on Notify(%s): %s",
+			td.Logger.Printf("Error: not a NOTIFY QR from downstream %s on Notify(%s): %s",
 				d, td.Rpz.ZoneName, dns.OpcodeToString[r.Opcode])
+		} else {
+			td.Logger.Printf("RefreshEngine: Downstream %s responded correctly to Notify(%s) about new SOA serial (%d)", d, td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial)
 		}
 	}
 	return nil

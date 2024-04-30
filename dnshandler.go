@@ -131,7 +131,7 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 					return // didn't find any zone for that qname or found zone, but it is an XFR zone only
 				}
 				log.Printf("After FindZone: zd: zd.ZoneType: %v", zd.ZoneType)
-				if zd.ZoneType == 1 {
+				if zd.ZoneType == tapir.XfrZone {
 					m := new(dns.Msg)
 					m.SetRcode(r, dns.RcodeRefused)
 					w.WriteMsg(m)
@@ -271,7 +271,7 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 
 	var owner tapir.OwnerData
 	switch zd.ZoneType {
-	case 2:
+	case tapir.MapZone:
 		if tmp, exist := zd.Data[qname]; exist {
 			owner = tmp
 		} else {
@@ -279,7 +279,7 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 			return nil
 		}
 
-	case 3:
+	case tapir.SliceZone:
 		if _, ok := zd.OwnerIndex[qname]; !ok {
 			// return NXDOMAIN
 			m.MsgHdr.Rcode = dns.RcodeNameError
