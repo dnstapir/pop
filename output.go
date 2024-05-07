@@ -7,10 +7,12 @@ package main
 import (
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
+	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -53,9 +55,31 @@ func (td *TemData) ParseOutputs() error {
 	for name, output := range oconf.Outputs {
 		if output.Active && strings.ToLower(output.Format) == "rpz" {
 			td.Logger.Printf("Output %s: Adding RPZ downstream %s to list of Notify receivers", name, output.Downstream)
-			td.RpzDownstreams = append(td.RpzDownstreams, output.Downstream)
+			td.Downstreams.Downstreams = append(td.Downstreams.Downstreams, output.Downstream)
 		}
 	}
+	// Read the current value of td.Downstreams.Serial from a text file
+	serialFile := viper.GetString("output.rpz.serialcache")
+	if serialFile != "" {
+		serialData, err := os.ReadFile(serialFile)
+		if err != nil {
+			td.Logger.Printf("Error reading serial from file %s: %v", serialFile, err)
+			td.Downstreams.Serial = 1
+		} else {
+			tmp := strings.Replace(string(serialData), "\n", "", -1)
+			serial, err := strconv.Atoi(tmp)
+			if err != nil {
+				td.Logger.Printf("Error converting serial data to integer: %v", err)
+			} else {
+				td.Downstreams.Serial = uint32(serial)
+				td.Logger.Printf("Loaded serial %d from file %s", td.Downstreams.Serial, serialFile)
+			}
+		}
+	} else {
+		td.Logger.Printf("No serial cache file specified, starting serial at 1")
+		td.Downstreams.Serial = 1
+	}
+	td.Rpz.CurrentSerial = td.Downstreams.Serial
 	return nil
 }
 
@@ -226,6 +250,7 @@ func ApplyGreyPolicy(name string, v *tapir.TapirName) string {
 // Note: we onlygethere when we know that this name is only greylisted
 // so no need tocheckfor white- or blacklisting
 func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
+
 	var greyHits = map[string]*tapir.TapirName{}
 	for listname, list := range td.Lists["greylist"] {
 		switch list.Format {
@@ -243,8 +268,8 @@ func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
 			log.Fatalf("Unknown greylist format %s", list.Format)
 		}
 	}
-	if len(greyHits) > td.Policy.Greylist.NumSources {
-		td.Logger.Printf("ComputeRpzGreylistAction: name %s is in more than %d sources, action is %s",
+	if len(greyHits) >= td.Policy.Greylist.NumSources {
+		td.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d or more sources, action is %s",
 			name, td.Policy.Greylist.NumSources, tapir.ActionToString[td.Policy.Greylist.NumSourcesAction])
 		return td.Policy.Greylist.NumSourcesAction
 	}
@@ -257,7 +282,7 @@ func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
 				name, td.Policy.Greylist.NumTapirTags, tapir.ActionToString[td.Policy.Greylist.NumTapirTagsAction])
 			return td.Policy.Greylist.NumTapirTagsAction
 		}
-		td.Logger.Printf("ComputeRpzGreylistAction: name %s has %d tapir tags, no enough for action", name, numtapirtags)
+		td.Logger.Printf("ComputeRpzGreylistAction: name %s has %d tapir tags, not enough for action", name, numtapirtags)
 	}
 	td.Logger.Printf("ComputeRpzGreylistAction: name %s is present in %d greylists, but does not trigger any action",
 		name, len(greyHits))
@@ -266,10 +291,19 @@ func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
 
 func (td *TemData) ComputeRpzAction(name string) tapir.Action {
 	if td.Whitelisted(name) {
+		if td.Debug {
+			td.Logger.Printf("ComputeRpzAction: name %s is whitelisted, action is %s", name, tapir.ActionToString[td.Policy.WhitelistAction])
+		}
 		return td.Policy.WhitelistAction
 	} else if td.Blacklisted(name) {
+		if td.Debug {
+			td.Logger.Printf("ComputeRpzAction: name %s is blacklisted, action is %s", name, tapir.ActionToString[td.Policy.BlacklistAction])
+		}
 		return td.Policy.BlacklistAction
 	} else if td.Greylisted(name) {
+		if td.Debug {
+			td.Logger.Printf("ComputeRpzAction: name %s is greylisted, needs further evaluation to determine action", name)
+		}
 		return td.ComputeRpzGreylistAction(name) // This is not complete, only a placeholder for now.
 	}
 	return tapir.WHITELIST
@@ -304,7 +338,9 @@ func (td *TemData) ComputeRpzAction(name string) tapir.Action {
 func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 
 	var removeData, addData []*tapir.RpzName
+	td.Logger.Printf("GenerateRpzIxfr: %d removed names and %d added names", len(data.Removed), len(data.Added))
 	for _, tn := range data.Removed {
+		td.Logger.Printf("GenerateRpzIxfr: evaluating removed name %s", tn.Name)
 		if cur, exist := td.Rpz.Axfr.Data[tn.Name]; exist {
 			newAction := td.ComputeRpzAction(tn.Name)
 			oldAction := cur.Action
@@ -349,6 +385,7 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 
 	var addtorpz bool
 	for _, tn := range data.Added {
+		td.Logger.Printf("GenerateRpzIxfr: evaluating added name %s", tn.Name)
 		addtorpz = false
 		newAction := td.ComputeRpzAction(tn.Name)
 		if cur, exist := td.Rpz.Axfr.Data[tn.Name]; exist {

@@ -36,7 +36,23 @@ var TEMExiter = func(args ...interface{}) {
 	os.Exit(1)
 }
 
-func mainloop(conf *Config, configfile *string) {
+func (td *TemData) SaveRpzSerial() error {
+	// Save the current value of td.Downstreams.Serial to a text file
+	serialFile := viper.GetString("output.rpz.serialcache")
+	if serialFile == "" {
+		log.Fatalf("TEMExiter:No serial cache file specified")
+	}
+	serialData := []byte(fmt.Sprintf("%d", td.Downstreams.Serial))
+	err := os.WriteFile(serialFile, serialData, 0644)
+	if err != nil {
+		log.Printf("Error writing current serial to file: %v", err)
+	} else {
+		log.Printf("Saved current serial %d to file %s", td.Downstreams.Serial, serialFile)
+	}
+	return err
+}
+
+func mainloop(conf *Config, configfile *string, td *TemData) {
 	log.Println("mainloop: enter")
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, syscall.SIGINT, syscall.SIGTERM)
@@ -46,6 +62,8 @@ func mainloop(conf *Config, configfile *string) {
 	TEMExiter = func(args ...interface{}) {
 		var msg string
 		log.Printf("TEMExiter: will try to clean up.")
+
+		td.SaveRpzSerial()
 
 		switch args[0].(type) {
 		case string:
@@ -75,6 +93,7 @@ func mainloop(conf *Config, configfile *string) {
 			select {
 			case <-exit:
 				log.Println("mainloop: Exit signal received. Cleaning up.")
+				td.SaveRpzSerial()
 				// do whatever we need to do to wrap up nicely
 				wg.Done()
 			case <-hupper:
@@ -176,5 +195,5 @@ func main() {
 	go DnsEngine(&conf)
 	conf.BootTime = time.Now()
 
-	mainloop(&conf, &cfgFileUsed)
+	mainloop(&conf, &cfgFileUsed, td)
 }

@@ -169,7 +169,13 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16) 
 		//		td.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
 		//			zd.ZoneName, len(zd.RRs))
 
-		td.RpzAxfrOut(w, r)
+		serial, _, err := td.RpzAxfrOut(w, r)
+		if err != nil {
+			td.Logger.Printf("RpzResponder: error from RpzAxfrOut() serving zone %s: %v", zd.ZoneName, err)
+		}
+		td.mu.Lock()
+		td.Downstreams.Serial = serial
+		td.mu.Unlock()
 		return nil
 	case dns.TypeIXFR:
 		td.Logger.Printf("RpzResponder: %s is our RPZ output", td.Rpz.ZoneName)
@@ -177,7 +183,13 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16) 
 		//		td.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
 		//			zd.ZoneName, len(zd.RRs))
 
-		td.RpzIxfrOut(w, r)
+		serial, _, err := td.RpzIxfrOut(w, r)
+		if err != nil {
+			td.Logger.Printf("RpzResponder: error from RpzIxfrOut() serving zone %s: %v", zd.ZoneName, err)
+		}
+		td.mu.Lock()
+		td.Downstreams.Serial = serial
+		td.mu.Unlock()
 		return nil
 	case dns.TypeSOA:
 		// zd.Logger.Printf("There are %d SOA RRs in %s. rrset: %v", len(apex.RRtypes[dns.TypeSOA].RRs),
@@ -211,14 +223,17 @@ func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData,
 
 	switch qtype {
 	case dns.TypeAXFR, dns.TypeIXFR:
-		log.Printf("We have the zone %s, so let's try to serve it", qname)
-		log.Printf("SOA: %s", zd.SOA.String())
-		log.Printf("BodyRRs: %d (+ %d apex RRs)", len(zd.BodyRRs), zd.ApexLen)
+		//	log.Printf("We have the zone %s, so let's try to serve it", qname)
+		//	log.Printf("SOA: %s", zd.SOA.String())
+		//	log.Printf("BodyRRs: %d (+ %d apex RRs)", len(zd.BodyRRs), zd.ApexLen)
 
 		zd.Logger.Printf("ApexResponder: sending zone %s with %d body RRs to XfrOut",
 			zd.ZoneName, len(zd.RRs))
 
-		zd.ZoneTransferOut(w, r)
+		_, err := zd.ZoneTransferOut(w, r)
+		if err != nil {
+			zd.Logger.Printf("ApexResponder: error serving zone %s: %v", zd.ZoneName, err)
+		}
 		return nil
 	case dns.TypeSOA:
 		// zd.Logger.Printf("There are %d SOA RRs in %s. rrset: %v", len(apex.RRtypes[dns.TypeSOA].RRs),
@@ -271,7 +286,7 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 
 	var owner tapir.OwnerData
 	switch zd.ZoneType {
-	case tapir.MapZone:
+	case tapir.MapZone, tapir.RpzZone:
 		if tmp, exist := zd.Data[qname]; exist {
 			owner = tmp
 		} else {

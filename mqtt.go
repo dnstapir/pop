@@ -166,7 +166,7 @@ func (td *TemData) ProcessIxfrIntoAxfr(ixfr RpzIxfr) error {
 		}
 	}
 
-	td.Logger.Printf("PIIA Notifying %d downstreams for RPZ zone %s", len(td.RpzDownstreams), td.Rpz.ZoneName)
+	//	td.Logger.Printf("PIIA Notifying %d downstreams for RPZ zone %s", len(td.RpzDownstreams), td.Rpz.ZoneName)
 	err := td.NotifyDownstreams()
 	return err
 }

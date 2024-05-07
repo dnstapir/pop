@@ -376,8 +376,8 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 }
 
 func (td *TemData) NotifyDownstreams() error {
-	td.Logger.Printf("RefreshEngine: Notifying %d downstreams for RPZ zone %s", len(td.RpzDownstreams), td.Rpz.ZoneName)
-	for _, d := range td.RpzDownstreams {
+	td.Logger.Printf("RefreshEngine: Notifying %d downstreams for RPZ zone %s", len(td.Downstreams.Downstreams), td.Rpz.ZoneName)
+	for _, d := range td.Downstreams.Downstreams {
 		m := new(dns.Msg)
 		m.SetNotify(td.Rpz.ZoneName)
 		td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial

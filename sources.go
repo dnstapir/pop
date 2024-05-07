@@ -33,11 +33,16 @@ type TemData struct {
 	Policy                 TemPolicy
 	Rpz                    RpzData
 	RpzSources             map[string]*tapir.ZoneData
-	RpzDownstreams         []string
+	Downstreams            RpzDownstream
 	ReaperInterval         time.Duration
 	MqttEngine             *tapir.MqttEngine
 	Verbose                bool
 	Debug                  bool
+}
+
+type RpzDownstream struct {
+	Serial      uint32 // Must track the current RPZ serial in the resolver
+	Downstreams []string
 }
 
 type RpzData struct {
@@ -112,10 +117,15 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	td.Lists["greylist"] = make(map[string]*tapir.WBGlist, 3)
 	td.Lists["blacklist"] = make(map[string]*tapir.WBGlist, 3)
 
+	err := td.ParseOutputs()
+	if err != nil {
+		TEMExiter("NewTemData: Error from ParseOutputs(): %v", err)
+	}
+
 	//	td.Rpz.IxfrChain = map[uint32]RpzIxfr{}
 	td.RpzSources = map[string]*tapir.ZoneData{}
 
-	err := td.BootstrapRpzOutput()
+	err = td.BootstrapRpzOutput()
 	if err != nil {
 		td.Logger.Printf("Error from BootstrapRpzOutput(): %v", err)
 	}

@@ -5,6 +5,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -18,7 +19,7 @@ func (td *TemData) BootstrapRpzOutput() error {
 	apextmpl := `
 $TTL 3600
 ${ZONE}		IN	SOA	mname. hostmaster.dnstapir.se. (
-				123
+				${SERIAL}
 				60
 				60
 				86400
@@ -30,6 +31,7 @@ ns2.${ZONE}	IN	AAAA	::1`
 
 	rpzzone := viper.GetString("output.rpz.zonename")
 	apex := strings.Replace(apextmpl, "${ZONE}", rpzzone, -1)
+	apex = strings.Replace(apex, "${SERIAL}", fmt.Sprintf("%d", td.Rpz.CurrentSerial), -1)
 
 	zd := tapir.ZoneData{
 		ZoneName: rpzzone,
@@ -39,26 +41,28 @@ ns2.${ZONE}	IN	AAAA	::1`
 		Debug:    true,
 	}
 
-	serial, err := zd.ReadZoneString(apex)
+	_, err := zd.ReadZoneString(apex)
 	if err != nil {
 		td.Logger.Printf("Error from ReadZoneString(): %v", err)
 	}
-	td.Rpz.CurrentSerial = serial
+	// td.Rpz.CurrentSerial = serial
 
+	td.mu.Lock()
 	td.Rpz.Axfr.ZoneData = &zd // XXX: This is not thread safe
 	td.Rpz.Axfr.SOA = zd.SOA
 	td.Rpz.Axfr.NSrrs = zd.NSrrs
+	td.mu.Unlock()
 	return nil
 }
 
-func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (int, error) {
+func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, error) {
 
 	zone := td.Rpz.ZoneName
 
-	if td.Verbose {
-		td.Logger.Printf("RpzAxfrOut: Will try to serve RPZ %s (%d RRs)", zone,
-			len(td.Rpz.Axfr.Data))
-	}
+	// if td.Verbose {
+	//		td.Logger.Printf("RpzAxfrOut: Will try to serve RPZ %s (%d RRs)", zone,
+	//			len(td.Rpz.Axfr.Data))
+	//	}
 
 	outbound_xfr := make(chan *dns.Envelope)
 	tr := new(dns.Transfer)
@@ -101,8 +105,8 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	env.RR = append(env.RR, dns.RR(&td.Rpz.Axfr.SOA)) // trailing SOA
 
 	total_sent += len(env.RR)
-	td.Logger.Printf("RpzAxfrOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d)\n",
-		zone, len(env.RR), total_sent)
+	//	td.Logger.Printf("RpzAxfrOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d)\n",
+	//		zone, len(env.RR), total_sent)
 	outbound_xfr <- &env
 
 	close(outbound_xfr)
@@ -111,7 +115,7 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (int, error) {
 
 	td.Logger.Printf("ZoneTransferOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)
 
-	return total_sent - 1, nil
+	return td.Rpz.CurrentSerial, total_sent - 1, nil
 }
 
 // An IXFR has the following structure:
@@ -139,7 +143,8 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (int, error) {
 // 3: SOA N
 // 3: RR, RR, RR # adds
 // SOA N
-func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (int, error) {
+// Returns: serial that we gave the client, number of RRs sent, error
+func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, error) {
 
 	var curserial uint32 = 0 // serial that the client claims to have
 
@@ -181,10 +186,12 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (int, error) {
 	env.RR = append(env.RR, dns.RR(&td.Rpz.Axfr.SOA))
 
 	var totcount, count int
+	var finalSerial uint32
 	for _, ixfr := range td.Rpz.IxfrChain {
 		td.Logger.Printf("IxfrOut: checking client serial(%d) against IXFR[from:%d, to:%d]",
 			curserial, ixfr.FromSerial, ixfr.ToSerial)
 		if ixfr.FromSerial >= curserial {
+			finalSerial = ixfr.ToSerial
 			td.Logger.Printf("PushIxfrs: pushing the IXFR[from:%d, to:%d] onto output",
 				ixfr.FromSerial, ixfr.ToSerial)
 			fromsoa := dns.Copy(dns.RR(&td.Rpz.Axfr.ZoneData.SOA))
@@ -261,5 +268,5 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (int, error) {
 
 	td.Logger.Printf("ZoneTransferOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)
 
-	return total_sent - 1, nil
+	return finalSerial, total_sent - 1, nil
 }

@@ -19,7 +19,7 @@ build:
 
 linux:	
 	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
-	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -o ${PROG}
+	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -o ${PROG}.linux
 
 gen-mqtt-msg-new-qname.go: checkout/events-mqtt-message-new_qname.json
 	go-jsonschema checkout/events-mqtt-message-new_qname.json --package main --tags json --only-models --output gen-mqtt-msg-new-qname.go
