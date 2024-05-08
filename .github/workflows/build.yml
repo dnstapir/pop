@@ -12,6 +12,14 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Clone private module
+        uses: actions/checkout@v4
+        with:
+          repository: dnstapir/tapir
+          ssh-key: ${{ secrets.TAPIR_REPO_SSH_PRIVATE_KEY }}
+          path: tapir
+      - name: Update path to private module
+        run: sed -i.old "s,\.\./tapir,./tapir,g" go.mod
       - name: Setup Go ${{ matrix.go-version }}
         uses: actions/setup-go@v5
         with:
