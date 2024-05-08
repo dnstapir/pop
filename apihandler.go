@@ -69,6 +69,13 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			resp = tapir.CommandResponse{
 				Status: "ok", // only status we know, so far
 				Msg:    "We're happy, but send more cookies"}
+		case "stop":
+			log.Printf("Daemon instructed to stop\n")
+			resp = tapir.CommandResponse{
+				Status: "stopping",
+				Msg:    "Daemon was happy, but now winding down",
+			}
+			conf.Internal.APIStopCh <- struct{}{}
 		case "bump":
 			resp.Msg, err = BumpSerial(conf, cp.Zone)
 			if err != nil {
@@ -154,14 +161,14 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 			resp.Msg = rpzresp.Msg
 
-		case "stop":
-			log.Printf("Daemon instructed to stop\n")
-			// var done struct{}
+			//		case "stop":
+			//			log.Printf("Daemon instructed to stop\n")
+			//			// var done struct{}
 			// conf.Internal.APIStopCh <- done
-			resp = tapir.CommandResponse{
-				Status: "stopping",
-				Msg:    "Daemon was happy, but now winding down",
-			}
+			//			resp = tapir.CommandResponse{
+			//				Status: "stopping",
+			//				Msg:    "Daemon was happy, but now winding down",
+			//			}
 		default:
 			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", cp.Command)
 			resp.Error = true

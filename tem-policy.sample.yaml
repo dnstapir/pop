@@ -16,5 +16,5 @@ policy:
          limit:		4
          action:	DROP
       blacktapir:	# any of these->action
-         tags:		[ likelymalware, badip, childporn ]	
+         tags:		[ likelymalware, badip ]	
          action:	REDIRECT

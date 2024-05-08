@@ -18,6 +18,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spf13/viper"
+
 	"github.com/dnstapir/tapir"
 )
 
@@ -37,7 +38,7 @@ func (td *TemData) SaveRpzSerial() error {
 	if serialFile == "" {
 		log.Fatalf("TEMExiter:No serial cache file specified")
 	}
-	serialData := []byte(fmt.Sprintf("%d", td.Downstreams.Serial))
+	serialData := []byte(fmt.Sprintf("%d", td.Rpz.CurrentSerial))
 	err := os.WriteFile(serialFile, serialData, 0644)
 	if err != nil {
 		log.Printf("Error writing current serial to file: %v", err)
@@ -102,6 +103,10 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 				log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
 				log.Printf("mainloop: Requesting refresh of all RPZ zones")
 				conf.TemData.RpzRefreshCh <- RpzRefresh{Name: ""}
+			case <-conf.Internal.APIStopCh:
+				log.Printf("mainloop: API instruction to stop\n")
+				td.SaveRpzSerial()
+				wg.Done()
 			}
 		}
 	}()
@@ -183,7 +188,7 @@ func main() {
 	}
 
 	apistopper := make(chan struct{}) //
-	// conf.Internal.APIStopCh = apistopper
+	conf.Internal.APIStopCh = apistopper
 	go APIdispatcher(&conf, apistopper)
 	//	go httpsserver(&conf, apistopper)
 

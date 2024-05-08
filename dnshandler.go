@@ -222,19 +222,19 @@ func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData,
 	var glue tapir.RRset
 
 	switch qtype {
-	case dns.TypeAXFR, dns.TypeIXFR:
-		//	log.Printf("We have the zone %s, so let's try to serve it", qname)
-		//	log.Printf("SOA: %s", zd.SOA.String())
-		//	log.Printf("BodyRRs: %d (+ %d apex RRs)", len(zd.BodyRRs), zd.ApexLen)
+	//	case dns.TypeAXFR, dns.TypeIXFR:
+	//	log.Printf("We have the zone %s, so let's try to serve it", qname)
+	//	log.Printf("SOA: %s", zd.SOA.String())
+	//	log.Printf("BodyRRs: %d (+ %d apex RRs)", len(zd.BodyRRs), zd.ApexLen)
 
-		zd.Logger.Printf("ApexResponder: sending zone %s with %d body RRs to XfrOut",
-			zd.ZoneName, len(zd.RRs))
+	//		zd.Logger.Printf("ApexResponder: sending zone %s with %d body RRs to XfrOut",
+	//			zd.ZoneName, len(zd.RRs))
 
-		_, err := zd.ZoneTransferOut(w, r)
-		if err != nil {
-			zd.Logger.Printf("ApexResponder: error serving zone %s: %v", zd.ZoneName, err)
-		}
-		return nil
+	//		_, err := zd.ZoneTransferOut(w, r)
+	//		if err != nil {
+	//			zd.Logger.Printf("ApexResponder: error serving zone %s: %v", zd.ZoneName, err)
+	//		}
+	//		return nil
 	case dns.TypeSOA:
 		// zd.Logger.Printf("There are %d SOA RRs in %s. rrset: %v", len(apex.RRtypes[dns.TypeSOA].RRs),
 		// 			   zd.ZoneName, apex.RRtypes[dns.TypeSOA])

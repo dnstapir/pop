@@ -93,6 +93,7 @@ type ApiserverConf struct {
 type InternalConf struct {
 	// RefreshZoneCh chan RpzRefresher
 	// RpzCmdCh      chan RpzCmdData
+	APIStopCh chan struct{}
 }
 
 func ValidateConfig(v *viper.Viper, cfgfile string) error {

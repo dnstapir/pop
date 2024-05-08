@@ -60,6 +60,7 @@ func (td *TemData) ParseOutputs() error {
 	}
 	// Read the current value of td.Downstreams.Serial from a text file
 	serialFile := viper.GetString("output.rpz.serialcache")
+
 	if serialFile != "" {
 		serialData, err := os.ReadFile(serialFile)
 		if err != nil {
@@ -277,7 +278,7 @@ func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
 
 	if _, exists := greyHits["dns-tapir"]; exists {
 		numtapirtags := greyHits["dns-tapir"].TagMask.NumTags()
-		if numtapirtags > td.Policy.Greylist.NumTapirTags {
+		if numtapirtags >= td.Policy.Greylist.NumTapirTags {
 			td.Logger.Printf("ComputeRpzGreylistAction: name %s has more than %d tapir tags, action is %s",
 				name, td.Policy.Greylist.NumTapirTags, tapir.ActionToString[td.Policy.Greylist.NumTapirTagsAction])
 			return td.Policy.Greylist.NumTapirTagsAction
