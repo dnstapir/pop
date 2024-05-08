@@ -28,6 +28,8 @@ jobs:
         run: go version
       - name: Install dependencies
         run: go mod download
+      - name: Make version
+        run: make version.go
       - name: Vet
         run: go vet -v
       - name: Test
