@@ -5,7 +5,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"strings"
 
@@ -26,20 +25,20 @@ func DnsEngine(conf *Config) error {
 	//      debug := viper.GetBool("dnsengine.debug")
 	dns.HandleFunc(".", createHandler(conf))
 
-	log.Printf("DnsEngine: addresses: %v", addresses)
+	conf.Dnsengine.Logger.Printf("DnsEngine: addresses: %v", addresses)
 	for _, addr := range addresses {
 		for _, net := range []string{"udp", "tcp"} {
 			go func(addr, net string) {
-				log.Printf("DnsEngine: serving on %s (%s)\n", addr, net)
+				conf.Dnsengine.Logger.Printf("DnsEngine: serving on %s (%s)\n", addr, net)
 				server := &dns.Server{Addr: addr, Net: net}
 
 				// Must bump the buffer size of incoming UDP msgs, as updates
 				// may be much larger then queries
 				server.UDPSize = dns.DefaultMsgSize // 4096
 				if err := server.ListenAndServe(); err != nil {
-					log.Printf("Failed to setup the %s server: %s\n", net, err.Error())
+					conf.Dnsengine.Logger.Printf("Failed to setup the %s server: %s\n", net, err.Error())
 				} else {
-					log.Printf("DnsEngine: listening on %s/%s\n", addr, net)
+					conf.Dnsengine.Logger.Printf("DnsEngine: listening on %s/%s\n", addr, net)
 				}
 			}(addr, net)
 		}
@@ -47,19 +46,7 @@ func DnsEngine(conf *Config) error {
 	return nil
 }
 
-func xxxServe(conf *Config, net, address, port string, soreuseport bool) {
-	service := address + ":" + port
-	fmt.Printf("%s: serving on %s (%s)\n", conf.Service.Name, service, net)
-
-	server := &dns.Server{Addr: service, Net: net, ReusePort: soreuseport}
-	if err := server.ListenAndServe(); err != nil {
-		fmt.Printf("Failed to setup the "+net+" server: %s\n", err.Error())
-	} else {
-		fmt.Printf("TEM: listening on %s/%s\n", service, net)
-	}
-}
-
-func GetKeepFunc(zone string) (string, func(uint16) bool) {
+func xxxGetKeepFunc(zone string) (string, func(uint16) bool) {
 	switch viper.GetString("service.filter") {
 	case "dnssec":
 		return "dnssec", tapir.DropDNSSECp
@@ -72,6 +59,7 @@ func GetKeepFunc(zone string) (string, func(uint16) bool) {
 func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 
 	td := conf.TemData
+	lg := conf.Dnsengine.Logger
 	zonech := conf.TemData.RpzRefreshCh
 
 	//	var rrtypes []string
@@ -82,75 +70,75 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 		switch r.Opcode {
 		case dns.OpcodeNotify:
 			ntype := r.Question[0].Qtype
-			log.Printf("Received NOTIFY(%s) for zone '%s'", dns.TypeToString[ntype], qname)
+			lg.Printf("Received NOTIFY(%s) for zone '%s'", dns.TypeToString[ntype], qname)
 			// send NOERROR response
 			m := new(dns.Msg)
 			m.SetReply(r)
 			w.WriteMsg(m)
 
 			if _, ok := td.RpzSources[qname]; ok {
-				log.Printf("Received Notify for known zone %s. Fetching from upstream", qname)
+				lg.Printf("Received Notify for known zone %s. Fetching from upstream", qname)
 				zonech <- RpzRefresh{
 					Name:     qname, // send zone name into RefreshEngine
 					ZoneType: td.RpzSources[qname].ZoneType,
 				}
 			}
-			fmt.Printf("Notify message: %v\n", m.String())
+			lg.Printf("Notify message: %v\n", m.String())
 
 			return
 
 		case dns.OpcodeQuery:
 			qtype := r.Question[0].Qtype
-			log.Printf("Zone %s %s request from %s", qname, dns.TypeToString[qtype], w.RemoteAddr())
+			lg.Printf("Zone %s %s request from %s", qname, dns.TypeToString[qtype], w.RemoteAddr())
 			if qname == td.Rpz.ZoneName {
-				td.RpzResponder(w, r, qtype)
+				td.RpzResponder(w, r, qtype, lg)
 			} else if zd, ok := td.RpzSources[qname]; ok {
 				// The qname is equal to the name of a zone we have
-				ApexResponder(w, r, zd, qname, qtype)
+				ApexResponder(w, r, zd, qname, qtype, lg)
 			} else {
-				log.Printf("DnsHandler: Qname is '%s', which is not a known zone.", qname)
+				lg.Printf("DnsHandler: Qname is '%s', which is not a known zone.", qname)
 				known_zones := []string{td.Rpz.ZoneName}
 				for z, _ := range td.RpzSources {
 					known_zones = append(known_zones, z)
 				}
-				log.Printf("DnsHandler: Known zones are: %v", known_zones)
+				lg.Printf("DnsHandler: Known zones are: %v", known_zones)
 
 				// Let's see if we can find the zone
 				if strings.HasSuffix(qname, td.Rpz.ZoneName) {
-					log.Printf("Query for qname %s belongs in our own RPZ \"%s\"",
+					lg.Printf("Query for qname %s belongs in our own RPZ \"%s\"",
 						qname, td.Rpz.ZoneName)
-					td.QueryResponder(w, r, qname, qtype)
+					td.QueryResponder(w, r, qname, qtype, lg)
 					return
 				}
 				zd := td.FindZone(qname)
 				if zd == nil {
-					log.Printf("After FindZone: zd==nil")
+					lg.Printf("After FindZone: zd==nil")
 					m := new(dns.Msg)
 					m.SetRcode(r, dns.RcodeRefused)
 					w.WriteMsg(m)
 					return // didn't find any zone for that qname or found zone, but it is an XFR zone only
 				}
-				log.Printf("After FindZone: zd: zd.ZoneType: %v", zd.ZoneType)
+				lg.Printf("After FindZone: zd: zd.ZoneType: %v", zd.ZoneType)
 				if zd.ZoneType == tapir.XfrZone {
 					m := new(dns.Msg)
 					m.SetRcode(r, dns.RcodeRefused)
 					w.WriteMsg(m)
 					return // didn't find any zone for that qname or found zone, but it is an XFR zone only
 				}
-				log.Printf("Found matching full zone for qname %s: %s", qname, zd.ZoneName)
-				QueryResponder(w, r, zd, qname, qtype)
+				lg.Printf("Found matching full zone for qname %s: %s", qname, zd.ZoneName)
+				QueryResponder(w, r, zd, qname, qtype, lg)
 				return
 			}
 			return
 
 		default:
-			log.Printf("Error: unable to handle msgs of type %s",
+			lg.Printf("Error: unable to handle msgs of type %s",
 				dns.OpcodeToString[r.Opcode])
 		}
 	}
 }
 
-func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16) error {
+func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16, lg *log.Logger) error {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.MsgHdr.Authoritative = true
@@ -162,7 +150,7 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16) 
 
 	switch qtype {
 	case dns.TypeAXFR:
-		log.Printf("We have the zone %s, so let's try to serve it", td.Rpz.ZoneName)
+		lg.Printf("We have the zone %s, so let's try to serve it", td.Rpz.ZoneName)
 		//		log.Printf("SOA: %s", zd.SOA.String())
 		//		log.Printf("BodyRRs: %d (+ %d apex RRs)", len(zd.BodyRRs), zd.ApexLen)
 
@@ -171,21 +159,18 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16) 
 
 		serial, _, err := td.RpzAxfrOut(w, r)
 		if err != nil {
-			td.Logger.Printf("RpzResponder: error from RpzAxfrOut() serving zone %s: %v", zd.ZoneName, err)
+			lg.Printf("RpzResponder: error from RpzAxfrOut() serving zone %s: %v", zd.ZoneName, err)
 		}
 		td.mu.Lock()
 		td.Downstreams.Serial = serial
 		td.mu.Unlock()
 		return nil
 	case dns.TypeIXFR:
-		td.Logger.Printf("RpzResponder: %s is our RPZ output", td.Rpz.ZoneName)
-
-		//		td.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
-		//			zd.ZoneName, len(zd.RRs))
+		lg.Printf("RpzResponder: %s is our RPZ output", td.Rpz.ZoneName)
 
 		serial, _, err := td.RpzIxfrOut(w, r)
 		if err != nil {
-			td.Logger.Printf("RpzResponder: error from RpzIxfrOut() serving zone %s: %v", zd.ZoneName, err)
+			lg.Printf("RpzResponder: error from RpzIxfrOut() serving zone %s: %v", zd.ZoneName, err)
 		}
 		td.mu.Lock()
 		td.Downstreams.Serial = serial
@@ -212,7 +197,7 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16) 
 }
 
 func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData,
-	qname string, qtype uint16) error {
+	qname string, qtype uint16, lg *log.Logger) error {
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.MsgHdr.Authoritative = true
@@ -259,7 +244,7 @@ func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData,
 // 4. If no CNAME match, check for wild card match
 // 5. Give up.
 
-func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname string, qtype uint16) error {
+func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname string, qtype uint16, lg *log.Logger) error {
 
 	m := new(dns.Msg)
 	m.SetReply(r)
@@ -305,7 +290,7 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 
 		owner = zd.Owners[zd.OwnerIndex[qname]]
 	default:
-		log.Fatalf("Error: QueryResponder: unknown zone type: %d", zd.ZoneType)
+		TEMExiter("Error: QueryResponder: unknown zone type: %d", zd.ZoneType)
 	}
 
 	var glue *tapir.RRset
@@ -346,14 +331,14 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 	// 2. Check for exact match qname+qtype
 	switch qtype {
 	case dns.TypeTXT, dns.TypeMX, dns.TypeA, dns.TypeAAAA:
-		log.Printf("Apex data[%s]:\n", zd.ZoneName)
+		lg.Printf("Apex data[%s]:\n", zd.ZoneName)
 		for rrt, d := range apex.RRtypes {
-			log.Printf("%s: %v", dns.TypeToString[rrt], d)
+			lg.Printf("%s: %v", dns.TypeToString[rrt], d)
 		}
 
-		log.Printf("Qname data[%s]:\n", qname)
+		lg.Printf("Qname data[%s]:\n", qname)
 		for rrt, d := range owner.RRtypes {
-			log.Printf("%s: %v", dns.TypeToString[rrt], d)
+			lg.Printf("%s: %v", dns.TypeToString[rrt], d)
 		}
 
 		if _, ok := owner.RRtypes[qtype]; ok && len(owner.RRtypes[qtype].RRs) > 0 {
@@ -378,7 +363,7 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 	return nil
 }
 
-func (td *TemData) QueryResponder(w dns.ResponseWriter, r *dns.Msg, qname string, qtype uint16) error {
+func (td *TemData) QueryResponder(w dns.ResponseWriter, r *dns.Msg, qname string, qtype uint16, lg *log.Logger) error {
 
 	m := new(dns.Msg)
 	m.SetReply(r)

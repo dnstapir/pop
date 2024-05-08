@@ -266,26 +266,26 @@ func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
 			//				greyHits = append(greyHits, v)
 			//			}
 		default:
-			log.Fatalf("Unknown greylist format %s", list.Format)
+			TEMExiter("Unknown greylist format %s", list.Format)
 		}
 	}
 	if len(greyHits) >= td.Policy.Greylist.NumSources {
-		td.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d or more sources, action is %s",
+		td.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d or more sources, action is %s",
 			name, td.Policy.Greylist.NumSources, tapir.ActionToString[td.Policy.Greylist.NumSourcesAction])
 		return td.Policy.Greylist.NumSourcesAction
 	}
-	td.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d sources, not enough for action", name, len(greyHits))
+	td.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d sources, not enough for action", name, len(greyHits))
 
 	if _, exists := greyHits["dns-tapir"]; exists {
 		numtapirtags := greyHits["dns-tapir"].TagMask.NumTags()
 		if numtapirtags >= td.Policy.Greylist.NumTapirTags {
-			td.Logger.Printf("ComputeRpzGreylistAction: name %s has more than %d tapir tags, action is %s",
+			td.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s has more than %d tapir tags, action is %s",
 				name, td.Policy.Greylist.NumTapirTags, tapir.ActionToString[td.Policy.Greylist.NumTapirTagsAction])
 			return td.Policy.Greylist.NumTapirTagsAction
 		}
-		td.Logger.Printf("ComputeRpzGreylistAction: name %s has %d tapir tags, not enough for action", name, numtapirtags)
+		td.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s has %d tapir tags, not enough for action", name, numtapirtags)
 	}
-	td.Logger.Printf("ComputeRpzGreylistAction: name %s is present in %d greylists, but does not trigger any action",
+	td.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s is present in %d greylists, but does not trigger any action",
 		name, len(greyHits))
 	return td.Policy.WhitelistAction
 }
@@ -293,17 +293,17 @@ func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
 func (td *TemData) ComputeRpzAction(name string) tapir.Action {
 	if td.Whitelisted(name) {
 		if td.Debug {
-			td.Logger.Printf("ComputeRpzAction: name %s is whitelisted, action is %s", name, tapir.ActionToString[td.Policy.WhitelistAction])
+			td.Policy.Logger.Printf("ComputeRpzAction: name %s is whitelisted, action is %s", name, tapir.ActionToString[td.Policy.WhitelistAction])
 		}
 		return td.Policy.WhitelistAction
 	} else if td.Blacklisted(name) {
 		if td.Debug {
-			td.Logger.Printf("ComputeRpzAction: name %s is blacklisted, action is %s", name, tapir.ActionToString[td.Policy.BlacklistAction])
+			td.Policy.Logger.Printf("ComputeRpzAction: name %s is blacklisted, action is %s", name, tapir.ActionToString[td.Policy.BlacklistAction])
 		}
 		return td.Policy.BlacklistAction
 	} else if td.Greylisted(name) {
 		if td.Debug {
-			td.Logger.Printf("ComputeRpzAction: name %s is greylisted, needs further evaluation to determine action", name)
+			td.Policy.Logger.Printf("ComputeRpzAction: name %s is greylisted, needs further evaluation to determine action", name)
 		}
 		return td.ComputeRpzGreylistAction(name) // This is not complete, only a placeholder for now.
 	}
@@ -339,15 +339,15 @@ func (td *TemData) ComputeRpzAction(name string) tapir.Action {
 func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 
 	var removeData, addData []*tapir.RpzName
-	td.Logger.Printf("GenerateRpzIxfr: %d removed names and %d added names", len(data.Removed), len(data.Added))
+	td.Policy.Logger.Printf("GenerateRpzIxfr: %d removed names and %d added names", len(data.Removed), len(data.Added))
 	for _, tn := range data.Removed {
-		td.Logger.Printf("GenerateRpzIxfr: evaluating removed name %s", tn.Name)
+		td.Policy.Logger.Printf("GenerateRpzIxfr: evaluating removed name %s", tn.Name)
 		if cur, exist := td.Rpz.Axfr.Data[tn.Name]; exist {
 			newAction := td.ComputeRpzAction(tn.Name)
 			oldAction := cur.Action
 			if newAction != oldAction {
 				if td.Debug {
-					td.Logger.Printf("GenRpzIxfr[DEL]: %s: oldaction(%s) != newaction(%s)",
+					td.Policy.Logger.Printf("GenRpzIxfr[DEL]: %s: oldaction(%s) != newaction(%s): -->DELETE",
 						tn.Name,
 						tapir.ActionToString[oldAction],
 						tapir.ActionToString[newAction])
@@ -374,26 +374,26 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 				}
 			} else {
 				if td.Debug {
-					td.Logger.Printf("GenRpzIxfr[DEL]: name %s present in previous policy with same action, no change", tn.Name)
+					td.Policy.Logger.Printf("GenRpzIxfr[DEL]: name %s present in previous policy with same action: -->NO CHANGE", tn.Name)
 				}
 			}
 		} else {
 			if td.Debug {
-				td.Logger.Printf("GenRpzIxfr[DEL]: name %s not present in previous policy, still not included", tn.Name)
+				td.Policy.Logger.Printf("GenRpzIxfr[DEL]: name %s not present in previous policy, still not included: -->NO CHANGE", tn.Name)
 			}
 		}
 	}
 
 	var addtorpz bool
 	for _, tn := range data.Added {
-		td.Logger.Printf("GenerateRpzIxfr: evaluating added name %s", tn.Name)
+		td.Policy.Logger.Printf("GenerateRpzIxfr: evaluating added name %s", tn.Name)
 		addtorpz = false
 		newAction := td.ComputeRpzAction(tn.Name)
 		if cur, exist := td.Rpz.Axfr.Data[tn.Name]; exist {
 			if newAction == tapir.WHITELIST {
 				// delete from rpz
 				if td.Debug {
-					td.Logger.Printf("GenRpzIxfr[ADD]: name %s already exists in rpz, new action is WHITELIST, remove name", tn.Name)
+					td.Policy.Logger.Printf("GenRpzIxfr[ADD]: name %s already exists in rpz, new action is WHITELIST: -->DELETE", tn.Name)
 				}
 				removeData = append(removeData, cur)
 			} else {
@@ -402,7 +402,7 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 					removeData = append(removeData, cur)
 					addtorpz = true
 					if td.Debug {
-						td.Logger.Printf("GenRpzIxfr[ADD]: name %s present in rpz, newaction(%s) != oldaction(%s)",
+						td.Policy.Logger.Printf("GenRpzIxfr[ADD]: name %s present in rpz, newaction(%s) != oldaction(%s): -->ADD",
 							tn.Name, tapir.ActionToString[newAction],
 							tapir.ActionToString[cur.Action])
 					}
@@ -415,7 +415,7 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 			if newAction != tapir.WHITELIST {
 				// add it
 				if td.Debug {
-					td.Logger.Printf("GenRpzIxfr[ADD]: name %s NOT present in rpz, newaction(%s) != WHITELIST: ADD",
+					td.Policy.Logger.Printf("GenRpzIxfr[ADD]: name %s NOT present in rpz, newaction(%s) != WHITELIST: -->ADD",
 						tn.Name, tapir.ActionToString[newAction])
 				}
 				addtorpz = true
@@ -453,12 +453,12 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 		td.Rpz.IxfrChain = append(td.Rpz.IxfrChain, thisixfr)
 		td.Rpz.CurrentSerial = newserial
 		if td.Verbose {
-			td.Logger.Printf("GenRpzIxfr: added new IXFR (from: %d to: %d) to chain. Chain has %d IXFRs",
+			td.Policy.Logger.Printf("GenRpzIxfr: added new IXFR (serial from %d to %d) to chain. Chain has %d IXFRs",
 				curserial, newserial, len(td.Rpz.IxfrChain))
 		}
 		return thisixfr, nil
 	}
 
-	td.Logger.Printf("GenRpzIxfr: no changes in RPZ policy, no new IXFR")
+	td.Policy.Logger.Printf("GenRpzIxfr: no changes in RPZ policy, no new IXFR")
 	return RpzIxfr{}, nil
 }

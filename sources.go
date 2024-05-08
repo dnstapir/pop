@@ -70,6 +70,7 @@ type RpzAxfr struct {
 }
 
 type TemPolicy struct {
+	Logger          *log.Logger
 	WhitelistAction tapir.Action
 	BlacklistAction tapir.Action
 	Greylist        GreylistPolicy
@@ -130,6 +131,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 		td.Logger.Printf("Error from BootstrapRpzOutput(): %v", err)
 	}
 
+	td.Policy.Logger = conf.Policy.Logger
 	td.Policy.WhitelistAction, err = tapir.StringToAction(viper.GetString("policy.whitelist.action"))
 	if err != nil {
 		TEMExiter("Error parsing whitelist policy: %v", err)

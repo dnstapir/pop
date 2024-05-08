@@ -16,13 +16,10 @@ type Config struct {
 	Service   ServiceConf
 	Server    ServerConf
 	Apiserver ApiserverConf
+	Dnsengine DnsengineConf
 	Sources   map[string]SourceConf
-	//	OldSources   struct {
-	//		  	 Active	[]string	`validate:"required"`
-	//			 Spec			[]SourceConf
-	//		  }
-	Policy PolicyConf
-	Log    struct {
+	Policy    PolicyConf
+	Log       struct {
 		File    string `validate:"required"`
 		Verbose *bool  `validate:"required"`
 		Debug   *bool  `validate:"required"`
@@ -58,6 +55,8 @@ type SourceConf struct {
 }
 
 type PolicyConf struct {
+	Logfile   string
+	Logger    *log.Logger
 	Whitelist struct {
 		Action string `validate:"required"`
 	}
@@ -88,6 +87,11 @@ type GreylistConf struct {
 type ApiserverConf struct {
 	Address string `validate:"required"`
 	Key     string `validate:"required"`
+}
+type DnsengineConf struct {
+	Address string `validate:"required"`
+	Logfile string `validate:"required"`
+	Logger  *log.Logger
 }
 
 type InternalConf struct {

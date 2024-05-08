@@ -157,9 +157,9 @@ func main() {
 		TEMExiter("Could not load config %s: Error: %v", tapir.TemPolicyCfgFile, err)
 	}
 
-	logfile := viper.GetString("log.file")
-	tapir.SetupLogging(logfile)
-	fmt.Printf("Logging to file: %s\n", logfile)
+	// logfile := viper.GetString("log.file")
+	SetupLogging(&conf)
+	fmt.Printf("Policy lLogging to logger: %v\n", conf.Policy.Logger)
 
 	ValidateConfig(nil, cfgFileUsed) // will terminate on error
 
