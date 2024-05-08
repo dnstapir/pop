@@ -13,8 +13,11 @@ default: ${PROG}
 
 ${PROG}: build
 
-build:	
+
+version.go:
 	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
+
+build: version.go
 	$(GO) build $(GOFLAGS) -o ${PROG}
 
 linux:	
@@ -37,7 +40,7 @@ checkout:
 	git clone git@github.com:dnstapir/protocols.git checkout
 
 clean:
-	@rm -f $(PROG) *~
+	@rm -f $(PROG) *~ version.go
 
 install:
 	mkdir -p /usr/local/libexec
