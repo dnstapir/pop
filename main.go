@@ -9,20 +9,15 @@ import (
 	"fmt"
 	"log"
 
-	//	"net"
 	"os"
 	"os/signal"
 
-	//	"strconv"
-	//	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	//	"github.com/miekg/dns"
 	"github.com/spf13/viper"
-
 	"github.com/dnstapir/tapir"
 )
 
