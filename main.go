@@ -159,7 +159,7 @@ func main() {
 
 	// logfile := viper.GetString("log.file")
 	SetupLogging(&conf)
-	fmt.Printf("Policy lLogging to logger: %v\n", conf.Policy.Logger)
+	fmt.Printf("Policy Logging to logger: %v\n", conf.Loggers.Policy)
 
 	ValidateConfig(nil, cfgFileUsed) // will terminate on error
 

@@ -12,13 +12,13 @@ import (
 	"github.com/dnstapir/tapir"
 )
 
-func (td *TemData) CreateMqttEngine(clientid string) error {
+func (td *TemData) CreateMqttEngine(clientid string, lg *log.Logger) error {
 	if clientid == "" {
 		TEMExiter("Error starting MQTT Engine: clientid not specified in config")
 	}
 	var err error
 	td.Logger.Printf("Creating MQTT Engine with clientid %s", clientid)
-	td.MqttEngine, err = tapir.NewMqttEngine(clientid, tapir.TapirSub) // sub, but no pub
+	td.MqttEngine, err = tapir.NewMqttEngine(clientid, tapir.TapirSub, lg) // sub, but no pub
 	if err != nil {
 		td.Logger.Printf("Error from NewMqttEngine: %v\n", err)
 	}

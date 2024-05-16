@@ -83,6 +83,18 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				resp.ErrorMsg = err.Error()
 			}
 
+		case "mqtt-start":
+			conf.TemData.MqttEngine.StartEngine()
+			resp.Msg = "MQTT engine started"
+
+		case "mqtt-stop":
+			conf.TemData.MqttEngine.StopEngine()
+			resp.Msg = "MQTT engine stopped"
+
+		case "mqtt-restart":
+			conf.TemData.MqttEngine.RestartEngine()
+			resp.Msg = "MQTT engine restarted"
+
 		case "rpz-add":
 			log.Printf("Received RPZ-ADD %s policy %s RPZ source %s command", cp.Name, cp.Policy, cp.RpzSource)
 

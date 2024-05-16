@@ -24,6 +24,11 @@ type Config struct {
 		Verbose *bool  `validate:"required"`
 		Debug   *bool  `validate:"required"`
 	}
+	Loggers	struct {
+		Mqtt		*log.Logger
+		Dnsengine	*log.Logger
+		Policy		*log.Logger
+	}
 	Internal InternalConf
 	TemData  *TemData
 	BootTime time.Time
@@ -56,7 +61,7 @@ type SourceConf struct {
 
 type PolicyConf struct {
 	Logfile   string
-	Logger    *log.Logger
+//	Logger    *log.Logger
 	Whitelist struct {
 		Action string `validate:"required"`
 	}
@@ -91,7 +96,7 @@ type ApiserverConf struct {
 type DnsengineConf struct {
 	Address string `validate:"required"`
 	Logfile string `validate:"required"`
-	Logger  *log.Logger
+//	Logger  *log.Logger
 }
 
 type InternalConf struct {

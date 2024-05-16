@@ -25,20 +25,20 @@ func DnsEngine(conf *Config) error {
 	//      debug := viper.GetBool("dnsengine.debug")
 	dns.HandleFunc(".", createHandler(conf))
 
-	conf.Dnsengine.Logger.Printf("DnsEngine: addresses: %v", addresses)
+	conf.Loggers.Dnsengine.Printf("DnsEngine: addresses: %v", addresses)
 	for _, addr := range addresses {
 		for _, net := range []string{"udp", "tcp"} {
 			go func(addr, net string) {
-				conf.Dnsengine.Logger.Printf("DnsEngine: serving on %s (%s)\n", addr, net)
+				conf.Loggers.Dnsengine.Printf("DnsEngine: serving on %s (%s)\n", addr, net)
 				server := &dns.Server{Addr: addr, Net: net}
 
 				// Must bump the buffer size of incoming UDP msgs, as updates
 				// may be much larger then queries
 				server.UDPSize = dns.DefaultMsgSize // 4096
 				if err := server.ListenAndServe(); err != nil {
-					conf.Dnsengine.Logger.Printf("Failed to setup the %s server: %s\n", net, err.Error())
+					conf.Loggers.Dnsengine.Printf("Failed to setup the %s server: %s\n", net, err.Error())
 				} else {
-					conf.Dnsengine.Logger.Printf("DnsEngine: listening on %s/%s\n", addr, net)
+					conf.Loggers.Dnsengine.Printf("DnsEngine: listening on %s/%s\n", addr, net)
 				}
 			}(addr, net)
 		}
@@ -59,7 +59,7 @@ func xxxGetKeepFunc(zone string) (string, func(uint16) bool) {
 func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 
 	td := conf.TemData
-	lg := conf.Dnsengine.Logger
+	lg := conf.Loggers.Dnsengine
 	zonech := conf.TemData.RpzRefreshCh
 
 	//	var rrtypes []string

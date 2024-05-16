@@ -28,6 +28,7 @@ type TemData struct {
 	TapirMqttSubCh         chan tapir.MqttPkg
 	TapirMqttPubCh         chan tapir.MqttPkg // not used ATM
 	Logger                 *log.Logger
+	MqttLogger	       *log.Logger
 	BlacklistedNames       map[string]bool
 	GreylistedNames        map[string]*tapir.TapirName
 	Policy                 TemPolicy
@@ -106,6 +107,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	td := TemData{
 		Lists:          map[string]map[string]*tapir.WBGlist{},
 		Logger:         lg,
+		MqttLogger:	conf.Loggers.Mqtt,
 		RpzRefreshCh:   make(chan RpzRefresh, 10),
 		RpzCommandCh:   make(chan RpzCmdData, 10),
 		Rpz:            rpzdata,
@@ -131,7 +133,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 		td.Logger.Printf("Error from BootstrapRpzOutput(): %v", err)
 	}
 
-	td.Policy.Logger = conf.Policy.Logger
+	td.Policy.Logger = conf.Loggers.Policy
 	td.Policy.WhitelistAction, err = tapir.StringToAction(viper.GetString("policy.whitelist.action"))
 	if err != nil {
 		TEMExiter("Error parsing whitelist policy: %v", err)
@@ -261,7 +263,7 @@ func (td *TemData) ParseSources() error {
 
 	if td.MqttEngine == nil {
 		td.mu.Lock()
-		err := td.CreateMqttEngine(viper.GetString("mqtt.clientid"))
+		err := td.CreateMqttEngine(viper.GetString("mqtt.clientid"), td.MqttLogger)
 		if err != nil {
 			TEMExiter("Error creating MQTT Engine: %v", err)
 		}
