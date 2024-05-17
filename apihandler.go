@@ -5,6 +5,7 @@ package main
 
 import (
 	"crypto/tls"
+	"encoding/gob"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -181,6 +182,33 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			//				Status: "stopping",
 			//				Msg:    "Daemon was happy, but now winding down",
 			//			}
+
+		case "export-greylist-dns-tapir":
+			// exportGreylistDnsTapir(w, r, conf.TemData)
+			td := conf.TemData
+			td.mu.RLock()
+			defer td.mu.RUnlock()
+
+			greylist, ok := td.Lists["greylist"]["dns-tapir"]
+			if !ok {
+				resp.Error = true
+				resp.ErrorMsg = "Greylist 'dns-tapir' not found"
+				return
+			}
+			log.Printf("Found dns-tapir greylist: %v", greylist)
+
+			w.Header().Set("Content-Type", "application/octet-stream")
+			w.Header().Set("Content-Disposition", "attachment; filename=greylist-dns-tapir.gob")
+
+			encoder := gob.NewEncoder(w)
+			err := encoder.Encode(greylist)
+			if err != nil {
+				log.Printf("Error encoding greylist: %v", err)
+				resp.Error = true
+				resp.ErrorMsg = err.Error()
+				return
+			}
+
 		default:
 			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", cp.Command)
 			resp.Error = true
@@ -241,6 +269,22 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 					len(zd.RRs), len(zd.Owners))
 			} else {
 				resp.Msg = fmt.Sprintf("Zone %s is unknown", dp.Zone)
+			}
+
+		case "mqtt-stats":
+			log.Printf("TEM debug MQTT stats")
+			resp.MqttStats = td.MqttEngine.Stats()
+
+		case "reaper-stats":
+			log.Printf("TEM debug reaper stats")
+			resp.ReaperStats = make(map[string]map[time.Time][]string)
+			for SrcName, list := range td.Lists["greylist"] {
+				resp.ReaperStats[SrcName] = make(map[time.Time][]string)
+				for ts, items := range list.ReaperData {
+					for _, item := range items {
+						resp.ReaperStats[SrcName][ts] = append(resp.ReaperStats[SrcName][ts], item.Name)
+					}
+				}
 			}
 
 		case "colourlists":
@@ -315,6 +359,7 @@ func walkRoutes(router *mux.Router, address string) {
 // In practice APIdispatcher doesn't need a termination signal, as it will
 // just sit inside http.ListenAndServe, but we keep it for symmetry.
 func APIdispatcher(conf *Config, done <-chan struct{}) {
+	gob.Register(tapir.WBGlist{}) // Must register the type for gob encoding
 	router := SetupRouter(conf)
 
 	walkRoutes(router, viper.GetString("apiserver.address"))

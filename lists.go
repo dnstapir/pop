@@ -63,8 +63,8 @@ func (td *TemData) Greylisted(name string) bool {
 			if _, exists := list.Names[name]; exists {
 				return true
 			}
-		case "trie":
-			return list.Trie.Search(name) != nil
+			//		case "trie":
+			//			return list.Trie.Search(name) != nil
 		default:
 			log.Fatalf("Unknown greylist format %s", list.Format)
 		}
