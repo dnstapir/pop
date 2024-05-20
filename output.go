@@ -40,7 +40,7 @@ func (td *TemData) ParseOutputs() error {
 		Outputs: make(map[string]TemOutput),
 	}
 
-	td.Logger.Printf("ParseOutputs: config read: %s", cfgdata)
+	// td.Logger.Printf("ParseOutputs: config read: %s", cfgdata)
 	err = yaml.Unmarshal(cfgdata, &oconf)
 	if err != nil {
 		log.Fatalf("Error from yaml.Unmarshal(OutputsConfig): %v", err)
@@ -155,7 +155,7 @@ func (td *TemData) GenerateRpzAxfr() error {
 							tmp.Action = tmp.Action | v.Action
 							grey[k] = tmp
 						} else {
-							grey[k] = v
+							grey[k] = &v
 						}
 					}
 				}
@@ -259,7 +259,7 @@ func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
 			if v, exists := list.Names[name]; exists {
 				// td.Logger.Printf("ComputeRpzGreylistAction: found %s in greylist %s (%d names)",
 				// 	name, listname, len(list.Names))
-				greyHits[listname] = v
+				greyHits[listname] = &v
 			}
 			//		case "trie":
 			//			if list.Trie.Search(name) != nil {

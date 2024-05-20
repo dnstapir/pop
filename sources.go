@@ -4,9 +4,13 @@
 package main
 
 import (
+	"bytes"
 	"crypto/ecdsa"
+	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -14,8 +18,10 @@ import (
 
 	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
+	"github.com/ryanuber/columnize"
 	"github.com/smhanov/dawg"
 	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 type TemData struct {
@@ -28,7 +34,7 @@ type TemData struct {
 	TapirMqttSubCh         chan tapir.MqttPkg
 	TapirMqttPubCh         chan tapir.MqttPkg // not used ATM
 	Logger                 *log.Logger
-	MqttLogger	       *log.Logger
+	MqttLogger             *log.Logger
 	BlacklistedNames       map[string]bool
 	GreylistedNames        map[string]*tapir.TapirName
 	Policy                 TemPolicy
@@ -107,7 +113,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	td := TemData{
 		Lists:          map[string]map[string]*tapir.WBGlist{},
 		Logger:         lg,
-		MqttLogger:	conf.Loggers.Mqtt,
+		MqttLogger:     conf.Loggers.Mqtt,
 		RpzRefreshCh:   make(chan RpzRefresh, 10),
 		RpzCommandCh:   make(chan RpzCmdData, 10),
 		Rpz:            rpzdata,
@@ -144,6 +150,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	}
 	td.Policy.Greylist.NumSources = viper.GetInt("policy.greylist.numsources.limit")
 	if td.Policy.Greylist.NumSources == 0 {
+		//nolint:typecheck
 		TEMExiter("Error parsing policy: greylist.numsources.limit cannot be 0")
 	}
 	td.Policy.Greylist.NumSourcesAction, err =
@@ -222,7 +229,7 @@ func (td *TemData) Reaper(full bool) error {
 	return nil
 }
 
-func (td *TemData) ParseSources() error {
+func (td *TemData) ParseSourcesOG() error {
 	sources := viper.GetStringSlice("sources.active")
 	log.Printf("Defined policy sources: %v", sources)
 
@@ -235,7 +242,7 @@ func (td *TemData) ParseSources() error {
 			SrcFormat:   "none",
 			Format:      "map",
 			Datasource:  "Data misplaced in other sources",
-			Names:       map[string]*tapir.TapirName{},
+			Names:       map[string]tapir.TapirName{},
 			ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
 		}
 	td.Lists["greylist"]["grey_catchall"] =
@@ -246,7 +253,7 @@ func (td *TemData) ParseSources() error {
 			SrcFormat:   "none",
 			Format:      "map",
 			Datasource:  "Data misplaced in other sources",
-			Names:       map[string]*tapir.TapirName{},
+			Names:       map[string]tapir.TapirName{},
 			ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
 		}
 	td.mu.Unlock()
@@ -312,7 +319,7 @@ func (td *TemData) ParseSources() error {
 				Type:        s["type"].(string),
 				SrcFormat:   s["format"].(string),
 				Datasource:  s["source"].(string),
-				Names:       map[string]*tapir.TapirName{},
+				Names:       map[string]tapir.TapirName{},
 				ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
 				Filename:    params["filename"],
 				RpzUpstream: params["upstream"],
@@ -391,6 +398,171 @@ func (td *TemData) ParseSources() error {
 	return nil
 }
 
+type SrcFoo struct {
+	Src struct {
+		Style string `yaml:"style"`
+	} `yaml:"src"`
+	Sources map[string]SourceConf `yaml:"sources"`
+}
+
+func (td *TemData) ParseSourcesNG() error {
+	var srcfoo SrcFoo
+	configFile := tapir.TemSourcesCfgFile
+	data, err := os.ReadFile(configFile)
+	if err != nil {
+		return fmt.Errorf("error reading config file: %v", err)
+	}
+
+	err = yaml.Unmarshal(data, &srcfoo)
+	if err != nil {
+		return fmt.Errorf("error unmarshalling YAML data: %v", err)
+	}
+	//	log.Printf("ParseSourcesNG: Defined policy sources:\n")
+	//	for name, src := range srcfoo.Sources {
+	//		log.Printf("  %s: %s", name, src.Description)
+	//	}
+
+	td.mu.Lock()
+	td.Lists["whitelist"]["white_catchall"] =
+		&tapir.WBGlist{
+			Name:        "white_catchall",
+			Description: "Whitelist consisting of white names found in black- or greylist sources",
+			Type:        "whitelist",
+			SrcFormat:   "none",
+			Format:      "map",
+			Datasource:  "Data misplaced in other sources",
+			Names:       map[string]tapir.TapirName{},
+			ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
+		}
+	td.Lists["greylist"]["grey_catchall"] =
+		&tapir.WBGlist{
+			Name:        "grey_catchall",
+			Description: "Greylist consisting of grey names found in whitelist sources",
+			Type:        "greylist",
+			SrcFormat:   "none",
+			Format:      "map",
+			Datasource:  "Data misplaced in other sources",
+			Names:       map[string]tapir.TapirName{},
+			ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
+		}
+	td.mu.Unlock()
+
+	srcs := srcfoo.Sources
+	td.Logger.Printf("*** ParseSourcesNG: there are %d items in spec.", len(srcs))
+
+	threads := 0
+
+	var rptchan = make(chan string, 5)
+
+	if td.MqttEngine == nil {
+		td.mu.Lock()
+		err := td.CreateMqttEngine(viper.GetString("mqtt.clientid"), td.MqttLogger)
+		if err != nil {
+			TEMExiter("Error creating MQTT Engine: %v", err)
+		}
+		td.mu.Unlock()
+	}
+
+	for name, src := range srcs {
+		if !*src.Active {
+			td.Logger.Printf("*** ParseSourcesNG: Source \"%s\" is not active. Ignored.", name)
+			continue
+		}
+		td.Logger.Printf("=== ParseSourcesNG: Source: %s (%s) will be used (list type %s)", name, src.Name, src.Type)
+
+		var err error
+
+		threads++
+
+		go func(name string, src SourceConf, thread int) {
+			//			defer func() {
+			//td.Logger.Printf("<--Thread %d: source \"%s\" (%s) is now complete. %d remaining", thread, name, src.Source, threads)
+			// }()
+			td.Logger.Printf("-->Thread %d: parsing source \"%s\" (source %s)", thread, name, src.Source)
+
+			newsource := tapir.WBGlist{
+				Name:        src.Name,
+				Description: src.Description,
+				Type:        src.Type,
+				SrcFormat:   src.Format,
+				Datasource:  src.Source,
+				Names:       map[string]tapir.TapirName{},
+				ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
+				Filename:    src.Filename,
+				RpzUpstream: src.Upstream,
+				RpzZoneName: dns.Fqdn(src.Zone),
+			}
+
+			switch src.Source {
+			case "mqtt":
+				td.Logger.Printf("ParseSourcesNG: Fetching MQTT validator key for topic %s", src.Topic)
+				valkey, err := tapir.FetchMqttValidatorKey(src.Topic, src.ValidatorKey)
+				if err != nil {
+					td.Logger.Printf("ParseSources: Error fetching MQTT validator key for topic %s: %v", src.Topic, err)
+				}
+
+				err = td.MqttEngine.AddTopic(src.Topic, valkey)
+				if err != nil {
+					TEMExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
+				}
+
+				newsource.Format = "map" // for now
+				if len(src.Bootstrap) > 0 {
+					td.Logger.Printf("ParseSourcesNG: The %s MQTT source has %d bootstrap servers: %v", src.Name, len(src.Bootstrap), src.Bootstrap)
+					tmp, err := td.BootstrapMqttSource(&newsource, src)
+					if err != nil {
+						td.Logger.Printf("Error bootstrapping MQTT source %s: %v", src.Name, err)
+					} else {
+						newsource = *tmp
+					}
+				}
+				td.mu.Lock()
+				td.Lists["greylist"][newsource.Name] = &newsource
+				td.Logger.Printf("Created list [greylist][%s]", newsource.Name)
+				td.mu.Unlock()
+				td.Logger.Printf("*** MQTT sources are only managed via RefreshEngine.")
+				rptchan <- name
+			case "file":
+				err = td.ParseLocalFile(name, &newsource, rptchan)
+			case "xfr":
+				err = td.ParseRpzFeed(name, &newsource, rptchan)
+				td.Logger.Printf("Thread %d: source \"%s\" (%s) now returned from ParseRpzFeed(). %d remaining", thread, name, threads)
+			default:
+				td.Logger.Printf("*** ParseSourcesNG: Error: unhandled source type %s", src.Source)
+			}
+			if err != nil {
+				log.Printf("Error parsing source %s (datasource %s): %v",
+					name, src.Source, err)
+			}
+		}(name, src, threads)
+	}
+
+	for {
+		tmp := <-rptchan
+		threads--
+		td.Logger.Printf("ParseSources: source \"%s\" is now complete. %d remaining", tmp, threads)
+		if threads == 0 {
+			break
+		}
+	}
+
+	if td.MqttEngine != nil && !td.TapirMqttEngineRunning {
+		err := td.StartMqttEngine(td.MqttEngine)
+		if err != nil {
+			TEMExiter("Error starting MQTT Engine: %v", err)
+		}
+	}
+
+	td.Logger.Printf("ParseSources: static sources done.")
+
+	err = td.GenerateRpzAxfr()
+	if err != nil {
+		td.Logger.Printf("ParseSources: Error from GenerateRpzAxfr(): %v", err)
+	}
+
+	return nil
+}
+
 func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan string) error {
 	td.Logger.Printf("ParseLocalFile: %s (%s)", sourceid, s.Type)
 	var df dawg.Finder
@@ -404,7 +576,7 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 
 	switch s.SrcFormat {
 	case "domains":
-		s.Names = map[string]*tapir.TapirName{}
+		s.Names = map[string]tapir.TapirName{}
 		s.Format = "map"
 		_, err := tapir.ParseText(s.Filename, s.Names, true)
 		if err != nil {
@@ -416,7 +588,7 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 		}
 
 	case "csv":
-		s.Names = map[string]*tapir.TapirName{}
+		s.Names = map[string]tapir.TapirName{}
 		s.Format = "map"
 		_, err := tapir.ParseCSV(s.Filename, s.Names, true)
 		if err != nil {
@@ -453,6 +625,122 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 	return nil
 }
 
+func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir.WBGlist, error) {
+	// Initialize the API client
+	api := &tapir.ApiClient{
+		ApiKey:     src.BootstrapKey,
+		AuthMethod: "X-API-Key",
+	}
+
+	cd := viper.GetString("certs.certdir")
+	if cd == "" {
+		log.Fatalf("Error: missing config key: certs.certdir")
+	}
+	// cert := cd + "/" + certname
+	cert := cd + "/" + "tem"
+	tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"),
+		cert+".key", cert+".crt")
+	if err != nil {
+		TEMExiter("BootstrapMqttSource: Error: Could not set up TLS: %v", err)
+	}
+	// XXX: Need to verify that the server cert is valid for the bootstrap server
+	tlsConfig.InsecureSkipVerify = true
+	err = api.SetupTLS(tlsConfig)
+	if err != nil {
+		return nil, fmt.Errorf("Error setting up TLS for the API client: %v", err)
+	}
+
+	// Iterate over the bootstrap servers
+	for _, server := range src.Bootstrap {
+		api.BaseUrl = fmt.Sprintf(src.BootstrapUrl, server)
+
+		// Send an API ping command
+		pr, err := api.SendPing(0, false)
+		if err != nil {
+			td.Logger.Printf("Ping to MQTT bootstrap server %s failed: %v", server, err)
+			continue
+		}
+
+		uptime := time.Now().Sub(pr.BootTime).Round(time.Second)
+		td.Logger.Printf("MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages", server, uptime, 17)
+
+		status, buf, err := api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
+			Command:  "export-greylist",
+			ListName: src.Name,
+		}, true)
+		if err != nil {
+			fmt.Printf("Error from RequestNG: %v\n", err)
+			return nil, fmt.Errorf("Error from RequestNG: %v", err)
+		}
+
+		if status != http.StatusOK {
+			fmt.Printf("HTTP Error: %s\n", buf)
+			return nil, fmt.Errorf("HTTP Error: %s", buf)
+		}
+		//              if resp.Error {
+		//                      fmt.Printf("Error: %s\n", resp.ErrorMsg)
+		//                      return
+		//              }
+
+		var greylist tapir.WBGlist
+		decoder := gob.NewDecoder(bytes.NewReader(buf))
+		err = decoder.Decode(&greylist)
+		if err != nil {
+			// fmt.Printf("Error decoding greylist data: %v\n", err)
+			// If decoding the gob failed, perhaps we received a tapir.BootstrapResponse instead?
+			var br tapir.BootstrapResponse
+			err = json.Unmarshal(buf, &br)
+			if err != nil {
+				td.Logger.Printf("Error decoding response either as a GOB blob or as a tapir.BootstrapResponse: %v. Giving up.\n", err)
+				return nil, fmt.Errorf("Error decoding response either as a GOB blob or as a tapir.BootstrapResponse: %v", err)
+			}
+			if br.Error {
+				td.Logger.Printf("Command Error: %s", br.ErrorMsg)
+			}
+			if len(br.Msg) != 0 {
+				td.Logger.Printf("Command response: %s", br.Msg)
+			}
+			return nil, fmt.Errorf("Command Error: %s", br.ErrorMsg)
+		}
+
+		fmt.Printf("%v\n", greylist)
+		fmt.Printf("Names present in greylist %s:\n", src.Name)
+		out := []string{"Name|Time added|TTL|Tags"}
+		for _, n := range greylist.Names {
+			out = append(out, fmt.Sprintf("%s|%v|%v|%v", n.Name, n.TimeAdded.Format(tapir.TimeLayout), n.TTL, n.TagMask))
+		}
+		fmt.Printf("%s\n", columnize.SimpleFormat(out))
+
+		// Issue a /bootstrap API call
+		status, buf, err = api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
+			Command:  "export-greylist",
+			ListName: src.Name,
+		}, true)
+		if err != nil {
+			td.Logger.Printf("Bootstrap call to server %s failed: %v", server, err)
+			continue
+		}
+		if status != http.StatusOK {
+			td.Logger.Printf("Bootstrap call to server %s returned non-OK status: %d", server, status)
+			continue
+		}
+
+		// Decode the received GOB blob
+		var bootstrapData tapir.WBGlist
+		decoder = gob.NewDecoder(bytes.NewReader(buf))
+		err = decoder.Decode(&bootstrapData)
+		if err != nil {
+			return nil, fmt.Errorf("Error decoding bootstrap data from server %s: %v", server, err)
+		}
+
+		// Successfully received and decoded bootstrap data
+		return &bootstrapData, nil
+	}
+
+	// If no bootstrap server succeeded
+	return nil, fmt.Errorf("All bootstrap servers failed")
+}
+
 func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan string) error {
 	//	zone := viper.GetString(fmt.Sprintf("sources.%s.zone", sourceid)) // XXX: not the way to do it
 	//	if zone == "" {
@@ -467,7 +755,7 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan stri
 			sourceid)
 	}
 
-	s.Names = map[string]*tapir.TapirName{} // must initialize
+	s.Names = map[string]tapir.TapirName{} // must initialize
 	s.Format = "map"
 	//	s.RpzZoneName = dns.Fqdn(zone)
 	//	s.RpzUpstream = upstream
@@ -483,12 +771,12 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan stri
 	}
 
 	<-reRpt
-	td.Logger.Printf("ParseRpzFeed: parsing RPZ %s complete", s.RpzZoneName)
 
 	td.mu.Lock()
 	td.Lists[s.Type][s.Name] = s
 	td.mu.Unlock()
 	rpt <- sourceid
+	td.Logger.Printf("ParseRpzFeed: parsing RPZ %s complete", s.RpzZoneName)
 
 	return nil
 }
@@ -532,13 +820,13 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 			switch s.Type {
 			case "whitelist":
 				if action == tapir.WHITELIST {
-					s.Names[name] = &tapir.TapirName{Name: name} // drop all other actions
+					s.Names[name] = tapir.TapirName{Name: name} // drop all other actions
 				} else {
 					td.Logger.Printf("Warning: whitelist RPZ source %s has blacklisted name: %s",
 						s.RpzZoneName, name)
 					td.mu.Lock()
 					td.Lists["greylist"]["grey_catchall"].Names[name] =
-						&tapir.TapirName{
+						tapir.TapirName{
 							Name:   name,
 							Action: action,
 						} // drop all other actions
@@ -546,22 +834,22 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 				}
 			case "blacklist":
 				if action != tapir.WHITELIST {
-					s.Names[name] = &tapir.TapirName{Name: name, Action: action}
+					s.Names[name] = tapir.TapirName{Name: name, Action: action}
 				} else {
 					td.Logger.Printf("Warning: blacklist RPZ source %s has whitelisted name: %s",
 						s.RpzZoneName, name)
 					td.mu.Lock()
-					td.Lists["whitelist"]["white_catchall"].Names[name] = &tapir.TapirName{Name: name}
+					td.Lists["whitelist"]["white_catchall"].Names[name] = tapir.TapirName{Name: name}
 					td.mu.Unlock()
 				}
 			case "greylist":
 				if action != tapir.WHITELIST {
-					s.Names[name] = &tapir.TapirName{Name: name, Action: action}
+					s.Names[name] = tapir.TapirName{Name: name, Action: action}
 				} else {
 					td.Logger.Printf("Warning: greylist RPZ source %s has whitelisted name: %s",
 						s.RpzZoneName, name)
 					td.mu.Lock()
-					td.Lists["whitelist"]["white_catchall"].Names[name] = &tapir.TapirName{Name: name}
+					td.Lists["whitelist"]["white_catchall"].Names[name] = tapir.TapirName{Name: name}
 					td.mu.Unlock()
 				}
 			}

@@ -93,7 +93,7 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 			TTL:       ttl,
 			TagMask:   name.TagMask,
 		}
-		wbgl.Names[name.Name] = &tmp
+		wbgl.Names[name.Name] = tmp
 
 		td.Logger.Printf("ProcessTapirUpdate: adding name %s to %s (TimeAdded: %s ttl: %v)",
 			name.Name, wbgl.Name, name.TimeAdded.Format(tapir.TimeLayout), name.TTL)

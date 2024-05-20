@@ -177,10 +177,18 @@ func main() {
 		TEMExiter("Error from NewTemData: %v", err)
 	}
 	go td.RefreshEngine(&conf, stopch)
-	err = td.ParseSources()
+
+	log.Println("*** main: Calling ParseSourcesNG()")
+	err = td.ParseSourcesNG()
 	if err != nil {
-		TEMExiter("Error from ParseSources: %v", err)
+		TEMExiter("Error from ParseSourcesNG: %v", err)
 	}
+	log.Println("*** main: Returned from ParseSourcesNG()")
+
+	//err = td.ParseSources()
+	//if err != nil {
+	//	TEMExiter("Error from ParseSources: %v", err)
+	//}
 
 	err = td.ParseOutputs()
 	if err != nil {

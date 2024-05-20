@@ -13,17 +13,9 @@ apiserver:
    address:	127.0.0.1:9099
    tlsaddress:	127.0.0.1:9098
 
-mqtt:
-   server:		mqtt.dev.dnstapir.se:8883
-   uid:			johani
-   clientid:		johani-tem
-   topic:		events/up/johani/frobozz
-   cacert:              /etc/dnstapir/certs/tapirCA.crt
-   clientcert:          /etc/dnstapir/certs/mqttclient.crt
-   clientkey:           /etc/dnstapir/certs/mqttclient-key.pem
-   signingkey:          /etc/dnstapir/certs/mqttsigner-key.pem
-   validatorkey:        /etc/dnstapir/certs/mqttsigner-pub.pem
-   qos:                 2
+bootstrapserver:
+   address:
+   tlsaddress:
 
 # server:
 #    listen:	127.0.0.1
@@ -37,6 +29,18 @@ mqtt:
 
 dnsengine:
    addresses:	127.0.0.1:5359
+
+mqtt:
+   server:		mqtt.dev.dnstapir.se:8883
+   uid:			johani
+   clientid:		johani-tem
+   topic:		events/up/johani/frobozz
+   cacert:              /etc/dnstapir/certs/tapirCA.crt
+   clientcert:          /etc/dnstapir/certs/mqttclient.crt
+   clientkey:           /etc/dnstapir/certs/mqttclient-key.pem
+   signingkey:          /etc/dnstapir/certs/mqttsigner-key.pem
+   validatorkey:        /etc/dnstapir/certs/mqttsigner-pub.pem
+   qos:                 2
 
 output:
    reaper:
