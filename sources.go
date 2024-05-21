@@ -28,7 +28,7 @@ type TemData struct {
 	TapirMqttSubCh         chan tapir.MqttPkg
 	TapirMqttPubCh         chan tapir.MqttPkg // not used ATM
 	Logger                 *log.Logger
-	MqttLogger	       *log.Logger
+	MqttLogger             *log.Logger
 	BlacklistedNames       map[string]bool
 	GreylistedNames        map[string]*tapir.TapirName
 	Policy                 TemPolicy
@@ -107,7 +107,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	td := TemData{
 		Lists:          map[string]map[string]*tapir.WBGlist{},
 		Logger:         lg,
-		MqttLogger:	conf.Loggers.Mqtt,
+		MqttLogger:     conf.Loggers.Mqtt,
 		RpzRefreshCh:   make(chan RpzRefresh, 10),
 		RpzCommandCh:   make(chan RpzCmdData, 10),
 		Rpz:            rpzdata,
