@@ -1,5 +1,5 @@
 /*
- * Johan Stenstam, johani@johani.org
+ * Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
 package main
@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
+
+	"github.com/dnstapir/tapir"
 )
 
 type Config struct {
@@ -155,4 +157,8 @@ func ValidateBySection(config *Config, configsections map[string]interface{}, cf
 		}
 	}
 	return nil
+}
+
+func (td *TemData) ProcessTapirGlobalConfig(tpkg tapir.TapirMsg) {
+	log.Printf("TapirProcessGlobalConfig: %+v", tpkg)
 }

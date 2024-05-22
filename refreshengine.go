@@ -88,10 +88,20 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	for {
 		select {
 		case tpkg = <-TapirIntelCh:
-			log.Printf("RefreshEngine: Tapir IntelUpdate: (src: %s) %d additions and %d removals\n",
-				tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
-			td.ProcessTapirUpdate(tpkg)
-			log.Printf("RefreshEngine: Tapir IntelUpdate evaluated.")
+			switch tpkg.Data.MsgType {
+			case "intelupdate":
+				log.Printf("RefreshEngine: Tapir IntelUpdate: (src: %s) %d additions and %d removals\n",
+					tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
+				td.ProcessTapirUpdate(tpkg)
+				log.Printf("RefreshEngine: Tapir IntelUpdate evaluated.")
+
+			case "global-config":
+				td.ProcessTapirGlobalConfig(tpkg.Data)
+				log.Printf("RefreshEngine: Tapir Global Config evaluated.")
+
+			default:
+				log.Printf("RefreshEngine: Tapir IntelUpdate: unknown msg type: %s", tpkg.Data.MsgType)
+			}
 
 		case zr = <-zonerefch:
 			zone = zr.Name

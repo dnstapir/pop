@@ -628,6 +628,7 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir.WBGlist, error) {
 	// Initialize the API client
 	api := &tapir.ApiClient{
+		BaseUrl:    fmt.Sprintf(src.BootstrapUrl, src.Bootstrap[0]), // Must specify a valid BaseUrl
 		ApiKey:     src.BootstrapKey,
 		AuthMethod: "X-API-Key",
 	}
