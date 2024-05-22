@@ -191,26 +191,48 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 // 4. Generate a new IXFR for the deleted items
 // 5. Send the IXFR to the RPZ
 func (td *TemData) Reaper(full bool) error {
-	timekey := time.Now().Round(td.ReaperInterval)
+	timekey := time.Now().Truncate(td.ReaperInterval)
 	tpkg := tapir.MqttPkg{}
-	td.Logger.Printf("Reaper: working on time slot %v across all lists", timekey)
+	td.Logger.Printf("Reaper: working on time slot %s across all lists", timekey.Format(tapir.TimeLayout))
 	for _, listtype := range []string{"whitelist", "greylist", "blacklist"} {
 		for listname, wbgl := range td.Lists[listtype] {
+			// This loop is here to ensure that we don't have any old data in the ReaperData bucket
+			// that has already passed its time slot.
+			for t, d := range wbgl.ReaperData {
+				if t.Before(timekey) {
+					if len(d) == 0 {
+						continue
+					}
+
+					td.Logger.Printf("Reaper: Warning: found old reaperdata for time slot %s (that has already passed). Moving %d names to current time slot (%s)", t.Format(tapir.TimeLayout), len(d), timekey.Format(tapir.TimeLayout))
+					td.mu.Lock()
+					if _, exist := wbgl.ReaperData[timekey]; !exist {
+						wbgl.ReaperData[timekey] = map[string]bool{}
+					}
+					for name, _ := range d {
+						wbgl.ReaperData[timekey][name] = true
+					}
+					// wbgl.ReaperData[timekey] = d
+					delete(wbgl.ReaperData, t)
+					td.mu.Unlock()
+				}
+			}
 			// td.Logger.Printf("Reaper: working on %s %s", listtype, listname)
 			if len(wbgl.ReaperData[timekey]) > 0 {
 				td.Logger.Printf("Reaper: list [%s][%s] has %d timekeys stored", listtype, listname,
 					len(wbgl.ReaperData[timekey]))
 				td.mu.Lock()
-				for _, item := range wbgl.ReaperData[timekey] {
-					td.Logger.Printf("Reaper: removing %s from %s %s", item.Name, listtype, listname)
-					delete(td.Lists[listtype][listname].Names, item.Name)
-					delete(wbgl.ReaperData[timekey], item.Name)
-					tpkg.Data.Removed = append(tpkg.Data.Removed, tapir.Domain{Name: item.Name})
+				for name, _ := range wbgl.ReaperData[timekey] {
+					td.Logger.Printf("Reaper: removing %s from %s %s", name, listtype, listname)
+					delete(td.Lists[listtype][listname].Names, name)
+					delete(wbgl.ReaperData[timekey], name)
+					tpkg.Data.Removed = append(tpkg.Data.Removed, tapir.Domain{Name: name})
 				}
 				// td.Logger.Printf("Reaper: %s %s now has %d items:", listtype, listname, len(td.Lists[listtype][listname].Names))
 				// for name, item := range td.Lists[listtype][listname].Names {
 				// 	td.Logger.Printf("Reaper: remaining: key: %s name: %s", name, item.Name)
 				// }
+				delete(wbgl.ReaperData, timekey)
 				td.mu.Unlock()
 			}
 		}
@@ -243,7 +265,7 @@ func (td *TemData) ParseSourcesOG() error {
 			Format:      "map",
 			Datasource:  "Data misplaced in other sources",
 			Names:       map[string]tapir.TapirName{},
-			ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
+			ReaperData:  map[time.Time]map[string]bool{},
 		}
 	td.Lists["greylist"]["grey_catchall"] =
 		&tapir.WBGlist{
@@ -254,7 +276,7 @@ func (td *TemData) ParseSourcesOG() error {
 			Format:      "map",
 			Datasource:  "Data misplaced in other sources",
 			Names:       map[string]tapir.TapirName{},
-			ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
+			ReaperData:  map[time.Time]map[string]bool{},
 		}
 	td.mu.Unlock()
 
@@ -320,7 +342,7 @@ func (td *TemData) ParseSourcesOG() error {
 				SrcFormat:   s["format"].(string),
 				Datasource:  s["source"].(string),
 				Names:       map[string]tapir.TapirName{},
-				ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
+				ReaperData:  map[time.Time]map[string]bool{},
 				Filename:    params["filename"],
 				RpzUpstream: params["upstream"],
 				RpzZoneName: dns.Fqdn(params["zone"]),
@@ -432,7 +454,7 @@ func (td *TemData) ParseSourcesNG() error {
 			Format:      "map",
 			Datasource:  "Data misplaced in other sources",
 			Names:       map[string]tapir.TapirName{},
-			ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
+			ReaperData:  map[time.Time]map[string]bool{},
 		}
 	td.Lists["greylist"]["grey_catchall"] =
 		&tapir.WBGlist{
@@ -443,7 +465,7 @@ func (td *TemData) ParseSourcesNG() error {
 			Format:      "map",
 			Datasource:  "Data misplaced in other sources",
 			Names:       map[string]tapir.TapirName{},
-			ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
+			ReaperData:  map[time.Time]map[string]bool{},
 		}
 	td.mu.Unlock()
 
@@ -487,7 +509,7 @@ func (td *TemData) ParseSourcesNG() error {
 				SrcFormat:   src.Format,
 				Datasource:  src.Source,
 				Names:       map[string]tapir.TapirName{},
-				ReaperData:  map[time.Time]map[string]*tapir.TapirName{},
+				ReaperData:  map[time.Time]map[string]bool{},
 				Filename:    src.Filename,
 				RpzUpstream: src.Upstream,
 				RpzZoneName: dns.Fqdn(src.Zone),
@@ -639,8 +661,7 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 	}
 	// cert := cd + "/" + certname
 	cert := cd + "/" + "tem"
-	tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"),
-		cert+".key", cert+".crt")
+	tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"), cert+".key", cert+".crt")
 	if err != nil {
 		TEMExiter("BootstrapMqttSource: Error: Could not set up TLS: %v", err)
 	}
@@ -678,10 +699,6 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 			fmt.Printf("HTTP Error: %s\n", buf)
 			return nil, fmt.Errorf("HTTP Error: %s", buf)
 		}
-		//              if resp.Error {
-		//                      fmt.Printf("Error: %s\n", resp.ErrorMsg)
-		//                      return
-		//              }
 
 		var greylist tapir.WBGlist
 		decoder := gob.NewDecoder(bytes.NewReader(buf))
@@ -704,13 +721,15 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 			return nil, fmt.Errorf("Command Error: %s", br.ErrorMsg)
 		}
 
-		fmt.Printf("%v\n", greylist)
-		fmt.Printf("Names present in greylist %s:\n", src.Name)
-		out := []string{"Name|Time added|TTL|Tags"}
-		for _, n := range greylist.Names {
-			out = append(out, fmt.Sprintf("%s|%v|%v|%v", n.Name, n.TimeAdded.Format(tapir.TimeLayout), n.TTL, n.TagMask))
+		if td.Debug {
+			fmt.Printf("%v\n", greylist)
+			fmt.Printf("Names present in greylist %s:\n", src.Name)
+			out := []string{"Name|Time added|TTL|Tags"}
+			for _, n := range greylist.Names {
+				out = append(out, fmt.Sprintf("%s|%v|%v|%v", n.Name, n.TimeAdded.Format(tapir.TimeLayout), n.TTL, n.TagMask))
+			}
+			fmt.Printf("%s\n", columnize.SimpleFormat(out))
 		}
-		fmt.Printf("%s\n", columnize.SimpleFormat(out))
 
 		// Issue a /bootstrap API call
 		status, buf, err = api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{

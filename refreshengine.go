@@ -89,7 +89,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 		select {
 		case tpkg = <-TapirIntelCh:
 			switch tpkg.Data.MsgType {
-			case "intelupdate":
+			case "intel-update":
 				log.Printf("RefreshEngine: Tapir IntelUpdate: (src: %s) %d additions and %d removals\n",
 					tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
 				td.ProcessTapirUpdate(tpkg)

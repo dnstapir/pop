@@ -217,8 +217,7 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		log.Printf("API: received /bootstrap request (cmd: %s) from %s.\n",
-			bp.Command, r.RemoteAddr)
+		log.Printf("API: received /bootstrap request (cmd: %s) from %s.\n", bp.Command, r.RemoteAddr)
 
 		switch bp.Command {
 		case "export-greylist":
@@ -232,7 +231,7 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				resp.ErrorMsg = fmt.Sprintf("Greylist '%s' not found", bp.ListName)
 				return
 			}
-			log.Printf("Found %s greylist: %v", bp.ListName, greylist)
+			log.Printf("Found %s greylist containing %d names", bp.ListName, len(greylist.Names))
 
 			w.Header().Set("Content-Type", "application/octet-stream")
 			w.Header().Set("Content-Disposition", "attachment; filename=greylist-dns-tapir.gob")
@@ -316,9 +315,9 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			resp.ReaperStats = make(map[string]map[time.Time][]string)
 			for SrcName, list := range td.Lists["greylist"] {
 				resp.ReaperStats[SrcName] = make(map[time.Time][]string)
-				for ts, items := range list.ReaperData {
-					for _, item := range items {
-						resp.ReaperStats[SrcName][ts] = append(resp.ReaperStats[SrcName][ts], item.Name)
+				for ts, names := range list.ReaperData {
+					for name := range names {
+						resp.ReaperStats[SrcName][ts] = append(resp.ReaperStats[SrcName][ts], name)
 					}
 				}
 			}
