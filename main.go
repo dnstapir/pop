@@ -185,11 +185,6 @@ func main() {
 	}
 	log.Println("*** main: Returned from ParseSourcesNG()")
 
-	//err = td.ParseSources()
-	//if err != nil {
-	//	TEMExiter("Error from ParseSources: %v", err)
-	//}
-
 	err = td.ParseOutputs()
 	if err != nil {
 		TEMExiter("Error from ParseOutputs: %v", err)
