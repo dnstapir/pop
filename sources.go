@@ -4,94 +4,18 @@
 package main
 
 import (
-	"bytes"
-	"encoding/gob"
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
-	"github.com/ryanuber/columnize"
 	"github.com/smhanov/dawg"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
-
-type TemData struct {
-	mu                     sync.RWMutex
-	Lists                  map[string]map[string]*tapir.WBGlist
-	RpzRefreshCh           chan RpzRefresh
-	RpzCommandCh           chan RpzCmdData
-	TapirMqttEngineRunning bool
-	TapirMqttCmdCh         chan tapir.MqttEngineCmd
-	TapirMqttSubCh         chan tapir.MqttPkg
-	TapirMqttPubCh         chan tapir.MqttPkg // not used ATM
-	Logger                 *log.Logger
-	MqttLogger             *log.Logger
-	BlacklistedNames       map[string]bool
-	GreylistedNames        map[string]*tapir.TapirName
-	Policy                 TemPolicy
-	Rpz                    RpzData
-	RpzSources             map[string]*tapir.ZoneData
-	Downstreams            RpzDownstream
-	ReaperInterval         time.Duration
-	MqttEngine             *tapir.MqttEngine
-	Verbose                bool
-	Debug                  bool
-}
-
-type RpzDownstream struct {
-	Serial      uint32 // Must track the current RPZ serial in the resolver
-	Downstreams []string
-}
-
-type RpzData struct {
-	CurrentSerial uint32
-	ZoneName      string
-	Axfr          RpzAxfr
-	IxfrChain     []RpzIxfr // NOTE: the IxfrChain is in reverse order, newest first!
-	RpzZone       *tapir.ZoneData
-	RpzMap        map[string]*tapir.RpzName
-}
-
-type RpzIxfr struct {
-	FromSerial uint32
-	ToSerial   uint32
-	Removed    []*tapir.RpzName
-	Added      []*tapir.RpzName
-}
-
-type RpzAxfr struct {
-	Serial   uint32
-	SOA      dns.SOA
-	NSrrs    []dns.RR
-	Data     map[string]*tapir.RpzName
-	ZoneData *tapir.ZoneData
-}
-
-type TemPolicy struct {
-	Logger          *log.Logger
-	WhitelistAction tapir.Action
-	BlacklistAction tapir.Action
-	Greylist        GreylistPolicy
-}
-
-type GreylistPolicy struct {
-	NumSources         int
-	NumSourcesAction   tapir.Action
-	NumTapirTags       int
-	NumTapirTagsAction tapir.Action
-	BlackTapirTags     tapir.TagMask
-	BlackTapirAction   tapir.Action
-}
-
-type WBGC map[string]*tapir.WBGlist
 
 func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	rpzdata := RpzData{
@@ -101,7 +25,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 		Axfr: RpzAxfr{
 			Data: map[string]*tapir.RpzName{},
 		},
-		RpzMap: map[string]*tapir.RpzName{},
+		// RpzMap: map[string]*tapir.RpzName{},
 	}
 
 	repint := viper.GetInt("output.reaper.interval")
@@ -124,6 +48,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	td.Lists["whitelist"] = make(map[string]*tapir.WBGlist, 3)
 	td.Lists["greylist"] = make(map[string]*tapir.WBGlist, 3)
 	td.Lists["blacklist"] = make(map[string]*tapir.WBGlist, 3)
+	td.Downstreams = map[string]RpzDownstream{}
 
 	err := td.ParseOutputs()
 	if err != nil {
@@ -182,79 +107,6 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	// Note: We can not parse data sources here, as RefreshEngine has not yet started.
 	conf.TemData = &td
 	return &td, nil
-}
-
-// 1. Iterate over all lists
-// 2. Delete all items from the list that is in the ReaperData bucket for this time slot
-// 3. Delete the bucket from the ReaperData map
-// 4. Generate a new IXFR for the deleted items
-// 5. Send the IXFR to the RPZ
-func (td *TemData) Reaper(full bool) error {
-	timekey := time.Now().Truncate(td.ReaperInterval)
-	tpkg := tapir.MqttPkg{}
-	td.Logger.Printf("Reaper: working on time slot %s across all lists", timekey.Format(tapir.TimeLayout))
-	for _, listtype := range []string{"whitelist", "greylist", "blacklist"} {
-		for listname, wbgl := range td.Lists[listtype] {
-			// This loop is here to ensure that we don't have any old data in the ReaperData bucket
-			// that has already passed its time slot.
-			for t, d := range wbgl.ReaperData {
-				if t.Before(timekey) {
-					if len(d) == 0 {
-						continue
-					}
-
-					td.Logger.Printf("Reaper: Warning: found old reaperdata for time slot %s (that has already passed). Moving %d names to current time slot (%s)", t.Format(tapir.TimeLayout), len(d), timekey.Format(tapir.TimeLayout))
-					td.mu.Lock()
-					if _, exist := wbgl.ReaperData[timekey]; !exist {
-						wbgl.ReaperData[timekey] = map[string]bool{}
-					}
-					for name, _ := range d {
-						wbgl.ReaperData[timekey][name] = true
-					}
-					// wbgl.ReaperData[timekey] = d
-					delete(wbgl.ReaperData, t)
-					td.mu.Unlock()
-				}
-			}
-			// td.Logger.Printf("Reaper: working on %s %s", listtype, listname)
-			if len(wbgl.ReaperData[timekey]) > 0 {
-				td.Logger.Printf("Reaper: list [%s][%s] has %d timekeys stored", listtype, listname,
-					len(wbgl.ReaperData[timekey]))
-				td.mu.Lock()
-				for name, _ := range wbgl.ReaperData[timekey] {
-					td.Logger.Printf("Reaper: removing %s from %s %s", name, listtype, listname)
-					delete(td.Lists[listtype][listname].Names, name)
-					delete(wbgl.ReaperData[timekey], name)
-					tpkg.Data.Removed = append(tpkg.Data.Removed, tapir.Domain{Name: name})
-				}
-				// td.Logger.Printf("Reaper: %s %s now has %d items:", listtype, listname, len(td.Lists[listtype][listname].Names))
-				// for name, item := range td.Lists[listtype][listname].Names {
-				// 	td.Logger.Printf("Reaper: remaining: key: %s name: %s", name, item.Name)
-				// }
-				delete(wbgl.ReaperData, timekey)
-				td.mu.Unlock()
-			}
-		}
-	}
-
-	if len(tpkg.Data.Removed) > 0 {
-		ixfr, err := td.GenerateRpzIxfr(&tpkg.Data)
-		if err != nil {
-			td.Logger.Printf("Reaper: Error from GenerateRpzIxfr(): %v", err)
-		}
-		err = td.ProcessIxfrIntoAxfr(ixfr)
-		if err != nil {
-			td.Logger.Printf("Reaper: Error from ProcessIxfrIntoAxfr(): %v", err)
-		}
-	}
-	return nil
-}
-
-type SrcFoo struct {
-	Src struct {
-		Style string `yaml:"style"`
-	} `yaml:"src"`
-	Sources map[string]SourceConf `yaml:"sources"`
 }
 
 func (td *TemData) ParseSourcesNG() error {
@@ -477,120 +329,6 @@ func (td *TemData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 	return nil
 }
 
-func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir.WBGlist, error) {
-	// Initialize the API client
-	api := &tapir.ApiClient{
-		BaseUrl:    fmt.Sprintf(src.BootstrapUrl, src.Bootstrap[0]), // Must specify a valid BaseUrl
-		ApiKey:     src.BootstrapKey,
-		AuthMethod: "X-API-Key",
-	}
-
-	cd := viper.GetString("certs.certdir")
-	if cd == "" {
-		log.Fatalf("Error: missing config key: certs.certdir")
-	}
-	// cert := cd + "/" + certname
-	cert := cd + "/" + "tem"
-	tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"), cert+".key", cert+".crt")
-	if err != nil {
-		TEMExiter("BootstrapMqttSource: Error: Could not set up TLS: %v", err)
-	}
-	// XXX: Need to verify that the server cert is valid for the bootstrap server
-	tlsConfig.InsecureSkipVerify = true
-	err = api.SetupTLS(tlsConfig)
-	if err != nil {
-		return nil, fmt.Errorf("Error setting up TLS for the API client: %v", err)
-	}
-
-	// Iterate over the bootstrap servers
-	for _, server := range src.Bootstrap {
-		api.BaseUrl = fmt.Sprintf(src.BootstrapUrl, server)
-
-		// Send an API ping command
-		pr, err := api.SendPing(0, false)
-		if err != nil {
-			td.Logger.Printf("Ping to MQTT bootstrap server %s failed: %v", server, err)
-			continue
-		}
-
-		uptime := time.Now().Sub(pr.BootTime).Round(time.Second)
-		td.Logger.Printf("MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages", server, uptime, 17)
-
-		status, buf, err := api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
-			Command:  "export-greylist",
-			ListName: src.Name,
-		}, true)
-		if err != nil {
-			fmt.Printf("Error from RequestNG: %v\n", err)
-			return nil, fmt.Errorf("Error from RequestNG: %v", err)
-		}
-
-		if status != http.StatusOK {
-			fmt.Printf("HTTP Error: %s\n", buf)
-			return nil, fmt.Errorf("HTTP Error: %s", buf)
-		}
-
-		var greylist tapir.WBGlist
-		decoder := gob.NewDecoder(bytes.NewReader(buf))
-		err = decoder.Decode(&greylist)
-		if err != nil {
-			// fmt.Printf("Error decoding greylist data: %v\n", err)
-			// If decoding the gob failed, perhaps we received a tapir.BootstrapResponse instead?
-			var br tapir.BootstrapResponse
-			err = json.Unmarshal(buf, &br)
-			if err != nil {
-				td.Logger.Printf("Error decoding response either as a GOB blob or as a tapir.BootstrapResponse: %v. Giving up.\n", err)
-				return nil, fmt.Errorf("Error decoding response either as a GOB blob or as a tapir.BootstrapResponse: %v", err)
-			}
-			if br.Error {
-				td.Logger.Printf("Command Error: %s", br.ErrorMsg)
-			}
-			if len(br.Msg) != 0 {
-				td.Logger.Printf("Command response: %s", br.Msg)
-			}
-			return nil, fmt.Errorf("Command Error: %s", br.ErrorMsg)
-		}
-
-		if td.Debug {
-			fmt.Printf("%v\n", greylist)
-			fmt.Printf("Names present in greylist %s:\n", src.Name)
-			out := []string{"Name|Time added|TTL|Tags"}
-			for _, n := range greylist.Names {
-				out = append(out, fmt.Sprintf("%s|%v|%v|%v", n.Name, n.TimeAdded.Format(tapir.TimeLayout), n.TTL, n.TagMask))
-			}
-			fmt.Printf("%s\n", columnize.SimpleFormat(out))
-		}
-
-		// Issue a /bootstrap API call
-		status, buf, err = api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
-			Command:  "export-greylist",
-			ListName: src.Name,
-		}, true)
-		if err != nil {
-			td.Logger.Printf("Bootstrap call to server %s failed: %v", server, err)
-			continue
-		}
-		if status != http.StatusOK {
-			td.Logger.Printf("Bootstrap call to server %s returned non-OK status: %d", server, status)
-			continue
-		}
-
-		// Decode the received GOB blob
-		var bootstrapData tapir.WBGlist
-		decoder = gob.NewDecoder(bytes.NewReader(buf))
-		err = decoder.Decode(&bootstrapData)
-		if err != nil {
-			return nil, fmt.Errorf("Error decoding bootstrap data from server %s: %v", server, err)
-		}
-
-		// Successfully received and decoded bootstrap data
-		return &bootstrapData, nil
-	}
-
-	// If no bootstrap server succeeded
-	return nil, fmt.Errorf("All bootstrap servers failed")
-}
-
 func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan string) error {
 	//	zone := viper.GetString(fmt.Sprintf("sources.%s.zone", sourceid)) // XXX: not the way to do it
 	//	if zone == "" {
@@ -707,14 +445,3 @@ func (td *TemData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 		return true
 	}
 }
-
-// Generate the RPZ output based on the currently loaded sources.
-// The output is a tapir.ZoneData, but with only the RRs (i.e. a []dns.RR) populated.
-// Output should consist of:
-// 1. Walk all blacklists:
-//    a) remove any whitelisted names
-//    b) rest goes straight into output
-// 2. Walk all greylists:
-//    a) collect complete grey data on each name
-//    b) remove any whitelisted name
-//    c) evalutate the grey data to make a decision on inclusion or not

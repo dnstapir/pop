@@ -7,6 +7,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
+	"net"
 	"strings"
 	"sync"
 
@@ -160,7 +162,28 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		}
 	}
 
+	downstream, _, err := net.SplitHostPort(w.RemoteAddr().String())
+	if err != nil {
+		td.Logger.Printf("RpzIxfrOut: Error from net.SplitHostPort(): %v", err)
+		return 0, 0, err
+	}
+
+	// tmp := td.Downstreams[downstream]
+	// tmp.Serial = curserial
+
+	td.mu.Lock()
+	td.DownstreamSerials[downstream] = curserial
 	zone := td.Rpz.ZoneName
+	td.mu.Unlock()
+
+	if curserial < td.Rpz.IxfrChain[0].FromSerial {
+		td.Logger.Printf("RpzIxfrOut: Downstream %s claims to have RPZ %s with serial %d, but the IXFR chain starts at %d; AXFR needed", downstream, zone, curserial, td.Rpz.IxfrChain[0].FromSerial)
+		serial, _, err := td.RpzAxfrOut(w, r)
+		if err != nil {
+			return 0, 0, err
+		}
+		return serial, 0, nil
+	}
 
 	if td.Verbose {
 		td.Logger.Printf("RpzIxfrOut: Will try to serve RPZ %s to %v (%d IXFRs in chain)\n", zone,
@@ -188,7 +211,7 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	var totcount, count int
 	var finalSerial uint32
 	for _, ixfr := range td.Rpz.IxfrChain {
-		td.Logger.Printf("IxfrOut: checking client serial(%d) against IXFR[from:%d, to:%d]",
+		td.Logger.Printf("RpzIxfrOut: checking client serial(%d) against IXFR[from:%d, to:%d]",
 			curserial, ixfr.FromSerial, ixfr.ToSerial)
 		if ixfr.FromSerial >= curserial {
 			finalSerial = ixfr.ToSerial
@@ -201,7 +224,7 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 			}
 			env.RR = append(env.RR, fromsoa)
 			count++
-			td.Logger.Printf("IxfrOut: IXFR[%d,%d] has %d RRs in the removal list",
+			td.Logger.Printf("RpzIxfrOut: IXFR[%d,%d] has %d RRs in the removal list",
 				ixfr.FromSerial, ixfr.ToSerial, len(ixfr.Removed))
 			for _, tn := range ixfr.Removed {
 				if td.Debug {
@@ -223,11 +246,11 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 			tosoa := dns.Copy(dns.RR(&td.Rpz.Axfr.ZoneData.SOA))
 			tosoa.(*dns.SOA).Serial = ixfr.ToSerial
 			if td.Debug {
-				td.Logger.Printf("IxfrOut: adding TOSOA to output: %s", tosoa.String())
+				td.Logger.Printf("RpzIxfrOut: adding TOSOA to output: %s", tosoa.String())
 			}
 			env.RR = append(env.RR, tosoa)
 			count++
-			td.Logger.Printf("IxfrOut: IXFR[%d,%d] has %d RRs in the added list",
+			td.Logger.Printf("RpzIxfrOut: IXFR[%d,%d] has %d RRs in the added list",
 				ixfr.FromSerial, ixfr.ToSerial, len(ixfr.Added))
 			for _, tn := range ixfr.Added {
 				if td.Debug {
@@ -253,7 +276,7 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	env.RR = append(env.RR, dns.RR(&td.Rpz.Axfr.SOA)) // trailing SOA
 
 	total_sent += len(env.RR)
-	td.Logger.Printf("ZoneTransferOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d)\n",
+	td.Logger.Printf("RpzIxfrOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d)\n",
 		zone, len(env.RR), total_sent)
 
 	//	td.Logger.Printf("Sending %d RRs\n", len(env.RR))
@@ -266,7 +289,36 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	wg.Wait() // wait until everything is written out
 	w.Close() // close connection
 
-	td.Logger.Printf("ZoneTransferOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)
+	td.Logger.Printf("RpzIxfrOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)
+	err = td.PruneRpzIxfrChain()
+	if err != nil {
+		td.Logger.Printf("RpzIxfrOut: Error from PruneRpzIxfrChain(): %v", err)
+	}
 
 	return finalSerial, total_sent - 1, nil
+}
+
+func (td *TemData) PruneRpzIxfrChain() error {
+	lowSerial := uint32(math.MaxUint32)
+	for _, serial := range td.DownstreamSerials {
+		if serial < lowSerial {
+			lowSerial = serial
+		}
+	}
+
+	indexToDeleteUpTo := -1
+	for i := 0; i < len(td.Rpz.IxfrChain); i++ {
+		if td.Rpz.IxfrChain[i].FromSerial == lowSerial {
+			indexToDeleteUpTo = i - 2
+			break
+		}
+	}
+
+	if indexToDeleteUpTo >= 0 {
+		td.Rpz.IxfrChain = td.Rpz.IxfrChain[indexToDeleteUpTo+1:]
+		td.Logger.Printf("PruneRpzIxfrChain: Pruning IXFR chain up to two serials before serial %d", lowSerial)
+	} else {
+		td.Logger.Printf("PruneRpzIxfrChain: Nothing to prune from the IXFR chain")
+	}
+	return nil
 }

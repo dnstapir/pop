@@ -6,6 +6,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -89,11 +91,11 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 		select {
 		case tpkg = <-TapirIntelCh:
 			switch tpkg.Data.MsgType {
-			case "intel-update":
-				log.Printf("RefreshEngine: Tapir IntelUpdate: (src: %s) %d additions and %d removals\n",
+			case "intel-update", "observation":
+				log.Printf("RefreshEngine: Tapir Observation update: (src: %s) %d additions and %d removals\n",
 					tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
 				td.ProcessTapirUpdate(tpkg)
-				log.Printf("RefreshEngine: Tapir IntelUpdate evaluated.")
+				log.Printf("RefreshEngine: Tapir Observation update evaluated.")
 
 			case "global-config":
 				td.ProcessTapirGlobalConfig(tpkg.Data)
@@ -386,25 +388,26 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 }
 
 func (td *TemData) NotifyDownstreams() error {
-	td.Logger.Printf("RefreshEngine: Notifying %d downstreams for RPZ zone %s", len(td.Downstreams.Downstreams), td.Rpz.ZoneName)
-	for _, d := range td.Downstreams.Downstreams {
+	td.Logger.Printf("RefreshEngine: Notifying %d downstreams for RPZ zone %s", len(td.Downstreams), td.Rpz.ZoneName)
+	for _, d := range td.Downstreams {
 		m := new(dns.Msg)
 		m.SetNotify(td.Rpz.ZoneName)
 		td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial
 		m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
-		td.Logger.Printf("RefreshEngine: Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", d, td.Rpz.Axfr.SOA.Serial, td.Rpz.ZoneName)
-		r, err := dns.Exchange(m, d)
+		dest := net.JoinHostPort(d.Address, strconv.Itoa(d.Port))
+		td.Logger.Printf("RefreshEngine: Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, td.Rpz.Axfr.SOA.Serial, td.Rpz.ZoneName)
+		r, err := dns.Exchange(m, dest)
 		if err != nil {
 			// well, we tried
-			td.Logger.Printf("Error from downstream %s on Notify(%s): %v", d, td.Rpz.ZoneName, err)
+			td.Logger.Printf("Error from downstream %s on Notify(%s): %v", dest, td.Rpz.ZoneName, err)
 			continue
 		}
 		if r.Opcode != dns.OpcodeNotify {
 			// well, we tried
 			td.Logger.Printf("Error: not a NOTIFY QR from downstream %s on Notify(%s): %s",
-				d, td.Rpz.ZoneName, dns.OpcodeToString[r.Opcode])
+				dest, td.Rpz.ZoneName, dns.OpcodeToString[r.Opcode])
 		} else {
-			td.Logger.Printf("RefreshEngine: Downstream %s responded correctly to Notify(%s) about new SOA serial (%d)", d, td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial)
+			td.Logger.Printf("RefreshEngine: Downstream %s responded correctly to Notify(%s) about new SOA serial (%d)", dest, td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial)
 		}
 	}
 	return nil
