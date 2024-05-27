@@ -379,7 +379,10 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 			m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
 		}
 		err := w.WriteMsg(m)
-		return fmt.Errorf("QueryResponder: unable to WriteMsg() in qtype switch: %w", err)
+		if err != nil {
+			return fmt.Errorf("QueryResponder: unable to WriteMsg() in qtype switch: %w", err)
+		}
+		return nil
 
 	default:
 		// everything we don't want to deal with
