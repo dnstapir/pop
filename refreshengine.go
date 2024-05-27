@@ -313,7 +313,10 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 				// if the name isn't either whitelisted or blacklisted
 				if cmd.ListType == "greylist" {
-					td.GreylistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
+					_, err := td.GreylistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
+					if err != nil {
+						log.Printf("RefreshEngine: call to GreylistAdd() failed: %s", err)
+					}
 					resp.Msg = fmt.Sprintf("Domain name \"%s\" (policy %s) added to greylisting DB.",
 						cmd.Domain, cmd.Policy)
 					cmd.Result <- resp

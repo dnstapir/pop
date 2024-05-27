@@ -88,7 +88,7 @@ func (td *TemData) GreylistingReport(name string) (bool, string) {
 
 }
 
-func (td *TemData) GreylistAdd(name, policy, source string) string {
+func (td *TemData) GreylistAdd(name, policy, source string) (string, error) {
 	msg := fmt.Sprintf("Domain name \"%s\" added to RPZ source %s with policy %s", name, source, policy)
-	return msg
+	return msg, nil
 }
