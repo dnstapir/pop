@@ -7,6 +7,8 @@ sources:
       description:	DNS TAPIR main intelligence feed
       type:		greylist
       source:		mqtt
+      bootstrap:	[ 77.72.231.135:5454, 77.72.230.61 ] # www.axfr.net+nsb
+      bootstrapurl:	https://%s/api/v1
       format:		tapir-mqtt-v1
    rpztfc:
       name:		rpz.threat-feed.com

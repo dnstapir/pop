@@ -1,5 +1,5 @@
 /*
- * Johan Stenstam, johani@johani.org
+ * Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
 package main
@@ -10,6 +10,8 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/spf13/viper"
+
+	"github.com/dnstapir/tapir"
 )
 
 type Config struct {
@@ -24,10 +26,10 @@ type Config struct {
 		Verbose *bool  `validate:"required"`
 		Debug   *bool  `validate:"required"`
 	}
-	Loggers	struct {
-		Mqtt		*log.Logger
-		Dnsengine	*log.Logger
-		Policy		*log.Logger
+	Loggers struct {
+		Mqtt      *log.Logger
+		Dnsengine *log.Logger
+		Policy    *log.Logger
 	}
 	Internal InternalConf
 	TemData  *TemData
@@ -48,20 +50,25 @@ type ServerConf struct {
 }
 
 type SourceConf struct {
-	Active      *bool  `validate:"required"`
-	Name        string `validate:"required"`
-	Description string `validate:"required"`
-	Type        string `validate:"required"`
-	Format      string `validate:"required"`
-	Source      string `validate:"required"`
-	Filename    string
-	Upstream    string
-	Zone        string
+	Active       *bool  `validate:"required"`
+	Name         string `validate:"required"`
+	Description  string `validate:"required"`
+	Type         string `validate:"required"`
+	Format       string `validate:"required"`
+	Source       string `validate:"required"`
+	Topic        string
+	ValidatorKey string
+	Bootstrap    []string
+	BootstrapUrl string
+	BootstrapKey string
+	Filename     string
+	Upstream     string
+	Zone         string
 }
 
 type PolicyConf struct {
-	Logfile   string
-//	Logger    *log.Logger
+	Logfile string
+	//	Logger    *log.Logger
 	Whitelist struct {
 		Action string `validate:"required"`
 	}
@@ -96,7 +103,7 @@ type ApiserverConf struct {
 type DnsengineConf struct {
 	Address string `validate:"required"`
 	Logfile string `validate:"required"`
-//	Logger  *log.Logger
+	// Logger  *log.Logger
 }
 
 type InternalConf struct {
@@ -150,4 +157,8 @@ func ValidateBySection(config *Config, configsections map[string]interface{}, cf
 		}
 	}
 	return nil
+}
+
+func (td *TemData) ProcessTapirGlobalConfig(tpkg tapir.TapirMsg) {
+	log.Printf("TapirProcessGlobalConfig: %+v", tpkg)
 }

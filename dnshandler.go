@@ -6,6 +6,7 @@ package main
 
 import (
 	"log"
+	"net"
 	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -44,16 +45,6 @@ func DnsEngine(conf *Config) error {
 		}
 	}
 	return nil
-}
-
-func xxxGetKeepFunc(zone string) (string, func(uint16) bool) {
-	switch viper.GetString("service.filter") {
-	case "dnssec":
-		return "dnssec", tapir.DropDNSSECp
-	case "dnssec+zonemd":
-		return "dnssec+zonemd", tapir.DropDNSSECZONEMDp
-	}
-	return "none", func(t uint16) bool { return true }
 }
 
 func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
@@ -148,6 +139,12 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16, 
 	zd := td.Rpz.Axfr.ZoneData
 	// XXX: we need this, but later var glue tapir.RRset
 
+	downstream, _, err := net.SplitHostPort(w.RemoteAddr().String())
+	if err != nil {
+		lg.Printf("RpzResponder: Error from net.SplitHostPort(): %v", err)
+		return nil
+	}
+
 	switch qtype {
 	case dns.TypeAXFR:
 		lg.Printf("We have the zone %s, so let's try to serve it", td.Rpz.ZoneName)
@@ -157,14 +154,13 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16, 
 		//		td.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
 		//			zd.ZoneName, len(zd.RRs))
 
-		serial, _, err := td.RpzAxfrOut(w, r)
+		_, _, err := td.RpzAxfrOut(w, r)
 		if err != nil {
 			lg.Printf("RpzResponder: error from RpzAxfrOut() serving zone %s: %v", zd.ZoneName, err)
 		}
-		td.mu.Lock()
-		td.Downstreams.Serial = serial
-		td.mu.Unlock()
+
 		return nil
+
 	case dns.TypeIXFR:
 		lg.Printf("RpzResponder: %s is our RPZ output", td.Rpz.ZoneName)
 
@@ -172,8 +168,9 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16, 
 		if err != nil {
 			lg.Printf("RpzResponder: error from RpzIxfrOut() serving zone %s: %v", zd.ZoneName, err)
 		}
+
 		td.mu.Lock()
-		td.Downstreams.Serial = serial
+		td.DownstreamSerials[downstream] = serial // track the highest known serial for each downstream
 		td.mu.Unlock()
 		return nil
 	case dns.TypeSOA:

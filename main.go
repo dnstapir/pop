@@ -38,12 +38,14 @@ func (td *TemData) SaveRpzSerial() error {
 	if serialFile == "" {
 		log.Fatalf("TEMExiter:No serial cache file specified")
 	}
-	serialData := []byte(fmt.Sprintf("%d", td.Rpz.CurrentSerial))
-	err := os.WriteFile(serialFile, serialData, 0644)
+	// serialData := []byte(fmt.Sprintf("%d", td.Rpz.CurrentSerial))
+	// err := os.WriteFile(serialFile, serialData, 0644)
+	serialYaml := fmt.Sprintf("current_serial: %d\n", td.Rpz.CurrentSerial)
+	err := os.WriteFile(serialFile, []byte(serialYaml), 0644)
 	if err != nil {
-		log.Printf("Error writing current serial to file: %v", err)
+		log.Printf("Error writing YAML serial to file: %v", err)
 	} else {
-		log.Printf("Saved current serial %d to file %s", td.Downstreams.Serial, serialFile)
+		log.Printf("Saved current serial %d to file %s", td.Rpz.CurrentSerial, serialFile)
 	}
 	return err
 }
@@ -177,10 +179,13 @@ func main() {
 		TEMExiter("Error from NewTemData: %v", err)
 	}
 	go td.RefreshEngine(&conf, stopch)
-	err = td.ParseSources()
+
+	log.Println("*** main: Calling ParseSourcesNG()")
+	err = td.ParseSourcesNG()
 	if err != nil {
-		TEMExiter("Error from ParseSources: %v", err)
+		TEMExiter("Error from ParseSourcesNG: %v", err)
 	}
+	log.Println("*** main: Returned from ParseSourcesNG()")
 
 	err = td.ParseOutputs()
 	if err != nil {

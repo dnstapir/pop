@@ -5,84 +5,9 @@
 package main
 
 import (
-	"log"
-	"os"
-	"strconv"
-	"strings"
-
 	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
-	"github.com/spf13/viper"
-	"gopkg.in/yaml.v3"
 )
-
-type TemOutput struct {
-	Active      bool
-	Name        string
-	Description string
-	Type        string // listtype, usually "greylist"
-	Format      string // i.e. rpz, etc
-	Downstream  string
-}
-
-type TemOutputs struct {
-	Outputs map[string]TemOutput
-}
-
-func (td *TemData) ParseOutputs() error {
-	td.Logger.Printf("ParseOutputs: reading outputs from %s", tapir.TemOutputsCfgFile)
-	cfgdata, err := os.ReadFile(tapir.TemOutputsCfgFile)
-	if err != nil {
-		log.Fatalf("Error from ReadFile(%s): %v", tapir.TemOutputsCfgFile, err)
-	}
-
-	var oconf = TemOutputs{
-		Outputs: make(map[string]TemOutput),
-	}
-
-	td.Logger.Printf("ParseOutputs: config read: %s", cfgdata)
-	err = yaml.Unmarshal(cfgdata, &oconf)
-	if err != nil {
-		log.Fatalf("Error from yaml.Unmarshal(OutputsConfig): %v", err)
-	}
-
-	td.Logger.Printf("ParseOutputs: found %d outputs", len(oconf.Outputs))
-	for name, v := range oconf.Outputs {
-		td.Logger.Printf("ParseOutputs: output %s: type %s, format %s, downstream %s",
-			name, v.Type, v.Format, v.Downstream)
-	}
-
-	for name, output := range oconf.Outputs {
-		if output.Active && strings.ToLower(output.Format) == "rpz" {
-			td.Logger.Printf("Output %s: Adding RPZ downstream %s to list of Notify receivers", name, output.Downstream)
-			td.Downstreams.Downstreams = append(td.Downstreams.Downstreams, output.Downstream)
-		}
-	}
-	// Read the current value of td.Downstreams.Serial from a text file
-	serialFile := viper.GetString("output.rpz.serialcache")
-
-	if serialFile != "" {
-		serialData, err := os.ReadFile(serialFile)
-		if err != nil {
-			td.Logger.Printf("Error reading serial from file %s: %v", serialFile, err)
-			td.Downstreams.Serial = 1
-		} else {
-			tmp := strings.Replace(string(serialData), "\n", "", -1)
-			serial, err := strconv.Atoi(tmp)
-			if err != nil {
-				td.Logger.Printf("Error converting serial data to integer: %v", err)
-			} else {
-				td.Downstreams.Serial = uint32(serial)
-				td.Logger.Printf("Loaded serial %d from file %s", td.Downstreams.Serial, serialFile)
-			}
-		}
-	} else {
-		td.Logger.Printf("No serial cache file specified, starting serial at 1")
-		td.Downstreams.Serial = 1
-	}
-	td.Rpz.CurrentSerial = td.Downstreams.Serial
-	return nil
-}
 
 // XXX: Generating a complete new RPZ zone for output to downstream
 
@@ -155,7 +80,7 @@ func (td *TemData) GenerateRpzAxfr() error {
 							tmp.Action = tmp.Action | v.Action
 							grey[k] = tmp
 						} else {
-							grey[k] = v
+							grey[k] = &v
 						}
 					}
 				}
@@ -168,7 +93,7 @@ func (td *TemData) GenerateRpzAxfr() error {
 	td.Logger.Printf("GenRpzAxfr: There are a total of %d greylisted names in the sources", len(grey))
 
 	newaxfrdata := []*tapir.RpzName{}
-	td.Rpz.RpzMap = map[string]*tapir.RpzName{}
+	// td.Rpz.RpzMap = map[string]*tapir.RpzName{}
 	for name, _ := range td.BlacklistedNames {
 		cname := new(dns.CNAME)
 		cname.Hdr = dns.RR_Header{
@@ -225,89 +150,6 @@ func (td *TemData) GenerateRpzAxfr() error {
 		len(td.Rpz.Axfr.Data), td.Rpz.ZoneName)
 	err := td.NotifyDownstreams()
 	return err
-}
-
-// Decision to block a greylisted name:
-// 1. More than N tags present
-// 2. Name is present in more than M sources
-// 3. Name
-
-func ApplyGreyPolicy(name string, v *tapir.TapirName) string {
-	var rpzaction string
-	if v.HasAction(tapir.NXDOMAIN) {
-		rpzaction = "."
-	} else if v.HasAction(tapir.NODATA) {
-		rpzaction = "*."
-	} else if v.HasAction(tapir.DROP) {
-		rpzaction = "rpz-drop."
-	} else if v.TagMask != 0 {
-		log.Printf("there are tags")
-		rpzaction = "rpz-drop."
-	}
-
-	return rpzaction
-}
-
-// Note: we onlygethere when we know that this name is only greylisted
-// so no need tocheckfor white- or blacklisting
-func (td *TemData) ComputeRpzGreylistAction(name string) tapir.Action {
-
-	var greyHits = map[string]*tapir.TapirName{}
-	for listname, list := range td.Lists["greylist"] {
-		switch list.Format {
-		case "map":
-			if v, exists := list.Names[name]; exists {
-				// td.Logger.Printf("ComputeRpzGreylistAction: found %s in greylist %s (%d names)",
-				// 	name, listname, len(list.Names))
-				greyHits[listname] = v
-			}
-			//		case "trie":
-			//			if list.Trie.Search(name) != nil {
-			//				greyHits = append(greyHits, v)
-			//			}
-		default:
-			TEMExiter("Unknown greylist format %s", list.Format)
-		}
-	}
-	if len(greyHits) >= td.Policy.Greylist.NumSources {
-		td.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d or more sources, action is %s",
-			name, td.Policy.Greylist.NumSources, tapir.ActionToString[td.Policy.Greylist.NumSourcesAction])
-		return td.Policy.Greylist.NumSourcesAction
-	}
-	td.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d sources, not enough for action", name, len(greyHits))
-
-	if _, exists := greyHits["dns-tapir"]; exists {
-		numtapirtags := greyHits["dns-tapir"].TagMask.NumTags()
-		if numtapirtags >= td.Policy.Greylist.NumTapirTags {
-			td.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s has more than %d tapir tags, action is %s",
-				name, td.Policy.Greylist.NumTapirTags, tapir.ActionToString[td.Policy.Greylist.NumTapirTagsAction])
-			return td.Policy.Greylist.NumTapirTagsAction
-		}
-		td.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s has %d tapir tags, not enough for action", name, numtapirtags)
-	}
-	td.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s is present in %d greylists, but does not trigger any action",
-		name, len(greyHits))
-	return td.Policy.WhitelistAction
-}
-
-func (td *TemData) ComputeRpzAction(name string) tapir.Action {
-	if td.Whitelisted(name) {
-		if td.Debug {
-			td.Policy.Logger.Printf("ComputeRpzAction: name %s is whitelisted, action is %s", name, tapir.ActionToString[td.Policy.WhitelistAction])
-		}
-		return td.Policy.WhitelistAction
-	} else if td.Blacklisted(name) {
-		if td.Debug {
-			td.Policy.Logger.Printf("ComputeRpzAction: name %s is blacklisted, action is %s", name, tapir.ActionToString[td.Policy.BlacklistAction])
-		}
-		return td.Policy.BlacklistAction
-	} else if td.Greylisted(name) {
-		if td.Debug {
-			td.Policy.Logger.Printf("ComputeRpzAction: name %s is greylisted, needs further evaluation to determine action", name)
-		}
-		return td.ComputeRpzGreylistAction(name) // This is not complete, only a placeholder for now.
-	}
-	return tapir.WHITELIST
 }
 
 // Generate the RPZ representation of the names in the TapirMsg combined with the currently loaded sources.

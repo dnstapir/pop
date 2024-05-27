@@ -85,27 +85,28 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 		return false, fmt.Errorf("MQTT Source %s is unknown, update rejected", tpkg.Data.SrcName)
 	}
 
-	for _, name := range tpkg.Data.Added {
-		ttl := time.Duration(name.TTL) * time.Second
+	for _, tname := range tpkg.Data.Added {
+		ttl := time.Duration(tname.TTL) * time.Second
 		tmp := tapir.TapirName{
-			Name:      name.Name,
-			TimeAdded: name.TimeAdded,
+			Name:      tname.Name,
+			TimeAdded: tname.TimeAdded,
 			TTL:       ttl,
-			TagMask:   name.TagMask,
+			TagMask:   tname.TagMask,
 		}
-		wbgl.Names[name.Name] = &tmp
+		wbgl.Names[tname.Name] = tmp
 
 		td.Logger.Printf("ProcessTapirUpdate: adding name %s to %s (TimeAdded: %s ttl: %v)",
-			name.Name, wbgl.Name, name.TimeAdded.Format(tapir.TimeLayout), name.TTL)
+			tname.Name, wbgl.Name, tname.TimeAdded.Format(tapir.TimeLayout), tname.TTL)
 
 		// Time that the name will be removed from the list
-		reptime := name.TimeAdded.Add(ttl).Truncate(td.ReaperInterval)
+		// must ensure that reapertime is at least ReaperInterval into the future
+		reptime := tname.TimeAdded.Add(ttl).Truncate(td.ReaperInterval).Add(td.ReaperInterval)
 
 		// Ensure that there are no prior removal events for this name
 		for reaperTime, namesMap := range wbgl.ReaperData {
 			if reaperTime.Before(reptime) {
-				if _, exists := namesMap[name.Name]; exists {
-					delete(namesMap, name.Name)
+				if _, exists := namesMap[tname.Name]; exists {
+					delete(namesMap, tname.Name)
 					if len(namesMap) == 0 {
 						delete(wbgl.ReaperData, reaperTime)
 					}
@@ -115,18 +116,17 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 
 		// Add the name to the removal list for the time it will be removed
 		if wbgl.ReaperData[reptime] == nil {
-			wbgl.ReaperData[reptime] = make(map[string]*tapir.TapirName)
+			wbgl.ReaperData[reptime] = make(map[string]bool)
 		}
-		wbgl.ReaperData[reptime][name.Name] = &tmp
+		wbgl.ReaperData[reptime][tname.Name] = true
 	}
 
-	td.Logger.Printf("ProcessTapirUpdate: current state of %s %s ReaperData:",
-		tpkg.Data.ListType, wbgl.Name)
+	td.Logger.Printf("ProcessTapirUpdate: current state of %s %s ReaperData:", tpkg.Data.ListType, wbgl.Name)
 	for t, v := range wbgl.ReaperData {
 		if len(v) > 0 {
 			td.Logger.Printf("== At time %s the following names will be removed from the dns-tapir list:", t.Format(tapir.TimeLayout))
-			for _, item := range v {
-				td.Logger.Printf("  %s", item.Name)
+			for name := range v {
+				td.Logger.Printf("  %s", name)
 			}
 		} else {
 			td.Logger.Printf("ReaperData: timekey %s is empty, deleting", t.Format(tapir.TimeLayout))
@@ -134,8 +134,8 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 		}
 	}
 
-	for _, name := range tpkg.Data.Removed {
-		delete(wbgl.Names, name.Name)
+	for _, tname := range tpkg.Data.Removed {
+		delete(wbgl.Names, tname.Name)
 	}
 
 	ixfr, err := td.GenerateRpzIxfr(&tpkg.Data)

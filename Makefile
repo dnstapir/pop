@@ -13,16 +13,22 @@ default: ${PROG}
 
 ${PROG}: build
 
-
 version.go:
 	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
 
-build: version.go
+build: version.go # ../tapir/tapir.pb.go
 	$(GO) build $(GOFLAGS) -o ${PROG}
+
+# ../tapir/tapir.pb.go: ../tapir/tapir.proto
+# 	make -C ../tapir tapir.pb.go
 
 linux:	
 	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
 	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -o ${PROG}.linux
+
+netbsd:	
+	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
+	GOOS=netbsd GOARCH=amd64 go build $(GOFLAGS) -o ${PROG}.netbsd
 
 gen-mqtt-msg-new-qname.go: checkout/events-mqtt-message-new_qname.json
 	go-jsonschema checkout/events-mqtt-message-new_qname.json --package main --tags json --only-models --output gen-mqtt-msg-new-qname.go

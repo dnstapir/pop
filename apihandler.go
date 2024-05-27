@@ -1,5 +1,5 @@
 /*
- * Johan Stenstam, johani@johani.org
+ * Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 package main
 
@@ -183,34 +183,135 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			//				Msg:    "Daemon was happy, but now winding down",
 			//			}
 
-		case "export-greylist-dns-tapir":
-			// exportGreylistDnsTapir(w, r, conf.TemData)
+		// End of Selection
+		default:
+			resp.Error = true
+			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", cp.Command)
+		}
+	}
+}
+
+func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		resp := tapir.BootstrapResponse{
+			Status: "ok", // only status we know, so far
+			Msg:    "We're happy, but send more cookies",
+		}
+
+		defer func() {
+			w.Header().Set("Content-Type", "application/json")
+			err := json.NewEncoder(w).Encode(resp)
+			if err != nil {
+				log.Printf("Error from json encoder: %v", err)
+				log.Printf("resp: %v", resp)
+			}
+		}()
+
+		decoder := json.NewDecoder(r.Body)
+		var bp tapir.BootstrapPost
+		err := decoder.Decode(&bp)
+		if err != nil {
+			log.Println("APIbootstrap: error decoding command post:", err)
+			resp.Error = true
+			resp.ErrorMsg = fmt.Sprintf("Error decoding command post: %v", err)
+			return
+		}
+
+		log.Printf("API: received /bootstrap request (cmd: %s) from %s.\n", bp.Command, r.RemoteAddr)
+
+		switch bp.Command {
+		case "export-greylist":
 			td := conf.TemData
 			td.mu.RLock()
 			defer td.mu.RUnlock()
 
-			greylist, ok := td.Lists["greylist"]["dns-tapir"]
+			greylist, ok := td.Lists["greylist"][bp.ListName]
 			if !ok {
 				resp.Error = true
-				resp.ErrorMsg = "Greylist 'dns-tapir' not found"
+				resp.ErrorMsg = fmt.Sprintf("Greylist '%s' not found", bp.ListName)
 				return
 			}
-			log.Printf("Found dns-tapir greylist: %v", greylist)
+			log.Printf("Found %s greylist containing %d names", bp.ListName, len(greylist.Names))
 
-			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Header().Set("Content-Disposition", "attachment; filename=greylist-dns-tapir.gob")
+			switch bp.Encoding {
+			case "gob":
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=greylist-%s.gob", bp.ListName))
 
-			encoder := gob.NewEncoder(w)
-			err := encoder.Encode(greylist)
-			if err != nil {
-				log.Printf("Error encoding greylist: %v", err)
+				encoder := gob.NewEncoder(w)
+				err := encoder.Encode(greylist)
+				if err != nil {
+					log.Printf("Error encoding greylist: %v", err)
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+					return
+				}
+
+				//			case "protobuf":
+				//				w.Header().Set("Content-Type", "application/octet-stream")
+				//				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=greylist-%s.protobuf", bp.ListName))
+				//
+				//				data, err := proto.Marshal(greylist)
+				//				if err != nil {
+				//					log.Printf("Error encoding greylist to protobuf: %v", err)
+				//					resp.Error = true
+				//					resp.ErrorMsg = err.Error()
+				//					return
+				//				}
+
+				//				_, err = w.Write(data)
+				//				if err != nil {
+				//					log.Printf("Error writing protobuf data to response: %v", err)
+				//					resp.Error = true
+				//					resp.ErrorMsg = err.Error()
+				//					return
+				//				}
+
+			// case "flatbuffer":
+			// 	w.Header().Set("Content-Type", "application/octet-stream")
+			// 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=greylist-%s.flatbuffer", bp.ListName))
+
+			// 	builder := flatbuffers.NewBuilder(0)
+			// 	names := make([]flatbuffers.UOffsetT, len(greylist.Names))
+
+			// 	i := 0
+			// 	for name := range greylist.Names {
+			// 		nameOffset := builder.CreateString(name)
+			// 		tapir.NameStart(builder)
+			// 		tapir.NameAddName(builder, nameOffset)
+			// 		names[i] = tapir.NameEnd(builder)
+			// 		i++
+			// 	}
+
+			// 	tapir.GreylistStartNamesVector(builder, len(names))
+			// 	for j := len(names) - 1; j >= 0; j-- {
+			// 		builder.PrependUOffsetT(names[j])
+			// 	}
+			// 	namesVector := builder.EndVector(len(names))
+
+			// 	tapir.GreylistStart(builder)
+			// 	tapir.GreylistAddNames(builder, namesVector)
+			// 	greylistOffset := tapir.GreylistEnd(builder)
+
+			// 	builder.Finish(greylistOffset)
+			// 	buf := builder.FinishedBytes()
+
+			// 	_, err := w.Write(buf)
+			// 	if err != nil {
+			// 		log.Printf("Error writing flatbuffer data to response: %v", err)
+			// 		resp.Error = true
+			// 		resp.ErrorMsg = err.Error()
+			// 		return
+			// 	}
+
+			default:
 				resp.Error = true
-				resp.ErrorMsg = err.Error()
+				resp.ErrorMsg = fmt.Sprintf("Unknown encoding: %s", bp.Encoding)
 				return
 			}
 
 		default:
-			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", cp.Command)
+			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", bp.Command)
 			resp.Error = true
 		}
 	}
@@ -280,9 +381,9 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			resp.ReaperStats = make(map[string]map[time.Time][]string)
 			for SrcName, list := range td.Lists["greylist"] {
 				resp.ReaperStats[SrcName] = make(map[time.Time][]string)
-				for ts, items := range list.ReaperData {
-					for _, item := range items {
-						resp.ReaperStats[SrcName][ts] = append(resp.ReaperStats[SrcName][ts], item.Name)
+				for ts, names := range list.ReaperData {
+					for name := range names {
+						resp.ReaperStats[SrcName][ts] = append(resp.ReaperStats[SrcName][ts], name)
 					}
 				}
 			}
@@ -333,7 +434,20 @@ func SetupRouter(conf *Config) *mux.Router {
 		viper.GetString("apiserver.key")).Subrouter()
 	sr.HandleFunc("/ping", tapir.APIping("tem", conf.BootTime)).Methods("POST")
 	sr.HandleFunc("/command", APIcommand(conf)).Methods("POST")
+	sr.HandleFunc("/bootstrap", APIbootstrap(conf)).Methods("POST")
 	sr.HandleFunc("/debug", APIdebug(conf)).Methods("POST")
+	// sr.HandleFunc("/show/api", tapir.APIshowAPI(r)).Methods("GET")
+
+	return r
+}
+
+func SetupBootstrapRouter(conf *Config) *mux.Router {
+	r := mux.NewRouter().StrictSlash(true)
+
+	sr := r.PathPrefix("/api/v1").Headers("X-API-Key", viper.GetString("apiserver.key")).Subrouter()
+	sr.HandleFunc("/ping", tapir.APIping("tem", conf.BootTime)).Methods("POST")
+	sr.HandleFunc("/bootstrap", APIbootstrap(conf)).Methods("POST")
+	// sr.HandleFunc("/debug", APIdebug(conf)).Methods("POST")
 	// sr.HandleFunc("/show/api", tapir.APIshowAPI(r)).Methods("GET")
 
 	return r
@@ -370,6 +484,10 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 	certfile := viper.GetString("certs.tem.cert")
 	keyfile := viper.GetString("certs.tem.key")
 
+	bootstrapaddress := viper.GetString("bootstrapserver.address")
+	bootstraptlsaddress := viper.GetString("bootstrapserver.tlsaddress")
+	bootstraprouter := SetupBootstrapRouter(conf)
+
 	tlspossible := true
 
 	_, err := os.Stat(certfile)
@@ -384,7 +502,7 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 	tlsConfig, err := tapir.NewServerConfig(viper.GetString("certs.cacertfile"), tls.VerifyClientCertIfGiven)
 	// Alternatives are: tls.RequireAndVerifyClientCert, tls.VerifyClientCertIfGiven,
 	// tls.RequireAnyClientCert, tls.RequestClientCert, tls.NoClientCert
-	// We would like to request a client cert, but until all labgroup servers have certs we cannot do that.
+
 	if err != nil {
 		TEMExiter("Error creating API server tls config: %v\n", err)
 	}
@@ -394,27 +512,65 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 		Handler:   router,
 		TLSConfig: tlsConfig,
 	}
+	bootstrapTlsServer := &http.Server{
+		Addr:      bootstraptlsaddress,
+		Handler:   bootstraprouter,
+		TLSConfig: tlsConfig,
+	}
 
 	var wg sync.WaitGroup
 
-	go func() {
-		log.Println("Starting API dispatcher #1. Listening on", address)
-		TEMExiter(http.ListenAndServe(address, router))
-	}()
+	log.Println("*** API: Starting API dispatcher #1. Listening on", address)
+
+	if address != "" {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup) {
+			log.Println("*** API: Starting API dispatcher #1. Listening on", address)
+			wg.Done()
+			TEMExiter(http.ListenAndServe(address, router))
+		}(&wg)
+	}
 
 	if tlsaddress != "" {
 		if tlspossible {
 			wg.Add(1)
 			go func(wg *sync.WaitGroup) {
-				log.Println("Starting TLS API dispatcher #1. Listening on", tlsaddress)
-				TEMExiter(tlsServer.ListenAndServeTLS(certfile, keyfile))
+				log.Println("*** API: Starting TLS API dispatcher #1. Listening on", tlsaddress)
 				wg.Done()
+				TEMExiter(tlsServer.ListenAndServeTLS(certfile, keyfile))
 			}(&wg)
 		} else {
-			log.Printf("APIdispatch Error: Cannot provide TLS service without cert and key files.\n")
+			log.Printf("*** API: APIdispatcher: Error: Cannot provide TLS service without cert and key files.\n")
 		}
 	}
 
+	if bootstrapaddress != "" {
+		wg.Add(1)
+		go func(wg *sync.WaitGroup) {
+			log.Println("*** API: Starting Bootstrap API dispatcher #1. Listening on", bootstrapaddress)
+			wg.Done()
+			TEMExiter(http.ListenAndServe(bootstrapaddress, bootstraprouter))
+		}(&wg)
+	} else {
+		log.Println("*** API: No bootstrap address specified")
+	}
+
+	if bootstraptlsaddress != "" {
+		if tlspossible {
+			wg.Add(1)
+			go func(wg *sync.WaitGroup) {
+				log.Println("*** API: Starting Bootstrap TLS API dispatcher #1. Listening on", bootstraptlsaddress)
+				wg.Done()
+				TEMExiter(bootstrapTlsServer.ListenAndServeTLS(certfile, keyfile))
+			}(&wg)
+		} else {
+			log.Printf("*** API: APIdispatcher: Error: Cannot provide Bootstrap TLS service without cert and key files.\n")
+		}
+	} else {
+		log.Println("*** API: No bootstrap TLS address specified")
+	}
+
+	wg.Wait()
 	log.Println("API dispatcher: unclear how to stop the http server nicely.")
 }
 
