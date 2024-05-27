@@ -39,7 +39,7 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 	tlsConfig.InsecureSkipVerify = true
 	err = api.SetupTLS(tlsConfig)
 	if err != nil {
-		return nil, fmt.Errorf("Error setting up TLS for the API client: %v", err)
+		return nil, fmt.Errorf("error setting up TLS for the API client: %v", err)
 	}
 
 	// Iterate over the bootstrap servers
@@ -53,7 +53,7 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 			continue
 		}
 
-		uptime := time.Now().Sub(pr.BootTime).Round(time.Second)
+		uptime := time.Since(pr.BootTime).Round(time.Second)
 		td.Logger.Printf("MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages", server, uptime, 17)
 
 		status, buf, err := api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
@@ -108,5 +108,5 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 	}
 
 	// If no bootstrap server succeeded
-	return nil, fmt.Errorf("All bootstrap servers failed")
+	return nil, fmt.Errorf("all bootstrap servers failed")
 }

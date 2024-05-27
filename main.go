@@ -5,7 +5,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 
@@ -20,10 +19,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/dnstapir/tapir"
-)
-
-var (
-	soreuseport = flag.Int("soreuseport", 0, "use SO_REUSE_PORT")
 )
 
 var TEMExiter = func(args ...interface{}) {
@@ -61,7 +56,10 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 		var msg string
 		log.Printf("TEMExiter: will try to clean up.")
 
-		td.SaveRpzSerial()
+		err := td.SaveRpzSerial()
+		if err != nil {
+			log.Printf("Error saving RPZ serial: %v", err)
+		}
 
 		switch args[0].(type) {
 		case string:
@@ -75,10 +73,8 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 		}
 
 		fmt.Println(msg)
-		log.Printf(msg)
+		log.Println(msg)
 
-		// var done struct{}
-		// apistopper <- done
 		os.Exit(1)
 	}
 
@@ -91,7 +87,10 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 			select {
 			case <-exit:
 				log.Println("mainloop: Exit signal received. Cleaning up.")
-				td.SaveRpzSerial()
+				err := td.SaveRpzSerial()
+				if err != nil {
+					log.Printf("Error saving RPZ serial: %v", err)
+				}
 				// do whatever we need to do to wrap up nicely
 				wg.Done()
 			case <-hupper:
@@ -107,7 +106,10 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 				conf.TemData.RpzRefreshCh <- RpzRefresh{Name: ""}
 			case <-conf.Internal.APIStopCh:
 				log.Printf("mainloop: API instruction to stop\n")
-				td.SaveRpzSerial()
+				err := td.SaveRpzSerial()
+				if err != nil {
+					log.Printf("Error saving RPZ serial: %v", err)
+				}
 				wg.Done()
 			}
 		}
@@ -163,14 +165,17 @@ func main() {
 	SetupLogging(&conf)
 	fmt.Printf("Policy Logging to logger: %v\n", conf.Loggers.Policy)
 
-	ValidateConfig(nil, cfgFileUsed) // will terminate on error
+	err := ValidateConfig(nil, cfgFileUsed) // will terminate on error
+	if err != nil {
+		TEMExiter("Error validating config: %v", err)
+	}
 
-	err := viper.Unmarshal(&conf)
+	err = viper.Unmarshal(&conf)
 	if err != nil {
 		TEMExiter("Error unmarshalling config into struct: %v", err)
 	}
 
-	fmt.Printf("TEM (TAPIR Edge Manager) version %s starting.\n", appVersion)
+	fmt.Printf("%s (TAPIR Edge Manager) version %s (%s) starting.\n", appName, appVersion, appDate)
 
 	var stopch = make(chan struct{}, 10)
 

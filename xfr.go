@@ -112,8 +112,11 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	outbound_xfr <- &env
 
 	close(outbound_xfr)
-	wg.Wait() // wait until everything is written out
-	w.Close() // close connection
+	wg.Wait()        // wait until everything is written out
+	err := w.Close() // close connection
+	if err != nil {
+		td.Logger.Printf("RpzAxfrOut: Error from Close(): %v", err)
+	}
 
 	td.Logger.Printf("ZoneTransferOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)
 
@@ -152,9 +155,9 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 
 	if len(r.Ns) > 0 {
 		for _, rr := range r.Ns {
-			switch rr.(type) {
+			switch rr := rr.(type) {
 			case *dns.SOA:
-				curserial = rr.(*dns.SOA).Serial
+				curserial = rr.Serial
 			default:
 				td.Logger.Printf("RpzIxfrOut: unexpected RR in IXFR request Authority section:\n%s\n",
 					rr.String())
@@ -197,7 +200,10 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	wg.Add(1)
 
 	go func() {
-		tr.Out(w, r, outbound_xfr)
+		err := tr.Out(w, r, outbound_xfr)
+		if err != nil {
+			td.Logger.Printf("Error from transfer.Out(): %v", err)
+		}
 		wg.Done()
 	}()
 
@@ -286,8 +292,11 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	outbound_xfr <- &env
 
 	close(outbound_xfr)
-	wg.Wait() // wait until everything is written out
-	w.Close() // close connection
+	wg.Wait()       // wait until everything is written out
+	err = w.Close() // close connection
+	if err != nil {
+		td.Logger.Printf("RpzIxfrOut: Error from Close(): %v", err)
+	}
 
 	td.Logger.Printf("RpzIxfrOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)
 	err = td.PruneRpzIxfrChain()

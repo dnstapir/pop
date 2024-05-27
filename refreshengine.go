@@ -57,17 +57,15 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	reaperTicker := time.NewTicker(td.ReaperInterval)
 
 	go func() {
-		time.Sleep(reaperStart.Sub(time.Now()))
+		time.Sleep(time.Until(reaperStart))
 		reaperTicker.Reset(td.ReaperInterval)
 	}()
 
 	if !viper.GetBool("service.refresh.active") {
 		log.Printf("Refresh Engine is NOT active. Zones will only be updated on receipt on Notifies.")
-		for {
-			select {
-			case <-zonerefch: // ensure that we keep reading to keep the
-				continue // channel open
-			}
+		for range zonerefch {
+			// ensure that we keep reading to keep the channel open
+			continue
 		}
 	} else {
 		log.Printf("RefreshEngine: Starting")
@@ -94,7 +92,10 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			case "intel-update", "observation":
 				log.Printf("RefreshEngine: Tapir Observation update: (src: %s) %d additions and %d removals\n",
 					tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
-				td.ProcessTapirUpdate(tpkg)
+				_, err := td.ProcessTapirUpdate(tpkg)
+				if err != nil {
+					log.Printf("RefreshEngine: Error from ProcessTapirUpdate(): %v", err)
+				}
 				log.Printf("RefreshEngine: Tapir Observation update evaluated.")
 
 			case "global-config":
@@ -150,7 +151,10 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 							log.Printf("RefreshEngine: %s updated from upstream. Resetting serial to unixtime: %d",
 								zone, td.RpzSources[zone].SOA.Serial)
 						}
-						td.NotifyDownstreams()
+						err := td.NotifyDownstreams()
+						if err != nil {
+							log.Printf("RefreshEngine: Error notifying downstreams: %v", err)
+						}
 					}
 					// showing some apex details:
 					log.Printf("Showing some details for zone %s: ", zone)
@@ -254,7 +258,10 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						}
 					}
 					if updated {
-						td.NotifyDownstreams()
+						err := td.NotifyDownstreams()
+						if err != nil {
+							log.Printf("RefreshEngine: Error notifying downstreams: %v", err)
+						}
 					}
 				}
 			}
@@ -282,7 +289,11 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						zd.SOA.Serial = uint32(time.Now().Unix())
 						resp.NewSerial = zd.SOA.Serial
 						rc = refreshCounters[zone]
-						td.NotifyDownstreams()
+						err := td.NotifyDownstreams()
+						if err != nil {
+							resp.Error = true
+							resp.ErrorMsg = fmt.Sprintf("Error notifying downstreams: %v", err)
+						}
 						resp.Msg = fmt.Sprintf("Zone %s: bumped serial from %d to %d. Notified downstreams: %v",
 							zone, resp.OldSerial, resp.NewSerial, rc.Downstreams)
 						log.Printf(resp.Msg)
@@ -316,9 +327,14 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 				// if the name isn't either whitelisted or blacklisted
 				if cmd.ListType == "greylist" {
-					td.GreylistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
-					resp.Msg = fmt.Sprintf("Domain name \"%s\" (policy %s) added to greylisting DB.",
-						cmd.Domain, cmd.Policy)
+					_, err := td.GreylistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
+					if err != nil {
+						resp.Error = true
+						resp.ErrorMsg = fmt.Sprintf("Error adding domain name \"%s\" to greylisting DB: %v", cmd.Domain, err)
+					} else {
+						resp.Msg = fmt.Sprintf("Domain name \"%s\" (policy %s) added to greylisting DB.",
+							cmd.Domain, cmd.Policy)
+					}
 					cmd.Result <- resp
 					continue
 				}

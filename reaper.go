@@ -35,7 +35,7 @@ func (td *TemData) Reaper(full bool) error {
 					if _, exist := wbgl.ReaperData[timekey]; !exist {
 						wbgl.ReaperData[timekey] = map[string]bool{}
 					}
-					for name, _ := range d {
+					for name := range d {
 						wbgl.ReaperData[timekey][name] = true
 					}
 					// wbgl.ReaperData[timekey] = d
@@ -48,7 +48,7 @@ func (td *TemData) Reaper(full bool) error {
 				td.Logger.Printf("Reaper: list [%s][%s] has %d timekeys stored", listtype, listname,
 					len(wbgl.ReaperData[timekey]))
 				td.mu.Lock()
-				for name, _ := range wbgl.ReaperData[timekey] {
+				for name := range wbgl.ReaperData[timekey] {
 					td.Logger.Printf("Reaper: removing %s from %s %s", name, listtype, listname)
 					delete(td.Lists[listtype][listname].Names, name)
 					delete(wbgl.ReaperData[timekey], name)

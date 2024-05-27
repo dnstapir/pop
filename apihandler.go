@@ -61,7 +61,11 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			// log.Printf("defer: resp: %v", resp)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			err := json.NewEncoder(w).Encode(resp)
+			if err != nil {
+				log.Printf("Error from json encoder: %v", err)
+				log.Printf("resp: %v", resp)
+			}
 		}()
 
 		switch cp.Command {
@@ -85,15 +89,27 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "mqtt-start":
-			conf.TemData.MqttEngine.StartEngine()
+			_, _, _, err := conf.TemData.MqttEngine.StartEngine()
+			if err != nil {
+				resp.Error = true
+				resp.ErrorMsg = err.Error()
+			}
 			resp.Msg = "MQTT engine started"
 
 		case "mqtt-stop":
-			conf.TemData.MqttEngine.StopEngine()
+			_, err := conf.TemData.MqttEngine.StopEngine()
+			if err != nil {
+				resp.Error = true
+				resp.ErrorMsg = err.Error()
+			}
 			resp.Msg = "MQTT engine stopped"
 
 		case "mqtt-restart":
-			conf.TemData.MqttEngine.RestartEngine()
+			_, err := conf.TemData.MqttEngine.RestartEngine()
+			if err != nil {
+				resp.Error = true
+				resp.ErrorMsg = err.Error()
+			}
 			resp.Msg = "MQTT engine restarted"
 
 		case "rpz-add":
@@ -508,14 +524,18 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 	}
 
 	tlsServer := &http.Server{
-		Addr:      tlsaddress,
-		Handler:   router,
-		TLSConfig: tlsConfig,
+		Addr:         tlsaddress,
+		Handler:      router,
+		TLSConfig:    tlsConfig,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 	bootstrapTlsServer := &http.Server{
-		Addr:      bootstraptlsaddress,
-		Handler:   bootstraprouter,
-		TLSConfig: tlsConfig,
+		Addr:         bootstraptlsaddress,
+		Handler:      bootstraprouter,
+		TLSConfig:    tlsConfig,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 10 * time.Second,
 	}
 
 	var wg sync.WaitGroup
@@ -525,9 +545,16 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 	if address != "" {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup) {
+			apiServer := &http.Server{
+				Addr:         address,
+				Handler:      router,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+			}
+
 			log.Println("*** API: Starting API dispatcher #1. Listening on", address)
 			wg.Done()
-			TEMExiter(http.ListenAndServe(address, router))
+			TEMExiter(apiServer.ListenAndServe())
 		}(&wg)
 	}
 
@@ -547,9 +574,15 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 	if bootstrapaddress != "" {
 		wg.Add(1)
 		go func(wg *sync.WaitGroup) {
+			apiServer := &http.Server{
+				Addr:         bootstrapaddress,
+				Handler:      bootstraprouter,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+			}
 			log.Println("*** API: Starting Bootstrap API dispatcher #1. Listening on", bootstrapaddress)
 			wg.Done()
-			TEMExiter(http.ListenAndServe(bootstrapaddress, bootstraprouter))
+			TEMExiter(apiServer.ListenAndServe())
 		}(&wg)
 	} else {
 		log.Println("*** API: No bootstrap address specified")
@@ -587,7 +620,7 @@ func BumpSerial(conf *Config, zone string) (string, error) {
 	if resp.Error {
 		log.Printf("BumpSerial: Error from RefreshEngine: %s", resp.ErrorMsg)
 		return fmt.Sprintf("Zone %s: error bumping SOA serial: %s", zone, resp.ErrorMsg),
-			fmt.Errorf("Zone %s: error bumping SOA serial and epoch: %v", zone, resp.ErrorMsg)
+			fmt.Errorf("zone %s: error bumping SOA serial and epoch: %v", zone, resp.ErrorMsg)
 	}
 
 	if resp.Msg == "" {

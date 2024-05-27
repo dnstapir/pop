@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -111,7 +112,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 
 func (td *TemData) ParseSourcesNG() error {
 	var srcfoo SrcFoo
-	configFile := tapir.TemSourcesCfgFile
+	configFile := filepath.Clean(tapir.TemSourcesCfgFile)
 	data, err := os.ReadFile(configFile)
 	if err != nil {
 		return fmt.Errorf("error reading config file: %v", err)
@@ -230,7 +231,7 @@ func (td *TemData) ParseSourcesNG() error {
 				err = td.ParseLocalFile(name, &newsource, rptchan)
 			case "xfr":
 				err = td.ParseRpzFeed(name, &newsource, rptchan)
-				td.Logger.Printf("Thread %d: source \"%s\" (%s) now returned from ParseRpzFeed(). %d remaining", thread, name, threads)
+				td.Logger.Printf("Thread %d: source \"%s\" now returned from ParseRpzFeed(). %d remaining", thread, name, threads)
 			default:
 				td.Logger.Printf("*** ParseSourcesNG: Error: unhandled source type %s", src.Source)
 			}
@@ -339,8 +340,7 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan stri
 
 	upstream := viper.GetString(fmt.Sprintf("sources.%s.upstream", sourceid))
 	if upstream == "" {
-		return fmt.Errorf("Unable to load RPZ source %s, upstream address not specified.",
-			sourceid)
+		return fmt.Errorf("unable to load RPZ source %s, upstream address not specified", sourceid)
 	}
 
 	s.Names = map[string]tapir.TapirName{} // must initialize

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/viper"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -30,7 +31,8 @@ func SetupLogging(conf *Config) {
 
 	logfile = viper.GetString("policy.logfile")
 	if logfile != "" {
-		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		logfile = filepath.Clean(logfile)
+		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
 			TEMExiter("error opening TEM policy logfile '%s': %v", logfile, err)
 		}
@@ -50,7 +52,8 @@ func SetupLogging(conf *Config) {
 
 	logfile = viper.GetString("dnsengine.logfile")
 	if logfile != "" {
-		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		logfile = filepath.Clean(logfile)
+		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
 			TEMExiter("error opening TEM dnsengine logfile '%s': %v", logfile, err)
 		}
@@ -70,7 +73,8 @@ func SetupLogging(conf *Config) {
 
 	logfile = viper.GetString("mqtt.logfile")
 	if logfile != "" {
-		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+		logfile = filepath.Clean(logfile)
+		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
 		if err != nil {
 			TEMExiter("error opening TEM MQTT logfile '%s': %v", logfile, err)
 		}

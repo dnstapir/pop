@@ -65,7 +65,10 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 			// send NOERROR response
 			m := new(dns.Msg)
 			m.SetReply(r)
-			w.WriteMsg(m)
+			err := w.WriteMsg(m)
+			if err != nil {
+				lg.Printf("Error from WriteMsg(): %v", err)
+			}
 
 			if _, ok := td.RpzSources[qname]; ok {
 				lg.Printf("Received Notify for known zone %s. Fetching from upstream", qname)
@@ -82,14 +85,20 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 			qtype := r.Question[0].Qtype
 			lg.Printf("Zone %s %s request from %s", qname, dns.TypeToString[qtype], w.RemoteAddr())
 			if qname == td.Rpz.ZoneName {
-				td.RpzResponder(w, r, qtype, lg)
+				err := td.RpzResponder(w, r, qtype, lg)
+				if err != nil {
+					lg.Printf("Error from RpzResponder(): %v", err)
+				}
 			} else if zd, ok := td.RpzSources[qname]; ok {
 				// The qname is equal to the name of a zone we have
-				ApexResponder(w, r, zd, qname, qtype, lg)
+				err := ApexResponder(w, r, zd, qname, qtype, lg)
+				if err != nil {
+					lg.Printf("Error from ApexResponder(): %v", err)
+				}
 			} else {
 				lg.Printf("DnsHandler: Qname is '%s', which is not a known zone.", qname)
 				known_zones := []string{td.Rpz.ZoneName}
-				for z, _ := range td.RpzSources {
+				for z := range td.RpzSources {
 					known_zones = append(known_zones, z)
 				}
 				lg.Printf("DnsHandler: Known zones are: %v", known_zones)
@@ -98,7 +107,10 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 				if strings.HasSuffix(qname, td.Rpz.ZoneName) {
 					lg.Printf("Query for qname %s belongs in our own RPZ \"%s\"",
 						qname, td.Rpz.ZoneName)
-					td.QueryResponder(w, r, qname, qtype, lg)
+					err := td.QueryResponder(w, r, qname, qtype, lg)
+					if err != nil {
+						lg.Printf("Error from QueryResponder(): %v", err)
+					}
 					return
 				}
 				zd := td.FindZone(qname)
@@ -106,18 +118,27 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 					lg.Printf("After FindZone: zd==nil")
 					m := new(dns.Msg)
 					m.SetRcode(r, dns.RcodeRefused)
-					w.WriteMsg(m)
+					err := w.WriteMsg(m)
+					if err != nil {
+						lg.Printf("Error from WriteMsg(): %v", err)
+					}
 					return // didn't find any zone for that qname or found zone, but it is an XFR zone only
 				}
 				lg.Printf("After FindZone: zd: zd.ZoneType: %v", zd.ZoneType)
 				if zd.ZoneType == tapir.XfrZone {
 					m := new(dns.Msg)
 					m.SetRcode(r, dns.RcodeRefused)
-					w.WriteMsg(m)
+					err := w.WriteMsg(m)
+					if err != nil {
+						lg.Printf("Error from WriteMsg(): %v", err)
+					}
 					return // didn't find any zone for that qname or found zone, but it is an XFR zone only
 				}
 				lg.Printf("Found matching full zone for qname %s: %s", qname, zd.ZoneName)
-				QueryResponder(w, r, zd, qname, qtype, lg)
+				err := QueryResponder(w, r, zd, qname, qtype, lg)
+				if err != nil {
+					lg.Printf("Error from QueryResponder(): %v", err)
+				}
 				return
 			}
 			return
@@ -189,7 +210,10 @@ func (td *TemData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16, 
 		m.MsgHdr.Rcode = dns.RcodeRefused
 		m.Ns = append(m.Ns, zd.NSrrs...)
 	}
-	w.WriteMsg(m)
+	err = w.WriteMsg(m)
+	if err != nil {
+		lg.Printf("Error from WriteMsg(): %v", err)
+	}
 	return nil
 }
 
@@ -230,7 +254,10 @@ func ApexResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData,
 		m.MsgHdr.Rcode = dns.RcodeRefused
 		m.Ns = append(m.Ns, zd.NSrrs...)
 	}
-	w.WriteMsg(m)
+	err := w.WriteMsg(m)
+	if err != nil {
+		lg.Printf("Error from WriteMsg(): %v", err)
+	}
 	return nil
 }
 
@@ -260,8 +287,10 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 		// return NXDOMAIN
 		m.MsgHdr.Rcode = dns.RcodeNameError
 		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
-		w.WriteMsg(m)
-		return
+		err := w.WriteMsg(m)
+		if err != nil {
+			lg.Printf("Error from WriteMsg(): %v", err)
+		}
 	}
 
 	// log.Printf("Zone %s Data: %v", zd.ZoneName, zd.Data)
@@ -281,7 +310,10 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 			// return NXDOMAIN
 			m.MsgHdr.Rcode = dns.RcodeNameError
 			m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
-			w.WriteMsg(m)
+			err := w.WriteMsg(m)
+			if err != nil {
+				lg.Printf("Error from WriteMsg(): %v", err)
+			}
 			return nil
 		}
 
@@ -296,7 +328,10 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 	if len(owner.RRtypes) == 0 {
 		m.MsgHdr.Rcode = dns.RcodeNameError
 		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
-		w.WriteMsg(m)
+		err := w.WriteMsg(m)
+		if err != nil {
+			lg.Printf("Error from WriteMsg(): %v", err)
+		}
 		return nil
 	}
 
@@ -318,7 +353,10 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 						glue = zd.FindGlue(apex.RRtypes[dns.TypeNS])
 						m.Extra = append(m.Extra, glue.RRs...)
 					}
-					w.WriteMsg(m)
+					err := w.WriteMsg(m)
+					if err != nil {
+						lg.Printf("Error from WriteMsg(): %v", err)
+					}
 					return nil
 				}
 			}
@@ -346,7 +384,10 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 		} else {
 			m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
 		}
-		w.WriteMsg(m)
+		err := w.WriteMsg(m)
+		if err != nil {
+			lg.Printf("Error from WriteMsg(): %v", err)
+		}
 		return nil
 
 	default:
@@ -355,7 +396,10 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRs...)
 		glue = zd.FindGlue(apex.RRtypes[dns.TypeNS])
 		m.Extra = append(m.Extra, glue.RRs...)
-		w.WriteMsg(m)
+		err := w.WriteMsg(m)
+		if err != nil {
+			lg.Printf("Error from WriteMsg(): %v", err)
+		}
 	}
 	return nil
 }
@@ -371,8 +415,10 @@ func (td *TemData) QueryResponder(w dns.ResponseWriter, r *dns.Msg, qname string
 		m.MsgHdr.Rcode = dns.RcodeNameError
 		//		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
 		m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
-		w.WriteMsg(m)
-		return
+		err := w.WriteMsg(m)
+		if err != nil {
+			lg.Printf("Error from WriteMsg(): %v", err)
+		}
 	}
 
 	// log.Printf("Zone %s Data: %v", zd.ZoneName, zd.Data)
@@ -390,7 +436,10 @@ func (td *TemData) QueryResponder(w dns.ResponseWriter, r *dns.Msg, qname string
 		default:
 			m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
 		}
-		w.WriteMsg(m)
+		err := w.WriteMsg(m)
+		if err != nil {
+			lg.Printf("Error from WriteMsg(): %v", err)
+		}
 		return nil
 	}
 	returnNXDOMAIN()
