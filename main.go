@@ -199,7 +199,12 @@ func main() {
 	go APIdispatcher(&conf, apistopper)
 	//	go httpsserver(&conf, apistopper)
 
-	go DnsEngine(&conf)
+	go func() {
+		err := DnsEngine(&conf)
+		if err != nil {
+			fmt.Printf("main: DnsEngine() failed: %s", err)
+		}
+	}()
 	conf.BootTime = time.Now()
 
 	mainloop(&conf, &cfgFileUsed, td)
