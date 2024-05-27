@@ -22,6 +22,13 @@ build: version.go # ../tapir/tapir.pb.go
 # ../tapir/tapir.pb.go: ../tapir/tapir.proto
 # 	make -C ../tapir tapir.pb.go
 
+lint:
+	go fmt ./...
+	go vet ./...
+	staticcheck ./...
+	gosec ./...
+	golangci-lint run
+
 linux:	
 	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
 	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -o ${PROG}.linux
