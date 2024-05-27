@@ -34,7 +34,7 @@ func (td *TemData) SaveRpzSerial() error {
 		log.Fatalf("TEMExiter:No serial cache file specified")
 	}
 	serialData := []byte(fmt.Sprintf("%d", td.Rpz.CurrentSerial))
-	err := os.WriteFile(serialFile, serialData, 0644)
+	err := os.WriteFile(serialFile, serialData, 0600)
 	if err != nil {
 		log.Printf("Error writing current serial to file: %v", err)
 	} else {
@@ -54,7 +54,10 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 		var msg string
 		log.Printf("TEMExiter: will try to clean up.")
 
-		td.SaveRpzSerial()
+		err := td.SaveRpzSerial()
+		if err != nil {
+			log.Printf("TEMExiter: unable to save RPZ serial: %s", err)
+		}
 
 		switch args[0].(type) {
 		case string:
@@ -84,7 +87,10 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 			select {
 			case <-exit:
 				log.Println("mainloop: Exit signal received. Cleaning up.")
-				td.SaveRpzSerial()
+				err := td.SaveRpzSerial()
+				if err != nil {
+					log.Printf("mainloop: unable to save RPZ serial: %s", err)
+				}
 				// do whatever we need to do to wrap up nicely
 				wg.Done()
 			case <-hupper:
@@ -100,7 +106,10 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 				conf.TemData.RpzRefreshCh <- RpzRefresh{Name: ""}
 			case <-conf.Internal.APIStopCh:
 				log.Printf("mainloop: API instruction to stop\n")
-				td.SaveRpzSerial()
+				err := td.SaveRpzSerial()
+				if err != nil {
+					log.Printf("mainloop: unable to save RPZ serial: %s", err)
+				}
 				wg.Done()
 			}
 		}
@@ -156,9 +165,12 @@ func main() {
 	SetupLogging(&conf)
 	fmt.Printf("Policy Logging to logger: %v\n", conf.Loggers.Policy)
 
-	ValidateConfig(nil, cfgFileUsed) // will terminate on error
+	err := ValidateConfig(nil, cfgFileUsed) // will terminate on error
+	if err != nil {
+		TEMExiter("Could not validate config %s: Error: %v", tapir.TemPolicyCfgFile, err)
+	}
 
-	err := viper.Unmarshal(&conf)
+	err = viper.Unmarshal(&conf)
 	if err != nil {
 		TEMExiter("Error unmarshalling config into struct: %v", err)
 	}

@@ -87,7 +87,10 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 		case tpkg = <-TapirIntelCh:
 			log.Printf("RefreshEngine: Tapir IntelUpdate: (src: %s) %d additions and %d removals\n",
 				tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
-			td.ProcessTapirUpdate(tpkg)
+			_, err := td.ProcessTapirUpdate(tpkg)
+			if err != nil {
+				log.Printf("RefreshEngine: unable to process tapir update: %s", err)
+			}
 			log.Printf("RefreshEngine: Tapir IntelUpdate evaluated.")
 
 		case zr = <-zonerefch:
@@ -135,7 +138,10 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 							log.Printf("RefreshEngine: %s updated from upstream. Resetting serial to unixtime: %d",
 								zone, td.RpzSources[zone].SOA.Serial)
 						}
-						td.NotifyDownstreams()
+						err := td.NotifyDownstreams()
+						if err != nil {
+							log.Printf("RefreshEngine: zonerefch unable to notify downstream: %s", err)
+						}
 					}
 					// showing some apex details:
 					log.Printf("Showing some details for zone %s: ", zone)
@@ -239,7 +245,10 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						}
 					}
 					if updated {
-						td.NotifyDownstreams()
+						err := td.NotifyDownstreams()
+						if err != nil {
+							log.Printf("RefreshEngine: refreshTicker unable to notify downstream: %s", err)
+						}
 					}
 				}
 			}
@@ -267,7 +276,10 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						zd.SOA.Serial = uint32(time.Now().Unix())
 						resp.NewSerial = zd.SOA.Serial
 						rc = refreshCounters[zone]
-						td.NotifyDownstreams()
+						err := td.NotifyDownstreams()
+						if err != nil {
+							log.Printf("RefreshEngine: failed to notify downstream: %s", err)
+						}
 						resp.Msg = fmt.Sprintf("Zone %s: bumped serial from %d to %d. Notified downstreams: %v",
 							zone, resp.OldSerial, resp.NewSerial, rc.Downstreams)
 						log.Printf(resp.Msg)

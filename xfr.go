@@ -110,8 +110,11 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	outbound_xfr <- &env
 
 	close(outbound_xfr)
-	wg.Wait() // wait until everything is written out
-	w.Close() // close connection
+	wg.Wait()        // wait until everything is written out
+	err := w.Close() // close connection
+	if err != nil {
+		td.Logger.Printf("ZoneTransferOut: unable to close connection: %s", err)
+	}
 
 	td.Logger.Printf("ZoneTransferOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)
 
@@ -174,7 +177,10 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	wg.Add(1)
 
 	go func() {
-		tr.Out(w, r, outbound_xfr)
+		err := tr.Out(w, r, outbound_xfr)
+		if err != nil {
+			td.Logger.Printf("RpzIxfrOut: unable to perform outgoing transfer: %s", err)
+		}
 		wg.Done()
 	}()
 
@@ -263,8 +269,11 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	outbound_xfr <- &env
 
 	close(outbound_xfr)
-	wg.Wait() // wait until everything is written out
-	w.Close() // close connection
+	wg.Wait()        // wait until everything is written out
+	err := w.Close() // close connection
+	if err != nil {
+		td.Logger.Printf("ZoneTransferOut: unable to close connection: %s", err)
+	}
 
 	td.Logger.Printf("ZoneTransferOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)
 

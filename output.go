@@ -7,6 +7,7 @@ package main
 import (
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -62,6 +63,7 @@ func (td *TemData) ParseOutputs() error {
 	serialFile := viper.GetString("output.rpz.serialcache")
 
 	if serialFile != "" {
+		serialFile = filepath.Clean(serialFile)
 		serialData, err := os.ReadFile(serialFile)
 		if err != nil {
 			td.Logger.Printf("Error reading serial from file %s: %v", serialFile, err)
