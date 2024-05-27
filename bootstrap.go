@@ -59,16 +59,15 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 		status, buf, err := api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
 			Command:  "export-greylist",
 			ListName: src.Name,
+			Encoding: "gob", // XXX: This is our default, but we'll test other encodings later
 		}, true)
 		if err != nil {
 			fmt.Printf("Error from RequestNG: %v\n", err)
-			// return nil, fmt.Errorf("Error from RequestNG: %v", err)
 			continue
 		}
 
 		if status != http.StatusOK {
 			fmt.Printf("HTTP Error: %s\n", buf)
-			// return nil, fmt.Errorf("HTTP Error: %s", buf)
 			continue
 		}
 

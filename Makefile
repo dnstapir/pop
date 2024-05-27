@@ -13,12 +13,14 @@ default: ${PROG}
 
 ${PROG}: build
 
-
 version.go:
 	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
 
-build: version.go
+build: version.go # ../tapir/tapir.pb.go
 	$(GO) build $(GOFLAGS) -o ${PROG}
+
+# ../tapir/tapir.pb.go: ../tapir/tapir.proto
+# 	make -C ../tapir tapir.pb.go
 
 linux:	
 	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)

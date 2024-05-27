@@ -1,5 +1,5 @@
 /*
- * Johan Stenstam, johani@johani.org
+ * Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 package main
 
@@ -233,17 +233,83 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 			log.Printf("Found %s greylist containing %d names", bp.ListName, len(greylist.Names))
 
-			w.Header().Set("Content-Type", "application/octet-stream")
-			w.Header().Set("Content-Disposition", "attachment; filename=greylist-dns-tapir.gob")
+			switch bp.Encoding {
+			case "gob":
+				w.Header().Set("Content-Type", "application/octet-stream")
+				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=greylist-%s.gob", bp.ListName))
 
-			encoder := gob.NewEncoder(w)
-			err := encoder.Encode(greylist)
-			if err != nil {
-				log.Printf("Error encoding greylist: %v", err)
+				encoder := gob.NewEncoder(w)
+				err := encoder.Encode(greylist)
+				if err != nil {
+					log.Printf("Error encoding greylist: %v", err)
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+					return
+				}
+
+				//			case "protobuf":
+				//				w.Header().Set("Content-Type", "application/octet-stream")
+				//				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=greylist-%s.protobuf", bp.ListName))
+				//
+				//				data, err := proto.Marshal(greylist)
+				//				if err != nil {
+				//					log.Printf("Error encoding greylist to protobuf: %v", err)
+				//					resp.Error = true
+				//					resp.ErrorMsg = err.Error()
+				//					return
+				//				}
+
+				//				_, err = w.Write(data)
+				//				if err != nil {
+				//					log.Printf("Error writing protobuf data to response: %v", err)
+				//					resp.Error = true
+				//					resp.ErrorMsg = err.Error()
+				//					return
+				//				}
+
+			// case "flatbuffer":
+			// 	w.Header().Set("Content-Type", "application/octet-stream")
+			// 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=greylist-%s.flatbuffer", bp.ListName))
+
+			// 	builder := flatbuffers.NewBuilder(0)
+			// 	names := make([]flatbuffers.UOffsetT, len(greylist.Names))
+
+			// 	i := 0
+			// 	for name := range greylist.Names {
+			// 		nameOffset := builder.CreateString(name)
+			// 		tapir.NameStart(builder)
+			// 		tapir.NameAddName(builder, nameOffset)
+			// 		names[i] = tapir.NameEnd(builder)
+			// 		i++
+			// 	}
+
+			// 	tapir.GreylistStartNamesVector(builder, len(names))
+			// 	for j := len(names) - 1; j >= 0; j-- {
+			// 		builder.PrependUOffsetT(names[j])
+			// 	}
+			// 	namesVector := builder.EndVector(len(names))
+
+			// 	tapir.GreylistStart(builder)
+			// 	tapir.GreylistAddNames(builder, namesVector)
+			// 	greylistOffset := tapir.GreylistEnd(builder)
+
+			// 	builder.Finish(greylistOffset)
+			// 	buf := builder.FinishedBytes()
+
+			// 	_, err := w.Write(buf)
+			// 	if err != nil {
+			// 		log.Printf("Error writing flatbuffer data to response: %v", err)
+			// 		resp.Error = true
+			// 		resp.ErrorMsg = err.Error()
+			// 		return
+			// 	}
+
+			default:
 				resp.Error = true
-				resp.ErrorMsg = err.Error()
+				resp.ErrorMsg = fmt.Sprintf("Unknown encoding: %s", bp.Encoding)
 				return
 			}
+
 		default:
 			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", bp.Command)
 			resp.Error = true
