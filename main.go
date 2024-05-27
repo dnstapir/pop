@@ -5,7 +5,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 
@@ -20,10 +19,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/dnstapir/tapir"
-)
-
-var (
-	soreuseport = flag.Int("soreuseport", 0, "use SO_REUSE_PORT")
 )
 
 var TEMExiter = func(args ...interface{}) {
@@ -73,7 +68,7 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 		}
 
 		fmt.Println(msg)
-		log.Printf(msg)
+		log.Print(msg)
 
 		// var done struct{}
 		// apistopper <- done
@@ -168,7 +163,7 @@ func main() {
 		TEMExiter("Error unmarshalling config into struct: %v", err)
 	}
 
-	fmt.Printf("TEM (TAPIR Edge Manager) version %s starting.\n", appVersion)
+	fmt.Printf("%s (TAPIR Edge Manager) version %s (%s) starting.\n", appName, appVersion, appDate)
 
 	var stopch = make(chan struct{}, 10)
 

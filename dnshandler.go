@@ -46,16 +46,6 @@ func DnsEngine(conf *Config) error {
 	return nil
 }
 
-func xxxGetKeepFunc(zone string) (string, func(uint16) bool) {
-	switch viper.GetString("service.filter") {
-	case "dnssec":
-		return "dnssec", tapir.DropDNSSECp
-	case "dnssec+zonemd":
-		return "dnssec+zonemd", tapir.DropDNSSECZONEMDp
-	}
-	return "none", func(t uint16) bool { return true }
-}
-
 func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 
 	td := conf.TemData
@@ -98,7 +88,7 @@ func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
 			} else {
 				lg.Printf("DnsHandler: Qname is '%s', which is not a known zone.", qname)
 				known_zones := []string{td.Rpz.ZoneName}
-				for z, _ := range td.RpzSources {
+				for z := range td.RpzSources {
 					known_zones = append(known_zones, z)
 				}
 				lg.Printf("DnsHandler: Known zones are: %v", known_zones)
@@ -264,7 +254,6 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 		m.MsgHdr.Rcode = dns.RcodeNameError
 		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
 		w.WriteMsg(m)
-		return
 	}
 
 	// log.Printf("Zone %s Data: %v", zd.ZoneName, zd.Data)
@@ -375,7 +364,6 @@ func (td *TemData) QueryResponder(w dns.ResponseWriter, r *dns.Msg, qname string
 		//		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
 		m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
 		w.WriteMsg(m)
-		return
 	}
 
 	// log.Printf("Zone %s Data: %v", zd.ZoneName, zd.Data)

@@ -431,7 +431,7 @@ func BumpSerial(conf *Config, zone string) (string, error) {
 	if resp.Error {
 		log.Printf("BumpSerial: Error from RefreshEngine: %s", resp.ErrorMsg)
 		return fmt.Sprintf("Zone %s: error bumping SOA serial: %s", zone, resp.ErrorMsg),
-			fmt.Errorf("Zone %s: error bumping SOA serial and epoch: %v", zone, resp.ErrorMsg)
+			fmt.Errorf("zone %s: error bumping SOA serial and epoch: %v", zone, resp.ErrorMsg)
 	}
 
 	if resp.Msg == "" {

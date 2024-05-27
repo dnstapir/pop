@@ -55,17 +55,14 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	reaperTicker := time.NewTicker(td.ReaperInterval)
 
 	go func() {
-		time.Sleep(reaperStart.Sub(time.Now()))
+		time.Sleep(time.Until(reaperStart))
 		reaperTicker.Reset(td.ReaperInterval)
 	}()
 
 	if !viper.GetBool("service.refresh.active") {
 		log.Printf("Refresh Engine is NOT active. Zones will only be updated on receipt on Notifies.")
-		for {
-			select {
-			case <-zonerefch: // ensure that we keep reading to keep the
-				continue // channel open
-			}
+		for range zonerefch { // ensure that we keep reading to keep the
+			continue // channel open
 		}
 	} else {
 		log.Printf("RefreshEngine: Starting")

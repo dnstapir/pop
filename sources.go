@@ -281,7 +281,7 @@ func (td *TemData) ParseSources() error {
 
 			switch s["active"].(type) {
 			case bool:
-				if s["active"].(bool) == false {
+				if !s["active"].(bool) {
 					td.Logger.Printf("*** Source \"%s\" is not active (%v). Ignored.",
 						name, s["active"])
 					continue
@@ -463,7 +463,7 @@ func (td *TemData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan stri
 
 	upstream := viper.GetString(fmt.Sprintf("sources.%s.upstream", sourceid))
 	if upstream == "" {
-		return fmt.Errorf("Unable to load RPZ source %s, upstream address not specified.",
+		return fmt.Errorf("unable to load RPZ source %s, upstream address not specified",
 			sourceid)
 	}
 

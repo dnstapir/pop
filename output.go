@@ -112,11 +112,11 @@ func (td *TemData) GenerateRpzAxfr() error {
 		case "dawg":
 			td.Logger.Printf("Cannot list DAWG lists. Ignoring blacklist %s.", bname)
 		case "map":
-			for k, _ := range blist.Names {
-				if tapir.GlobalCF.Debug {
-					// td.Logger.Printf("Adding name %s from blacklist %s to tentative output.",
-					// 	k, bname)
-				}
+			for k := range blist.Names {
+				//if tapir.GlobalCF.Debug {
+				//	// td.Logger.Printf("Adding name %s from blacklist %s to tentative output.",
+				//	// 	k, bname)
+				//}
 				if td.Whitelisted(k) {
 					// td.Logger.Printf("Blacklisted name %s is also whitelisted. Dropped from output.", k)
 				} else {
@@ -167,9 +167,8 @@ func (td *TemData) GenerateRpzAxfr() error {
 	td.GreylistedNames = grey
 	td.Logger.Printf("GenRpzAxfr: There are a total of %d greylisted names in the sources", len(grey))
 
-	newaxfrdata := []*tapir.RpzName{}
 	td.Rpz.RpzMap = map[string]*tapir.RpzName{}
-	for name, _ := range td.BlacklistedNames {
+	for name := range td.BlacklistedNames {
 		cname := new(dns.CNAME)
 		cname.Hdr = dns.RR_Header{
 			Name:   name + td.Rpz.ZoneName,
@@ -185,7 +184,6 @@ func (td *TemData) GenerateRpzAxfr() error {
 			RR:     &rr,
 			Action: td.Policy.BlacklistAction,
 		}
-		newaxfrdata = append(newaxfrdata, &rpzn)
 		// td.Rpz.RpzMap[nname+td.Rpz.ZoneName] = &rpzn
 		td.mu.Lock()
 		td.Rpz.Axfr.Data[name+td.Rpz.ZoneName] = &rpzn
@@ -212,7 +210,6 @@ func (td *TemData) GenerateRpzAxfr() error {
 				RR:     &rr,
 				Action: td.Policy.BlacklistAction, // XXX: naa
 			}
-			newaxfrdata = append(newaxfrdata, &rpzn)
 			// td.Rpz.RpzMap[name+td.Rpz.ZoneName] = &rpzn
 			td.mu.Lock()
 			td.Rpz.Axfr.Data[name+td.Rpz.ZoneName] = &rpzn
@@ -406,8 +403,6 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 							tn.Name, tapir.ActionToString[newAction],
 							tapir.ActionToString[cur.Action])
 					}
-				} else {
-					// no change, do nothing
 				}
 			}
 		} else {

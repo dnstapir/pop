@@ -150,9 +150,9 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 
 	if len(r.Ns) > 0 {
 		for _, rr := range r.Ns {
-			switch rr.(type) {
+			switch rr := rr.(type) {
 			case *dns.SOA:
-				curserial = rr.(*dns.SOA).Serial
+				curserial = rr.Serial
 			default:
 				td.Logger.Printf("RpzIxfrOut: unexpected RR in IXFR request Authority section:\n%s\n",
 					rr.String())
