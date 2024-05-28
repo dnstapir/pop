@@ -36,7 +36,7 @@ func (td *TemData) SaveRpzSerial() error {
 	// serialData := []byte(fmt.Sprintf("%d", td.Rpz.CurrentSerial))
 	// err := os.WriteFile(serialFile, serialData, 0644)
 	serialYaml := fmt.Sprintf("current_serial: %d\n", td.Rpz.CurrentSerial)
-	err := os.WriteFile(serialFile, []byte(serialYaml), 0644)
+	err := os.WriteFile(serialFile, []byte(serialYaml), 0644) // #nosec: G306
 	if err != nil {
 		log.Printf("Error writing YAML serial to file: %v", err)
 	} else {
@@ -202,7 +202,11 @@ func main() {
 	go APIdispatcher(&conf, apistopper)
 	//	go httpsserver(&conf, apistopper)
 
-	go DnsEngine(&conf)
+	go func() {
+		if err := DnsEngine(&conf); err != nil {
+			log.Printf("Error starting DnsEngine: %v", err)
+		}
+	}()
 	conf.BootTime = time.Now()
 
 	mainloop(&conf, &cfgFileUsed, td)

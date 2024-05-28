@@ -32,7 +32,7 @@ func SetupLogging(conf *Config) {
 	logfile = viper.GetString("policy.logfile")
 	if logfile != "" {
 		logfile = filepath.Clean(logfile)
-		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec: G302w
 		if err != nil {
 			TEMExiter("error opening TEM policy logfile '%s': %v", logfile, err)
 		}
@@ -53,7 +53,7 @@ func SetupLogging(conf *Config) {
 	logfile = viper.GetString("dnsengine.logfile")
 	if logfile != "" {
 		logfile = filepath.Clean(logfile)
-		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec: G302w
 		if err != nil {
 			TEMExiter("error opening TEM dnsengine logfile '%s': %v", logfile, err)
 		}
@@ -74,7 +74,7 @@ func SetupLogging(conf *Config) {
 	logfile = viper.GetString("mqtt.logfile")
 	if logfile != "" {
 		logfile = filepath.Clean(logfile)
-		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec: G302w
 		if err != nil {
 			TEMExiter("error opening TEM MQTT logfile '%s': %v", logfile, err)
 		}
