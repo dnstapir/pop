@@ -20,7 +20,7 @@ func (td *TemData) CreateMqttEngine(clientid string, lg *log.Logger) error {
 	td.Logger.Printf("Creating MQTT Engine with clientid %s", clientid)
 	td.MqttEngine, err = tapir.NewMqttEngine(clientid, tapir.TapirSub, lg) // sub, but no pub
 	if err != nil {
-		td.Logger.Printf("Error from NewMqttEngine: %v\n", err)
+		TEMExiter("Error from NewMqttEngine: %v\n", err)
 	}
 	return nil
 }

@@ -50,6 +50,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	td.Lists["greylist"] = make(map[string]*tapir.WBGlist, 3)
 	td.Lists["blacklist"] = make(map[string]*tapir.WBGlist, 3)
 	td.Downstreams = map[string]RpzDownstream{}
+	td.DownstreamSerials = map[string]uint32{}
 
 	err := td.ParseOutputs()
 	if err != nil {
@@ -168,6 +169,8 @@ func (td *TemData) ParseSourcesNG() error {
 		td.mu.Unlock()
 	}
 
+	td.Logger.Printf("ParseSourcesNG: MQTT Engine: %v", td.MqttEngine)
+
 	for name, src := range srcs {
 		if !*src.Active {
 			td.Logger.Printf("*** ParseSourcesNG: Source \"%s\" is not active. Ignored.", name)
@@ -198,6 +201,7 @@ func (td *TemData) ParseSourcesNG() error {
 				RpzZoneName: dns.Fqdn(src.Zone),
 			}
 
+			td.Logger.Printf("ParseSourcesNG: thread %d working on source \"%s\" (%s)", thread, name, src.Source)
 			switch src.Source {
 			case "mqtt":
 				td.Logger.Printf("ParseSourcesNG: Fetching MQTT validator key for topic %s", src.Topic)
@@ -206,6 +210,7 @@ func (td *TemData) ParseSourcesNG() error {
 					td.Logger.Printf("ParseSources: Error fetching MQTT validator key for topic %s: %v", src.Topic, err)
 				}
 
+				td.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
 				err = td.MqttEngine.AddTopic(src.Topic, valkey)
 				if err != nil {
 					TEMExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)

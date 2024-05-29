@@ -36,7 +36,7 @@ func (td *TemData) SaveRpzSerial() error {
 	// serialData := []byte(fmt.Sprintf("%d", td.Rpz.CurrentSerial))
 	// err := os.WriteFile(serialFile, serialData, 0644)
 	serialYaml := fmt.Sprintf("current_serial: %d\n", td.Rpz.CurrentSerial)
-	err := os.WriteFile(serialFile, []byte(serialYaml), 0644) // #nosec: G306
+	err := os.WriteFile(serialFile, []byte(serialYaml), 0644) // #nosec G306
 	if err != nil {
 		log.Printf("Error writing YAML serial to file: %v", err)
 	} else {
@@ -161,7 +161,6 @@ func main() {
 		TEMExiter("Could not load config %s: Error: %v", tapir.TemPolicyCfgFile, err)
 	}
 
-	// logfile := viper.GetString("log.file")
 	SetupLogging(&conf)
 	fmt.Printf("Policy Logging to logger: %v\n", conf.Loggers.Policy)
 
