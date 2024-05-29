@@ -179,7 +179,14 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	zone := td.Rpz.ZoneName
 	td.mu.Unlock()
 
-	if curserial < td.Rpz.IxfrChain[0].FromSerial {
+	if len(td.Rpz.IxfrChain) == 0 {
+		td.Logger.Printf("RpzIxfrOut: Downstream %s claims to have RPZ %s with serial %d, but the IXFR chain is empty; AXFR needed", downstream, zone, curserial)
+		serial, _, err := td.RpzAxfrOut(w, r)
+		if err != nil {
+			return 0, 0, err
+		}
+		return serial, 0, nil
+	} else if curserial < td.Rpz.IxfrChain[0].FromSerial {
 		td.Logger.Printf("RpzIxfrOut: Downstream %s claims to have RPZ %s with serial %d, but the IXFR chain starts at %d; AXFR needed", downstream, zone, curserial, td.Rpz.IxfrChain[0].FromSerial)
 		serial, _, err := td.RpzAxfrOut(w, r)
 		if err != nil {

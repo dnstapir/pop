@@ -409,7 +409,7 @@ func (td *TemData) NotifyDownstreams() error {
 		m := new(dns.Msg)
 		m.SetNotify(td.Rpz.ZoneName)
 		td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial
-		m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
+		// m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
 		dest := net.JoinHostPort(d.Address, strconv.Itoa(d.Port))
 		td.Logger.Printf("RefreshEngine: Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, td.Rpz.Axfr.SOA.Serial, td.Rpz.ZoneName)
 		r, err := dns.Exchange(m, dest)
