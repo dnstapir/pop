@@ -80,6 +80,12 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				Status: "stopping",
 				Msg:    "Daemon was happy, but now winding down",
 			}
+			log.Printf("Stopping MQTT engine\n")
+			_, err := conf.TemData.MqttEngine.StopEngine()
+			if err != nil {
+				resp.Error = true
+				resp.ErrorMsg = err.Error()
+			}
 			conf.Internal.APIStopCh <- struct{}{}
 		case "bump":
 			resp.Msg, err = BumpSerial(conf, cp.Zone)
