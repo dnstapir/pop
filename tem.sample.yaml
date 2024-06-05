@@ -31,9 +31,10 @@ dnsengine:
    addresses:	127.0.0.1:5359
 
 mqtt:
+   logfile:		/var/log/dnstapir/tem-mqtt.log
    server:		mqtt.dev.dnstapir.se:8883
    uid:			johani
-   clientid:		johani-tem
+   clientid:		this-must-be-unique
    topic:		events/up/johani/frobozz
    cacert:              /etc/dnstapir/certs/tapirCA.crt
    clientcert:          /etc/dnstapir/certs/mqttclient.crt

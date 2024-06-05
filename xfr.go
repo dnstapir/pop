@@ -74,6 +74,7 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	go func() {
 		err := tr.Out(w, r, outbound_xfr)
 		if err != nil {
+			fmt.Printf("Error from transfer.Out(): %v\n", err)
 			td.Logger.Printf("Error from transfer.Out(): %v", err)
 		}
 		wg.Done()
@@ -81,35 +82,37 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 
 	count := 0
 	send_count := 0
-	env := dns.Envelope{}
 
 	td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial
-	env.RR = append(env.RR, dns.RR(&td.Rpz.Axfr.SOA))
-	//	total_sent := 1
+	rrs := []dns.RR{dns.RR(&td.Rpz.Axfr.SOA)}
+	// td.Logger.Printf("RpzAxfrOut: Adding SOA RR to env:%s", rrs[0].String())
 	var total_sent int
 
-	env.RR = append(env.RR, td.Rpz.Axfr.NSrrs...)
+	rrs = append(rrs, td.Rpz.Axfr.NSrrs...)
+	count = len(rrs)
 
 	for _, rpzn := range td.Rpz.Axfr.Data {
-		env.RR = append(env.RR, *rpzn.RR) // should do proper slice magic instead
+		// td.Logger.Printf("RpzAxfrOut: Adding RR to env:%s", (*rpzn.RR).String())
+		rrs = append(rrs, *rpzn.RR)
 		count++
 		if count >= 500 {
 			send_count++
-			total_sent += len(env.RR)
-			// fmt.Printf("Sending %d RRs\n", len(env.RR))
-			outbound_xfr <- &env
-			// fmt.Printf("Sent %d RRs: done\n", len(env.RR))
-			env = dns.Envelope{}
+			total_sent += len(rrs)
+			outbound_xfr <- &dns.Envelope{RR: rrs}
+			// tmprrs := new([]dns.RR)
+			// rrs = *tmprrs
+			rrs = []dns.RR{}
 			count = 0
 		}
 	}
 
-	env.RR = append(env.RR, dns.RR(&td.Rpz.Axfr.SOA)) // trailing SOA
+	rrs = append(rrs, dns.RR(&td.Rpz.Axfr.SOA)) // trailing SOA
 
-	total_sent += len(env.RR)
-	//	td.Logger.Printf("RpzAxfrOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d)\n",
-	//		zone, len(env.RR), total_sent)
-	outbound_xfr <- &env
+	total_sent += len(rrs)
+	// td.Logger.Printf("RpzAxfrOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d). First is %s",
+	//		zone, len(env.RR), total_sent, env.RR[0].String())
+	outbound_xfr <- &dns.Envelope{RR: rrs}
+	td.Logger.Printf("RpzAxfrOut: Sent final %d RRs: done. Last was %s", len(rrs), rrs[len(rrs)-1].String())
 
 	close(outbound_xfr)
 	wg.Wait()        // wait until everything is written out
