@@ -161,8 +161,7 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 			case *dns.SOA:
 				curserial = rr.Serial
 			default:
-				td.Logger.Printf("RpzIxfrOut: unexpected RR in IXFR request Authority section:\n%s\n",
-					rr.String())
+				td.Logger.Printf("RpzIxfrOut: unexpected RR in IXFR request Authority section:\n%s\n", rr.String())
 			}
 		}
 	}
