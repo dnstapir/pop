@@ -98,10 +98,10 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		if count >= 500 {
 			send_count++
 			total_sent += len(rrs)
+			// fmt.Printf("Sending %d RRs\n", len(rrs))
 			outbound_xfr <- &dns.Envelope{RR: rrs}
-			// tmprrs := new([]dns.RR)
-			// rrs = *tmprrs
 			rrs = []dns.RR{}
+			// fmt.Printf("Sent %d RRs: done\n", len(rrs))
 			count = 0
 		}
 	}
@@ -109,10 +109,9 @@ func (td *TemData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	rrs = append(rrs, dns.RR(&td.Rpz.Axfr.SOA)) // trailing SOA
 
 	total_sent += len(rrs)
-	// td.Logger.Printf("RpzAxfrOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d). First is %s",
-	//		zone, len(env.RR), total_sent, env.RR[0].String())
+	//	td.Logger.Printf("RpzAxfrOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d)\n",
+	//		zone, len(rrs), total_sent)
 	outbound_xfr <- &dns.Envelope{RR: rrs}
-	td.Logger.Printf("RpzAxfrOut: Sent final %d RRs: done. Last was %s", len(rrs), rrs[len(rrs)-1].String())
 
 	close(outbound_xfr)
 	wg.Wait()        // wait until everything is written out
@@ -217,12 +216,12 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		wg.Done()
 	}()
 
-	env := dns.Envelope{}
+	rrs := []dns.RR{}
 
 	var total_sent int
 
 	td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial
-	env.RR = append(env.RR, dns.RR(&td.Rpz.Axfr.SOA))
+	rrs = append(rrs, dns.RR(&td.Rpz.Axfr.SOA))
 
 	var totcount, count int
 	var finalSerial uint32
@@ -238,7 +237,7 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 			if td.Debug {
 				td.Logger.Printf("IxfrOut: adding FROMSOA to output: %s", fromsoa.String())
 			}
-			env.RR = append(env.RR, fromsoa)
+			rrs = append(rrs, fromsoa)
 			count++
 			td.Logger.Printf("RpzIxfrOut: IXFR[%d,%d] has %d RRs in the removal list",
 				ixfr.FromSerial, ixfr.ToSerial, len(ixfr.Removed))
@@ -246,15 +245,15 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 				if td.Debug {
 					td.Logger.Printf("DEL: adding RR to ixfr output: %s", tn.Name)
 				}
-				env.RR = append(env.RR, *tn.RR) // should do proper slice magic instead
+				rrs = append(rrs, *tn.RR) // should do proper slice magic instead
 				count++
 				if count >= 500 {
-					td.Logger.Printf("Sending %d RRs\n", len(env.RR))
-					for _, rr := range env.RR {
+					td.Logger.Printf("Sending %d RRs\n", len(rrs))
+					for _, rr := range rrs {
 						td.Logger.Printf("SEND DELS: %s", rr.String())
 					}
-					outbound_xfr <- &env
-					env = dns.Envelope{}
+					outbound_xfr <- &dns.Envelope{RR: rrs}
+					rrs = []dns.RR{}
 					totcount += count
 					count = 0
 				}
@@ -264,7 +263,7 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 			if td.Debug {
 				td.Logger.Printf("RpzIxfrOut: adding TOSOA to output: %s", tosoa.String())
 			}
-			env.RR = append(env.RR, tosoa)
+			rrs = append(rrs, tosoa)
 			count++
 			td.Logger.Printf("RpzIxfrOut: IXFR[%d,%d] has %d RRs in the added list",
 				ixfr.FromSerial, ixfr.ToSerial, len(ixfr.Added))
@@ -272,16 +271,16 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 				if td.Debug {
 					td.Logger.Printf("ADD: adding RR to ixfr output: %s", tn.Name)
 				}
-				env.RR = append(env.RR, *tn.RR) // should do proper slice magic instead
+				rrs = append(rrs, *tn.RR) // should do proper slice magic instead
 				count++
 				if count >= 500 {
-					td.Logger.Printf("Sending %d RRs\n", len(env.RR))
-					for _, rr := range env.RR {
+					td.Logger.Printf("Sending %d RRs\n", len(rrs))
+					for _, rr := range rrs {
 						td.Logger.Printf("SEND ADDS: %s", rr.String())
 					}
-					outbound_xfr <- &env
-					// fmt.Printf("Sent %d RRs: done\n", len(env.RR))
-					env = dns.Envelope{}
+					outbound_xfr <- &dns.Envelope{RR: rrs}
+					// fmt.Printf("Sent %d RRs: done\n", len(rrs))
+					rrs = []dns.RR{}
 					totcount += count
 					count = 0
 				}
@@ -289,17 +288,17 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		}
 	}
 
-	env.RR = append(env.RR, dns.RR(&td.Rpz.Axfr.SOA)) // trailing SOA
+	rrs = append(rrs, dns.RR(&td.Rpz.Axfr.SOA)) // trailing SOA
 
-	total_sent += len(env.RR)
+	total_sent += len(rrs)
 	td.Logger.Printf("RpzIxfrOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d)\n",
-		zone, len(env.RR), total_sent)
+		zone, len(rrs), total_sent)
 
-	//	td.Logger.Printf("Sending %d RRs\n", len(env.RR))
-	//	for _, rr := range env.RR {
+	//	td.Logger.Printf("Sending %d RRs\n", len(rrs))
+	//	for _, rr := range rrs {
 	//		td.Logger.Printf("SEND FINAL: %s", rr.String())
 	//	}
-	outbound_xfr <- &env
+	outbound_xfr <- &dns.Envelope{RR: rrs}
 
 	close(outbound_xfr)
 	wg.Wait()       // wait until everything is written out
