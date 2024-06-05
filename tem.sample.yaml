@@ -17,16 +17,6 @@ bootstrapserver:
    address:
    tlsaddress:
 
-# server:
-#    listen:	127.0.0.1
-#    port:	9097
-#   upstreams:	[ nsa.johani.org:53 ]
-#   downstreams:	[ 127.0.0.1:9999 ]  	# unbound
-#   xferzones:	[ ]  # not useful for TAPIR
-#   mapzones:	[ ]  # likely not useful for TAPIR
-#   slicezones:	[ rpz.threat-feed.com ]
-#   slicezones:	[ ]
-
 dnsengine:
    addresses:	127.0.0.1:5359
 
@@ -35,13 +25,15 @@ mqtt:
    server:		mqtt.dev.dnstapir.se:8883
    uid:			johani
    clientid:		this-must-be-unique
-   topic:		events/up/johani/frobozz
+#   topic:		events/up/johani/frobozz
    cacert:              /etc/dnstapir/certs/tapirCA.crt
    clientcert:          /etc/dnstapir/certs/mqttclient.crt
    clientkey:           /etc/dnstapir/certs/mqttclient-key.pem
    signingkey:          /etc/dnstapir/certs/mqttsigner-key.pem
-   validatorkey:        /etc/dnstapir/certs/mqttsigner-pub.pem
+#   validatorkey:        /etc/dnstapir/certs/mqttsigner-pub.pem
    qos:                 2
+   configtopic:		events/up/johani/config
+   configvalidatorkey:     /etc/dnstapir/certs/mqttsigner-pub.pem
 
 output:
    reaper:

@@ -99,6 +99,10 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				log.Printf("RefreshEngine: Tapir Observation update evaluated.")
 
 			case "global-config":
+				if !strings.HasSuffix(tpkg.Topic, "config") {
+					log.Printf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic)
+					continue
+				}
 				td.ProcessTapirGlobalConfig(tpkg.Data)
 				log.Printf("RefreshEngine: Tapir Global Config evaluated.")
 
