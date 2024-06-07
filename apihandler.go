@@ -247,6 +247,7 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			stats := me.Stats()
 			resp.MsgCounters = stats.MsgCounters
 			resp.MsgTimeStamps = stats.MsgTimeStamps
+			log.Printf("API: greylist-status: msgs: %d last msg: %v", stats.MsgCounters[bp.ListName], stats.MsgTimeStamps[bp.ListName])
 
 		case "export-greylist":
 			td := conf.TemData
