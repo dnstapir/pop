@@ -29,7 +29,7 @@ var TEMExiter = func(args ...interface{}) {
 
 func (td *TemData) SaveRpzSerial() error {
 	// Save the current value of td.Downstreams.Serial to a text file
-	serialFile := viper.GetString("output.rpz.serialcache")
+	serialFile := viper.GetString("services.rpz.serialcache")
 	if serialFile == "" {
 		log.Fatalf("TEMExiter:No serial cache file specified")
 	}
@@ -162,7 +162,6 @@ func main() {
 	}
 
 	SetupLogging(&conf)
-	fmt.Printf("Policy Logging to logger: %v\n", conf.Loggers.Policy)
 
 	err := ValidateConfig(nil, cfgFileUsed) // will terminate on error
 	if err != nil {

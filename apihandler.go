@@ -242,6 +242,12 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("API: received /bootstrap request (cmd: %s) from %s.\n", bp.Command, r.RemoteAddr)
 
 		switch bp.Command {
+		case "greylist-status":
+			me := conf.TemData.MqttEngine
+			stats := me.Stats()
+			resp.MsgCounters = stats.MsgCounters
+			resp.MsgTimeStamps = stats.MsgTimeStamps
+
 		case "export-greylist":
 			td := conf.TemData
 			td.mu.RLock()
@@ -501,13 +507,13 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 	walkRoutes(router, viper.GetString("apiserver.address"))
 	log.Println("")
 
-	address := viper.GetString("apiserver.address")
-	tlsaddress := viper.GetString("apiserver.tlsaddress")
+	addresses := viper.GetStringSlice("apiserver.addresses")
+	tlsaddresses := viper.GetStringSlice("apiserver.tlsaddresses")
 	certfile := viper.GetString("certs.tem.cert")
 	keyfile := viper.GetString("certs.tem.key")
 
-	bootstrapaddress := viper.GetString("bootstrapserver.address")
-	bootstraptlsaddress := viper.GetString("bootstrapserver.tlsaddress")
+	bootstrapaddresses := viper.GetStringSlice("bootstrapserver.addresses")
+	bootstraptlsaddresses := viper.GetStringSlice("bootstrapserver.tlsaddresses")
 	bootstraprouter := SetupBootstrapRouter(conf)
 
 	tlspossible := true
@@ -529,79 +535,87 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 		TEMExiter("Error creating API server tls config: %v\n", err)
 	}
 
-	tlsServer := &http.Server{
-		Addr:         tlsaddress,
-		Handler:      router,
-		TLSConfig:    tlsConfig,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-	}
-	bootstrapTlsServer := &http.Server{
-		Addr:         bootstraptlsaddress,
-		Handler:      bootstraprouter,
-		TLSConfig:    tlsConfig,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-	}
-
 	var wg sync.WaitGroup
 
-	log.Println("*** API: Starting API dispatcher #1. Listening on", address)
+	// log.Println("*** API: Starting API dispatcher #1. Listening on", address)
 
-	if address != "" {
-		wg.Add(1)
-		go func(wg *sync.WaitGroup) {
-			apiServer := &http.Server{
-				Addr:         address,
-				Handler:      router,
-				ReadTimeout:  10 * time.Second,
-				WriteTimeout: 10 * time.Second,
-			}
-
-			log.Println("*** API: Starting API dispatcher #1. Listening on", address)
-			wg.Done()
-			TEMExiter(apiServer.ListenAndServe())
-		}(&wg)
-	}
-
-	if tlsaddress != "" {
-		if tlspossible {
+	if len(addresses) > 0 {
+		for idx, address := range addresses {
 			wg.Add(1)
 			go func(wg *sync.WaitGroup) {
-				log.Println("*** API: Starting TLS API dispatcher #1. Listening on", tlsaddress)
+				apiServer := &http.Server{
+					Addr:         address,
+					Handler:      router,
+					ReadTimeout:  10 * time.Second,
+					WriteTimeout: 10 * time.Second,
+				}
+
+				log.Printf("*** API: Starting API dispatcher #%d. Listening on %s", idx+1, address)
 				wg.Done()
-				TEMExiter(tlsServer.ListenAndServeTLS(certfile, keyfile))
+				TEMExiter(apiServer.ListenAndServe())
 			}(&wg)
+		}
+	}
+
+	if len(tlsaddresses) > 0 {
+		if tlspossible {
+			for idx, tlsaddress := range tlsaddresses {
+				wg.Add(1)
+				go func(wg *sync.WaitGroup) {
+					tlsServer := &http.Server{
+						Addr:         tlsaddress,
+						Handler:      router,
+						TLSConfig:    tlsConfig,
+						ReadTimeout:  10 * time.Second,
+						WriteTimeout: 10 * time.Second,
+					}
+					log.Printf("*** API: Starting TLS API dispatcher #%d. Listening on %s", idx+1, tlsaddress)
+					wg.Done()
+					TEMExiter(tlsServer.ListenAndServeTLS(certfile, keyfile))
+				}(&wg)
+			}
 		} else {
 			log.Printf("*** API: APIdispatcher: Error: Cannot provide TLS service without cert and key files.\n")
 		}
 	}
 
-	if bootstrapaddress != "" {
-		wg.Add(1)
-		go func(wg *sync.WaitGroup) {
-			apiServer := &http.Server{
-				Addr:         bootstrapaddress,
-				Handler:      bootstraprouter,
-				ReadTimeout:  10 * time.Second,
-				WriteTimeout: 10 * time.Second,
-			}
-			log.Println("*** API: Starting Bootstrap API dispatcher #1. Listening on", bootstrapaddress)
-			wg.Done()
-			TEMExiter(apiServer.ListenAndServe())
-		}(&wg)
+	if len(bootstrapaddresses) > 0 {
+		for idx, address := range bootstrapaddresses {
+			wg.Add(1)
+			go func(wg *sync.WaitGroup) {
+				apiServer := &http.Server{
+					Addr:         address,
+					Handler:      bootstraprouter,
+					ReadTimeout:  10 * time.Second,
+					WriteTimeout: 10 * time.Second,
+				}
+				log.Printf("*** API: Starting Bootstrap API dispatcher #%d. Listening on %s", idx+1, address)
+				wg.Done()
+				TEMExiter(apiServer.ListenAndServe())
+			}(&wg)
+		}
 	} else {
 		log.Println("*** API: No bootstrap address specified")
 	}
 
-	if bootstraptlsaddress != "" {
+	if len(bootstraptlsaddresses) > 0 {
 		if tlspossible {
-			wg.Add(1)
-			go func(wg *sync.WaitGroup) {
-				log.Println("*** API: Starting Bootstrap TLS API dispatcher #1. Listening on", bootstraptlsaddress)
-				wg.Done()
-				TEMExiter(bootstrapTlsServer.ListenAndServeTLS(certfile, keyfile))
-			}(&wg)
+			for idx, address := range bootstraptlsaddresses {
+				wg.Add(1)
+				go func(wg *sync.WaitGroup) {
+					bootstrapTlsServer := &http.Server{
+						Addr:         address,
+						Handler:      bootstraprouter,
+						TLSConfig:    tlsConfig,
+						ReadTimeout:  10 * time.Second,
+						WriteTimeout: 10 * time.Second,
+					}
+
+					log.Printf("*** API: Starting Bootstrap TLS API dispatcher #%d. Listening on %s", idx+1, address)
+					wg.Done()
+					TEMExiter(bootstrapTlsServer.ListenAndServeTLS(certfile, keyfile))
+				}(&wg)
+			}
 		} else {
 			log.Printf("*** API: APIdispatcher: Error: Cannot provide Bootstrap TLS service without cert and key files.\n")
 		}

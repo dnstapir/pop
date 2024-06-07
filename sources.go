@@ -21,7 +21,7 @@ import (
 func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	rpzdata := RpzData{
 		CurrentSerial: 1,
-		ZoneName:      viper.GetString("output.rpz.zonename"),
+		ZoneName:      viper.GetString("services.rpz.zonename"),
 		IxfrChain:     []RpzIxfr{},
 		Axfr: RpzAxfr{
 			Data: map[string]*tapir.RpzName{},
@@ -29,7 +29,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 		// RpzMap: map[string]*tapir.RpzName{},
 	}
 
-	repint := viper.GetInt("output.reaper.interval")
+	repint := viper.GetInt("services.reaper.interval")
 	if repint == 0 {
 		repint = 60
 	}
@@ -169,7 +169,7 @@ func (td *TemData) ParseSourcesNG() error {
 		td.mu.Unlock()
 	}
 
-	td.Logger.Printf("ParseSourcesNG: MQTT Engine: %v", td.MqttEngine)
+	// td.Logger.Printf("ParseSourcesNG: MQTT Engine: %v", td.MqttEngine)
 
 	for name, src := range srcs {
 		if !*src.Active {

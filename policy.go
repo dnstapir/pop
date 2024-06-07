@@ -74,7 +74,7 @@ func (td *TemData) ParseOutputs() error {
 		}
 	}
 	// Read the current value of td.Downstreams.Serial from a text file
-	serialFile := viper.GetString("output.rpz.serialcache")
+	serialFile := viper.GetString("services.rpz.serialcache")
 
 	if serialFile != "" {
 		serialFile = filepath.Clean(serialFile)
