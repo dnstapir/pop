@@ -71,7 +71,7 @@ func SetupLogging(conf *Config) {
 		conf.Loggers.Dnsengine = log.Default()
 	}
 
-	logfile = viper.GetString("mqtt.logfile")
+	logfile = viper.GetString("tapir.mqtt.logfile")
 	if logfile != "" {
 		logfile = filepath.Clean(logfile)
 		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec G302

@@ -73,8 +73,14 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 			ListName: src.Name,
 			Encoding: "json", // XXX: This is our default, but we'll test other encodings later
 		}, true)
+
 		if err != nil {
 			fmt.Printf("Error from RequestNG: %v\n", err)
+			continue
+		}
+
+		if status != http.StatusOK {
+			td.Logger.Printf("HTTP Error: %s\n", buf)
 			continue
 		}
 

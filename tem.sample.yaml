@@ -35,19 +35,26 @@ services:
       active:		true
       name:		TEM Source Refresher
 
-mqtt:
-   logfile:		/var/log/dnstapir/tem-mqtt.log
-   server:		tls://mqtt.dev.dnstapir.se:8883
-   uid:			johani
-   clientid:		this-must-be-unique
-   cacert:              /etc/dnstapir/certs/tapirCA.crt
-   clientcert:          /etc/dnstapir/certs/mqttclient.crt
-   clientkey:           /etc/dnstapir/certs/mqttclient-key.pem
-   signingkey:          /etc/dnstapir/certs/mqttsigner-key.pem
-#   validatorkey:        /etc/dnstapir/certs/mqttsigner-pub.pem
-   qos:                 2
-   configtopic:		events/up/johani/config
-   configvalidatorkey:     /etc/dnstapir/certs/mqttsigner-pub.pem
+tapir:
+   mqtt:
+      logfile:		/var/log/dnstapir/tem-mqtt.log
+      server:		tls://mqtt.dev.dnstapir.se:8883
+      uid:		johani
+      clientid:		this-must-be-unique
+      cacert:		/etc/dnstapir/certs/tapirCA.crt
+      clientcert:	/etc/dnstapir/certs/mqttclient.crt
+      clientkey:	/etc/dnstapir/certs/mqttclient-key.pem
+      qos:		2
+
+   observations:
+      srcname:		dns-tapir
+      topic:		events/up/johani/observations
+      validatorkey:	/etc/dnstapir/certs/mqttsigner-pub.pem
+
+   config:
+      srcname:		dns-tapir
+      topic:		events/up/johani/config
+      validatorkey:	/etc/dnstapir/certs/mqttsigner-pub.pem
 
 # redirects:
 #    tapir:	landing-page.dnstapir.se
