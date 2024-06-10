@@ -96,9 +96,9 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 			case <-hupper:
 				// config file to use has already been set in main()
 				if err := viper.ReadInConfig(); err == nil {
-					fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
+					fmt.Fprintln(os.Stderr, "Using config file:", *configfile)
 				} else {
-					TEMExiter("Could not load config %s: Error: %v", viper.ConfigFileUsed(), err)
+					TEMExiter("Could not load config %s: Error: %v", *configfile, err)
 				}
 
 				log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
