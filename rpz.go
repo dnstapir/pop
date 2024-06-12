@@ -183,6 +183,7 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 	var removeData, addData []*tapir.RpzName
 	td.Policy.Logger.Printf("GenerateRpzIxfr: %d removed names and %d added names", len(data.Removed), len(data.Added))
 	for _, tn := range data.Removed {
+		tn.Name = dns.Fqdn(tn.Name)
 		td.Policy.Logger.Printf("GenerateRpzIxfr: evaluating removed name %s", tn.Name)
 		if cur, exist := td.Rpz.Axfr.Data[tn.Name]; exist {
 			newAction := td.ComputeRpzAction(tn.Name)
@@ -228,6 +229,7 @@ func (td *TemData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 
 	var addtorpz bool
 	for _, tn := range data.Added {
+		tn.Name = dns.Fqdn(tn.Name)
 		td.Policy.Logger.Printf("GenerateRpzIxfr: evaluating added name %s", tn.Name)
 		addtorpz = false
 		newAction := td.ComputeRpzAction(tn.Name)
