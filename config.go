@@ -15,13 +15,13 @@ import (
 )
 
 type Config struct {
-	Service   ServiceConf
-	Server    ServerConf
-	Apiserver ApiserverConf
-	Dnsengine DnsengineConf
-	Sources   map[string]SourceConf
-	Policy    PolicyConf
-	Log       struct {
+	Services        ServicesConf
+	ApiServer       ApiserverConf
+	DnsEngine       DnsengineConf
+	BootstrapServer BootstrapServerConf
+	Sources         map[string]SourceConf
+	Policy          PolicyConf
+	Log             struct {
 		File    string `validate:"required"`
 		Verbose *bool  `validate:"required"`
 		Debug   *bool  `validate:"required"`
@@ -36,12 +36,40 @@ type Config struct {
 	BootTime time.Time
 }
 
-type ServiceConf struct {
-	Name string `validate:"required"`
-	//	Filter           string `validate:"required"`
-	Reset_Soa_Serial *bool `validate:"required"`
-	Debug            *bool
-	Verbose          *bool
+type ServicesConf struct {
+	Rpz struct {
+		ZoneName    string `validate:"required"`
+		Primary     string `validate:"required"` // XXX: must be an address that DnsEngine listens to
+		SerialCache string `validate:"required"`
+	}
+
+	Reaper struct {
+		Interval int `validate:"required"`
+	}
+}
+
+type ApiserverConf struct {
+	Active       *bool    `validate:"required"`
+	Name         string   `validate:"required"`
+	Key          string   `validate:"required"`
+	Addresses    []string `validate:"required"`
+	TlsAddresses []string `validate:"required"`
+}
+
+type DnsengineConf struct {
+	Active    *bool    `validate:"required"`
+	Name      string   `validate:"required"`
+	Addresses []string `validate:"required"`
+	Logfile   string   `validate:"required"`
+	// Logger  *log.Logger
+}
+
+type BootstrapServerConf struct {
+	Active       *bool    `validate:"required"`
+	Name         string   `validate:"required"`
+	Addresses    []string `validate:"required"`
+	TlsAddresses []string `validate:"required"`
+	Logfile      string
 }
 
 type ServerConf struct {
@@ -96,16 +124,6 @@ type GreylistConf struct {
 	}
 }
 
-type ApiserverConf struct {
-	Address string `validate:"required"`
-	Key     string `validate:"required"`
-}
-type DnsengineConf struct {
-	Address string `validate:"required"`
-	Logfile string `validate:"required"`
-	// Logger  *log.Logger
-}
-
 type InternalConf struct {
 	// RefreshZoneCh chan RpzRefresher
 	// RpzCmdCh      chan RpzCmdData
@@ -128,9 +146,11 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 	var configsections = make(map[string]interface{}, 5)
 
 	configsections["log"] = config.Log
-	configsections["service"] = config.Service
-	configsections["server"] = config.Server
-	configsections["apiserver"] = config.Apiserver
+	configsections["services"] = config.Services
+	// configsections["server"] = config.Server
+	configsections["apiserver"] = config.ApiServer
+	configsections["dnsengine"] = config.DnsEngine
+	configsections["bootstrapserver"] = config.BootstrapServer
 	configsections["policy"] = config.Policy
 
 	// Cannot validate a map[string]foobar, must validate the individual foobars:
@@ -149,11 +169,15 @@ func ValidateBySection(config *Config, configsections map[string]interface{}, cf
 	validate := validator.New()
 
 	for k, data := range configsections {
-		log.Printf("%s: Validating config for %s section\n", config.Service.Name, k)
+		switch data := data.(type) {
+		case *SourceConf:
+			log.Printf("%s: Validating config for source %s", data.Name, k)
+		case *DnsengineConf, *ApiserverConf, *BootstrapServerConf:
+			//		log.Printf("%s: Validating config for service %s", data.Name, k)
+		}
 		if err := validate.Struct(data); err != nil {
 			log.Printf("ValidateBySection: data that caused validation to fail:\n%v\n", data)
-			TEMExiter("ValidateBySection: Config %s, section %s: missing required attributes:\n%v\n",
-				cfgfile, k, err)
+			TEMExiter("ValidateBySection: Config %s, section %s: missing required attributes:\n%v\n", cfgfile, k, err)
 		}
 	}
 	return nil

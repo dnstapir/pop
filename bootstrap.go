@@ -42,8 +42,20 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 		return nil, fmt.Errorf("error setting up TLS for the API client: %v", err)
 	}
 
+	bootstrapaddrs := viper.GetStringSlice("bootstrapserver.addresses")
+	tlsbootstrapaddrs := viper.GetStringSlice("bootstrapserver.tlsaddresses")
+	bootstrapaddrs = append(bootstrapaddrs, tlsbootstrapaddrs...)
+
 	// Iterate over the bootstrap servers
 	for _, server := range src.Bootstrap {
+		// Is this myself?
+		for _, bs := range bootstrapaddrs {
+			if bs == server {
+				td.Logger.Printf("MQTT bootstrap server %s is myself, skipping", server)
+				continue
+			}
+		}
+
 		api.BaseUrl = fmt.Sprintf(src.BootstrapUrl, server)
 
 		// Send an API ping command
@@ -57,6 +69,37 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 		td.Logger.Printf("MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages", server, uptime, 17)
 
 		status, buf, err := api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
+			Command:  "greylist-status",
+			ListName: src.Name,
+			Encoding: "json", // XXX: This is our default, but we'll test other encodings later
+		}, true)
+
+		if err != nil {
+			fmt.Printf("Error from RequestNG: %v\n", err)
+			continue
+		}
+
+		if status != http.StatusOK {
+			td.Logger.Printf("HTTP Error: %s\n", buf)
+			continue
+		}
+
+		var br tapir.BootstrapResponse
+		err = json.Unmarshal(buf, &br)
+		if err != nil {
+			td.Logger.Printf("Error decoding greylist-status response from %s: %v. Giving up.\n", server, err)
+			continue
+		}
+		if br.Error {
+			td.Logger.Printf("Bootstrap server %s responded with error: %s (instead of greylist status)", server, br.ErrorMsg)
+		}
+		if len(br.Msg) != 0 {
+			td.Logger.Printf("Bootstrap server %s responded: %s", server, br.Msg)
+		}
+
+		td.Logger.Printf("MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages on the %s topic (last msg arrived at %s), ", server, uptime, br.MsgCounters["greylist"], src.Name, br.MsgTimeStamps["greylist"].Format(time.RFC3339))
+
+		status, buf, err = api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
 			Command:  "export-greylist",
 			ListName: src.Name,
 			Encoding: "gob", // XXX: This is our default, but we'll test other encodings later
@@ -67,7 +110,7 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 		}
 
 		if status != http.StatusOK {
-			fmt.Printf("HTTP Error: %s\n", buf)
+			td.Logger.Printf("HTTP Error: %s\n", buf)
 			continue
 		}
 
@@ -94,13 +137,13 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 		}
 
 		if td.Debug {
-			fmt.Printf("%v\n", greylist)
-			fmt.Printf("Names present in greylist %s:\n", src.Name)
+			td.Logger.Printf("%v", greylist)
+			td.Logger.Printf("Names present in greylist %s:", src.Name)
 			out := []string{"Name|Time added|TTL|Tags"}
 			for _, n := range greylist.Names {
 				out = append(out, fmt.Sprintf("%s|%v|%v|%v", n.Name, n.TimeAdded.Format(tapir.TimeLayout), n.TTL, n.TagMask))
 			}
-			fmt.Printf("%s\n", columnize.SimpleFormat(out))
+			td.Logger.Printf("%s", columnize.SimpleFormat(out))
 		}
 
 		// Successfully received and decoded bootstrap data

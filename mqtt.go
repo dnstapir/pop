@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dnstapir/tapir"
+	"github.com/miekg/dns"
 )
 
 func (td *TemData) CreateMqttEngine(clientid string, lg *log.Logger) error {
@@ -88,7 +89,7 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	for _, tname := range tpkg.Data.Added {
 		ttl := time.Duration(tname.TTL) * time.Second
 		tmp := tapir.TapirName{
-			Name:      tname.Name,
+			Name:      dns.Fqdn(tname.Name),
 			TimeAdded: tname.TimeAdded,
 			TTL:       ttl,
 			TagMask:   tname.TagMask,
@@ -135,7 +136,7 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 	}
 
 	for _, tname := range tpkg.Data.Removed {
-		delete(wbgl.Names, tname.Name)
+		delete(wbgl.Names, dns.Fqdn(tname.Name))
 	}
 
 	ixfr, err := td.GenerateRpzIxfr(&tpkg.Data)

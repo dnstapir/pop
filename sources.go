@@ -21,7 +21,7 @@ import (
 func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	rpzdata := RpzData{
 		CurrentSerial: 1,
-		ZoneName:      viper.GetString("output.rpz.zonename"),
+		ZoneName:      viper.GetString("services.rpz.zonename"),
 		IxfrChain:     []RpzIxfr{},
 		Axfr: RpzAxfr{
 			Data: map[string]*tapir.RpzName{},
@@ -29,7 +29,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 		// RpzMap: map[string]*tapir.RpzName{},
 	}
 
-	repint := viper.GetInt("output.reaper.interval")
+	repint := viper.GetInt("services.reaper.interval")
 	if repint == 0 {
 		repint = 60
 	}
@@ -154,7 +154,7 @@ func (td *TemData) ParseSourcesNG() error {
 	td.mu.Unlock()
 
 	srcs := srcfoo.Sources
-	td.Logger.Printf("*** ParseSourcesNG: there are %d items in spec.", len(srcs))
+	td.Logger.Printf("*** ParseSourcesNG: there are %d sources defined in config", len(srcs))
 
 	threads := 0
 
@@ -162,21 +162,37 @@ func (td *TemData) ParseSourcesNG() error {
 
 	if td.MqttEngine == nil {
 		td.mu.Lock()
-		err := td.CreateMqttEngine(viper.GetString("mqtt.clientid"), td.MqttLogger)
+		err := td.CreateMqttEngine(viper.GetString("tapir.mqtt.clientid"), td.MqttLogger)
 		if err != nil {
 			TEMExiter("Error creating MQTT Engine: %v", err)
 		}
 		td.mu.Unlock()
 	}
 
-	td.Logger.Printf("ParseSourcesNG: MQTT Engine: %v", td.MqttEngine)
+	// Ensure that the MQTT Engine listens on the DNS TAPIR config topic
+	cfgtopic := viper.GetString("tapir.config.topic")
+	if cfgtopic != "" {
+		if td.Debug {
+			td.Logger.Printf("ParseSourcesNG: Fetching MQTT validator key for topic %s", cfgtopic)
+		}
+		valkey, err := tapir.FetchMqttValidatorKey(cfgtopic, viper.GetString("tapir.config.validatorkey"))
+		if err != nil {
+			TEMExiter("Error fetching MQTT validator key for topic %s: %v", cfgtopic, err)
+		}
+		err = td.MqttEngine.AddTopic(cfgtopic, nil, valkey)
+		if err != nil {
+			TEMExiter("Error adding topic %s to MQTT Engine: %v", cfgtopic, err)
+		}
+	}
 
 	for name, src := range srcs {
 		if !*src.Active {
 			td.Logger.Printf("*** ParseSourcesNG: Source \"%s\" is not active. Ignored.", name)
 			continue
 		}
-		td.Logger.Printf("=== ParseSourcesNG: Source: %s (%s) will be used (list type %s)", name, src.Name, src.Type)
+		if td.Debug {
+			td.Logger.Printf("=== ParseSourcesNG: Source: %s (%s) will be used (list type %s)", name, src.Name, src.Type)
+		}
 
 		var err error
 
@@ -204,14 +220,16 @@ func (td *TemData) ParseSourcesNG() error {
 			td.Logger.Printf("ParseSourcesNG: thread %d working on source \"%s\" (%s)", thread, name, src.Source)
 			switch src.Source {
 			case "mqtt":
-				td.Logger.Printf("ParseSourcesNG: Fetching MQTT validator key for topic %s", src.Topic)
+				if td.Debug {
+					td.Logger.Printf("ParseSourcesNG: Fetching MQTT validator key for topic %s", src.Topic)
+				}
 				valkey, err := tapir.FetchMqttValidatorKey(src.Topic, src.ValidatorKey)
 				if err != nil {
 					td.Logger.Printf("ParseSources: Error fetching MQTT validator key for topic %s: %v", src.Topic, err)
 				}
 
 				td.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
-				err = td.MqttEngine.AddTopic(src.Topic, valkey)
+				err = td.MqttEngine.AddTopic(src.Topic, nil, valkey)
 				if err != nil {
 					TEMExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
 				}

@@ -31,7 +31,7 @@ ${ZONE}		IN	NS	ns2.${ZONE}
 ns1.${ZONE}	IN	A	127.0.0.1
 ns2.${ZONE}	IN	AAAA	::1`
 
-	rpzzone := viper.GetString("output.rpz.zonename")
+	rpzzone := viper.GetString("services.rpz.zonename")
 	apex := strings.Replace(apextmpl, "${ZONE}", rpzzone, -1)
 	apex = strings.Replace(apex, "${SERIAL}", fmt.Sprintf("%d", td.Rpz.CurrentSerial), -1)
 
@@ -161,8 +161,7 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 			case *dns.SOA:
 				curserial = rr.Serial
 			default:
-				td.Logger.Printf("RpzIxfrOut: unexpected RR in IXFR request Authority section:\n%s\n",
-					rr.String())
+				td.Logger.Printf("RpzIxfrOut: unexpected RR in IXFR request Authority section:\n%s\n", rr.String())
 			}
 		}
 	}

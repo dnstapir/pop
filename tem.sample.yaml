@@ -10,58 +10,55 @@ cli:
 
 apiserver:
    key:		be-nice-to-a-bad-tempered-tapir
-   address:	127.0.0.1:9099
-   tlsaddress:	127.0.0.1:9098
+   addresses:	[ 127.0.0.1:9099 ]
+   tlsaddresses:	[ 127.0.0.1:9098 ]
 
+# Note: This should only be active for a TEM bootstrapserver
 bootstrapserver:
-   address:
-   tlsaddress:
-
-# server:
-#    listen:	127.0.0.1
-#    port:	9097
-#   upstreams:	[ nsa.johani.org:53 ]
-#   downstreams:	[ 127.0.0.1:9999 ]  	# unbound
-#   xferzones:	[ ]  # not useful for TAPIR
-#   mapzones:	[ ]  # likely not useful for TAPIR
-#   slicezones:	[ rpz.threat-feed.com ]
-#   slicezones:	[ ]
+   active:	false
+   addresses:	[]
+   tlsaddresses:	[]
 
 dnsengine:
-   addresses:	127.0.0.1:5359
+   active:	true
+   addresses:	[ 127.0.0.1:5360 ]
+   logfile:	/var/log/dnstapir/tem-dnsengine.log
 
-mqtt:
-   logfile:		/var/log/dnstapir/tem-mqtt.log
-   server:		mqtt.dev.dnstapir.se:8883
-   uid:			johani
-   clientid:		this-must-be-unique
-   topic:		events/up/johani/frobozz
-   cacert:              /etc/dnstapir/certs/tapirCA.crt
-   clientcert:          /etc/dnstapir/certs/mqttclient.crt
-   clientkey:           /etc/dnstapir/certs/mqttclient-key.pem
-   signingkey:          /etc/dnstapir/certs/mqttsigner-key.pem
-   validatorkey:        /etc/dnstapir/certs/mqttsigner-pub.pem
-   qos:                 2
-
-output:
+services:
    reaper:
       interval: 60 # seconds, time between runs of deleting expired data
    rpz:
       zonename:		rpz.
       primary:		127.0.0.1:5359	# must be an address that the dnsengine listens to
+      serialcache:	/etc/dnstapir/rpz-serial.yaml
+   refreshengine:
+      active:		true
+      name:		TEM Source Refresher
 
-service:
-   name:		foobar
-   filter:		dnssec+zonemd
-   reset_soa_serial:	true
-   verbose:		true
-   debug:		true
-   refresh:
-      active:	true
+tapir:
+   mqtt:
+      logfile:		/var/log/dnstapir/tem-mqtt.log
+      server:		tls://mqtt.dev.dnstapir.se:8883
+      uid:		johani
+      clientid:		this-must-be-unique
+      cacert:		/etc/dnstapir/certs/tapirCA.crt
+      clientcert:	/etc/dnstapir/certs/mqttclient.crt
+      clientkey:	/etc/dnstapir/certs/mqttclient-key.pem
+      qos:		2
 
-redirects:
-   tapir:	landing-page.dnstapir.se
-   police:	www.polisen.se
+   observations:
+      srcname:		dns-tapir
+      topic:		events/up/johani/observations
+      validatorkey:	/etc/dnstapir/certs/mqttsigner-pub.pem
+
+   config:
+      srcname:		dns-tapir
+      topic:		events/up/johani/config
+      validatorkey:	/etc/dnstapir/certs/mqttsigner-pub.pem
+
+# redirects:
+#    tapir:	landing-page.dnstapir.se
+#    police:	www.polisen.se
 
 certs:
    certdir:	/etc/dnstapir/certs
