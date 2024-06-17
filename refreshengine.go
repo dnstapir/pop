@@ -107,8 +107,9 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				log.Printf("RefreshEngine: Tapir Global Config evaluated.")
 
 			default:
-				log.Printf("RefreshEngine: Tapir IntelUpdate: unknown msg type: %s", tpkg.Data.MsgType)
+				log.Printf("RefreshEngine: Tapir Message: unknown msg type: %s", tpkg.Data.MsgType)
 			}
+			// log.Printf("RefreshEngine: Tapir IntelUpdate: %v", tpkg.Data)
 
 		case zr = <-zonerefch:
 			zone = zr.Name
