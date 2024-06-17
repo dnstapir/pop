@@ -119,8 +119,10 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 	log.Println("mainloop: leaving signal dispatcher")
 }
 
+var Gconfig Config
+
 func main() {
-	var conf Config
+	// var conf Config
 	var cfgFileUsed string
 
 	var cfgFile string
@@ -161,14 +163,14 @@ func main() {
 		TEMExiter("Could not load config %s: Error: %v", tapir.TemPolicyCfgFile, err)
 	}
 
-	SetupLogging(&conf)
+	SetupLogging(&Gconfig)
 
 	err := ValidateConfig(nil, cfgFileUsed) // will terminate on error
 	if err != nil {
 		TEMExiter("Error validating config: %v", err)
 	}
 
-	err = viper.Unmarshal(&conf)
+	err = viper.Unmarshal(&Gconfig)
 	if err != nil {
 		TEMExiter("Error unmarshalling config into struct: %v", err)
 	}
@@ -177,11 +179,11 @@ func main() {
 
 	var stopch = make(chan struct{}, 10)
 
-	td, err := NewTemData(&conf, log.Default())
+	td, err := NewTemData(&Gconfig, log.Default())
 	if err != nil {
 		TEMExiter("Error from NewTemData: %v", err)
 	}
-	go td.RefreshEngine(&conf, stopch)
+	go td.RefreshEngine(&Gconfig, stopch)
 
 	log.Println("*** main: Calling ParseSourcesNG()")
 	err = td.ParseSourcesNG()
@@ -196,16 +198,16 @@ func main() {
 	}
 
 	apistopper := make(chan struct{}) //
-	conf.Internal.APIStopCh = apistopper
-	go APIdispatcher(&conf, apistopper)
+	Gconfig.Internal.APIStopCh = apistopper
+	go APIhandler(&Gconfig, apistopper)
 	//	go httpsserver(&conf, apistopper)
 
 	go func() {
-		if err := DnsEngine(&conf); err != nil {
+		if err := DnsEngine(&Gconfig); err != nil {
 			log.Printf("Error starting DnsEngine: %v", err)
 		}
 	}()
-	conf.BootTime = time.Now()
+	Gconfig.BootTime = time.Now()
 
-	mainloop(&conf, &cfgFileUsed, td)
+	mainloop(&Gconfig, &cfgFileUsed, td)
 }

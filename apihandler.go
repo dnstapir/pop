@@ -71,9 +71,20 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		switch cp.Command {
 		case "status":
 			log.Printf("Daemon status inquiry\n")
+			rt := make(chan tapir.TemStatus)
+			tsu := tapir.TemStatusUpdate{
+				Component: "status",
+				Response:  rt,
+			}
+			foo := <-rt
+
+			conf.Internal.TemStatusCh <- tsu
 			resp = tapir.CommandResponse{
-				Status: "ok", // only status we know, so far
-				Msg:    "We're happy, but send more cookies"}
+				Status:    "ok", // only status we know, so far
+				Msg:       "We're happy, but send more cookies",
+				TemStatus: foo,
+			}
+
 		case "stop":
 			log.Printf("Daemon instructed to stop\n")
 			resp = tapir.CommandResponse{
@@ -501,7 +512,7 @@ func walkRoutes(router *mux.Router, address string) {
 
 // In practice APIdispatcher doesn't need a termination signal, as it will
 // just sit inside http.ListenAndServe, but we keep it for symmetry.
-func APIdispatcher(conf *Config, done <-chan struct{}) {
+func APIhandler(conf *Config, done <-chan struct{}) {
 	gob.Register(tapir.WBGlist{}) // Must register the type for gob encoding
 	router := SetupRouter(conf)
 
@@ -516,6 +527,9 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 	bootstrapaddresses := viper.GetStringSlice("bootstrapserver.addresses")
 	bootstraptlsaddresses := viper.GetStringSlice("bootstrapserver.tlsaddresses")
 	bootstraprouter := SetupBootstrapRouter(conf)
+
+	log.Printf("*** APIhandler: addresses: %v bootstrapaddresses: %v", addresses, bootstrapaddresses)
+	log.Printf("*** APIhandler: tlsaddresses: %v bootstraptlsaddresses: %v", tlsaddresses, bootstraptlsaddresses)
 
 	tlspossible := true
 
