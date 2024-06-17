@@ -92,7 +92,11 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 					s.Counters[tsu.Component]++
 					s.ComponentStatus[tsu.Component] = "ok"
 					delete(s.ErrorMsgs, tsu.Component)
-					dirty = true
+					// tapir-observations do not make the status dirty
+					if tsu.Component != "tapir-observation" && tsu.Component != "mqtt-event" {
+						dirty = true
+					}
+
 				default:
 					log.Printf("StatusUpdater: Success report for unknown component: %s", tsu.Component)
 				}
