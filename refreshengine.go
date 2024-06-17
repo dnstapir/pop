@@ -89,21 +89,21 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 		select {
 		case tpkg = <-TapirIntelCh:
 			switch tpkg.Data.MsgType {
-			case "intel-update", "observation":
+			case "observation", "intel-update":
 				log.Printf("RefreshEngine: Tapir Observation update: (src: %s) %d additions and %d removals\n",
 					tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
 				_, err := td.ProcessTapirUpdate(tpkg)
 				if err != nil {
 					Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
 						Status:    "failure",
-						Component: "mqttmsg",
+						Component: "tapir-observation",
 						Msg:       fmt.Sprintf("ProcessTapirUpdate error: %v", err),
 					}
 					log.Printf("RefreshEngine: Error from ProcessTapirUpdate(): %v", err)
 				}
 				Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
 					Status:    "success",
-					Component: "mqttmsg",
+					Component: "tapir-observation",
 					Msg:       fmt.Sprintf("ProcessTapirUpdate: MQTT observation message received"),
 				}
 				log.Printf("RefreshEngine: Tapir Observation update evaluated.")
@@ -113,7 +113,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					log.Printf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic)
 					Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
 						Status:    "failure",
-						Component: "config",
+						Component: "mqtt-config",
 						Msg:       fmt.Sprintf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic),
 					}
 					continue
@@ -122,7 +122,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				log.Printf("RefreshEngine: Tapir Global Config evaluated.")
 				Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
 					Status:    "success",
-					Component: "config",
+					Component: "mqtt-config",
 					Msg:       fmt.Sprintf("RefreshEngine: Tapir Global Config evaluated."),
 				}
 
@@ -130,7 +130,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				log.Printf("RefreshEngine: Tapir Message: unknown msg type: %s", tpkg.Data.MsgType)
 				Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
 					Status:    "failure",
-					Component: "mqttmsg",
+					Component: "mqtt-unknown",
 					Msg:       fmt.Sprintf("RefreshEngine: Tapir Message: unknown msg type: %s", tpkg.Data.MsgType),
 				}
 			}

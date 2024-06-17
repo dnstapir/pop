@@ -1,4 +1,5 @@
 /*
+ * Johan Stenstam, johan.stenstam@internetstiftelsen.se
  * Copyright (c) DNS TAPIR
  */
 package main
@@ -21,6 +22,7 @@ type TemData struct {
 	TapirMqttCmdCh         chan tapir.MqttEngineCmd
 	TapirMqttSubCh         chan tapir.MqttPkg
 	TapirMqttPubCh         chan tapir.MqttPkg // not used ATM
+	TapirStatusCh          chan tapir.TemStatusUpdate
 	Logger                 *log.Logger
 	MqttLogger             *log.Logger
 	BlacklistedNames       map[string]bool

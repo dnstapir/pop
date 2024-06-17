@@ -183,6 +183,21 @@ func main() {
 	if err != nil {
 		TEMExiter("Error from NewTemData: %v", err)
 	}
+
+	if td.MqttEngine == nil {
+		td.mu.Lock()
+		err := td.CreateMqttEngine(viper.GetString("tapir.mqtt.clientid"), td.MqttLogger)
+		if err != nil {
+			TEMExiter("Error creating MQTT Engine: %v", err)
+		}
+		td.mu.Unlock()
+		err = td.StartMqttEngine(td.MqttEngine)
+		if err != nil {
+			TEMExiter("Error starting MQTT Engine: %v", err)
+		}
+	}
+
+	go td.StatusUpdater(&Gconfig, stopch) // Note that StatusUpdater must as early as possible
 	go td.RefreshEngine(&Gconfig, stopch)
 
 	log.Println("*** main: Calling ParseSourcesNG()")

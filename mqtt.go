@@ -40,11 +40,12 @@ func (td *TemData) StartMqttEngine(meng *tapir.MqttEngine) error {
 	//TEMExiter("Error from NewMqttEngine: %v\n", err)
 	//}
 
-	cmnder, _, inbox, err := meng.StartEngine()
+	cmnder, outbox, inbox, err := meng.StartEngine()
 	if err != nil {
 		log.Fatalf("Error from StartEngine(): %v", err)
 	}
 	td.TapirMqttCmdCh = cmnder
+	td.TapirMqttPubCh = outbox
 	td.TapirMqttSubCh = inbox
 	td.TapirMqttEngineRunning = true
 

@@ -211,6 +211,11 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		err := tr.Out(w, r, outbound_xfr)
 		if err != nil {
 			td.Logger.Printf("Error from transfer.Out(): %v", err)
+			td.TapirStatusCh <- tapir.TemStatusUpdate{
+				Component: "rpz-ixfr",
+				Status:    "failure",
+				Msg:       fmt.Sprintf("Error from transfer.Out(): %v", err),
+			}
 		}
 		wg.Done()
 	}()
@@ -304,6 +309,11 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	err = w.Close() // close connection
 	if err != nil {
 		td.Logger.Printf("RpzIxfrOut: Error from Close(): %v", err)
+	}
+
+	td.TapirStatusCh <- tapir.TemStatusUpdate{
+		Component: "rpz-ixfr",
+		Status:    "success",
 	}
 
 	td.Logger.Printf("RpzIxfrOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)

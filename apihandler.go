@@ -72,17 +72,27 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		case "status":
 			log.Printf("Daemon status inquiry\n")
 			rt := make(chan tapir.TemStatus)
-			tsu := tapir.TemStatusUpdate{
-				Component: "status",
-				Response:  rt,
-			}
-			foo := <-rt
+			var ts *tapir.TemStatus
 
-			conf.Internal.TemStatusCh <- tsu
+			conf.Internal.TemStatusCh <- tapir.TemStatusUpdate{
+				Status:   "status",
+				Response: rt,
+			}
+
+			select {
+			case foo := <-rt:
+				ts = &foo
+			case <-time.After(2 * time.Second):
+				log.Println("Timeout waiting for response on rt channel")
+				ts = nil
+			}
+
 			resp = tapir.CommandResponse{
-				Status:    "ok", // only status we know, so far
-				Msg:       "We're happy, but send more cookies",
-				TemStatus: foo,
+				Status: "ok", // only status we know, so far
+				Msg:    "We're happy, but send more cookies",
+			}
+			if ts != nil {
+				resp.TemStatus = *ts
 			}
 
 		case "stop":
@@ -256,9 +266,11 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		case "greylist-status":
 			me := conf.TemData.MqttEngine
 			stats := me.Stats()
-			resp.MsgCounters = stats.MsgCounters
-			resp.MsgTimeStamps = stats.MsgTimeStamps
-			log.Printf("API: greylist-status: msgs: %d last msg: %v", stats.MsgCounters[bp.ListName], stats.MsgTimeStamps[bp.ListName])
+			// resp.MsgCounters = stats.MsgCounters
+			// resp.MsgTimeStamps = stats.MsgTimeStamps
+			resp.TopicData = stats
+			// log.Printf("API: greylist-status: msgs: %d last msg: %v", stats.MsgCounters[bp.ListName], stats.MsgTimeStamps[bp.ListName])
+			log.Printf("API: greylist-status: %v", stats)
 
 		case "export-greylist":
 			td := conf.TemData
@@ -414,7 +426,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "mqtt-stats":
 			log.Printf("TEM debug MQTT stats")
-			resp.MqttStats = td.MqttEngine.Stats()
+			resp.TopicData = td.MqttEngine.Stats()
 
 		case "reaper-stats":
 			log.Printf("TEM debug reaper stats")

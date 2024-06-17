@@ -167,6 +167,8 @@ func (td *TemData) ParseSourcesNG() error {
 			TEMExiter("Error creating MQTT Engine: %v", err)
 		}
 		td.mu.Unlock()
+	} else {
+		td.Logger.Printf("ParseSourcesNG: MQTT Engine already created")
 	}
 
 	// Ensure that the MQTT Engine listens on the DNS TAPIR config topic
@@ -179,7 +181,8 @@ func (td *TemData) ParseSourcesNG() error {
 		if err != nil {
 			TEMExiter("Error fetching MQTT validator key for topic %s: %v", cfgtopic, err)
 		}
-		err = td.MqttEngine.AddTopic(cfgtopic, nil, valkey)
+		// err = td.MqttEngine.AddTopic(cfgtopic, nil, valkey)
+		err = td.MqttEngine.PubSubToTopic(cfgtopic, nil, valkey, nil) // XXX: should have a channel to the config processor
 		if err != nil {
 			TEMExiter("Error adding topic %s to MQTT Engine: %v", cfgtopic, err)
 		}
@@ -229,7 +232,8 @@ func (td *TemData) ParseSourcesNG() error {
 				}
 
 				td.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
-				err = td.MqttEngine.AddTopic(src.Topic, nil, valkey)
+				// err = td.MqttEngine.AddTopic(src.Topic, nil, valkey)
+				err = td.MqttEngine.PubSubToTopic(src.Topic, nil, valkey, nil)
 				if err != nil {
 					TEMExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
 				}
