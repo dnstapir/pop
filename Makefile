@@ -1,4 +1,4 @@
-PROG:=tem
+PROG:=tapir-pop
 VERSION:=`cat ./VERSION`
 COMMIT:=`git describe --dirty=+WiP --always`
 APPDATE=`date +"%Y-%m-%d-%H:%M"`

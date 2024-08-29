@@ -129,7 +129,7 @@ func main() {
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		viper.SetConfigFile(tapir.DefaultTemCfgFile)
+		viper.SetConfigFile(tapir.DefaultPopCfgFile)
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
@@ -139,28 +139,28 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.DefaultTemCfgFile, err)
+		TEMExiter("Could not load config %s: Error: %v", tapir.DefaultPopCfgFile, err)
 	}
-	viper.SetConfigFile(tapir.TemSourcesCfgFile)
+	viper.SetConfigFile(tapir.PopSourcesCfgFile)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.TemSourcesCfgFile, err)
+		TEMExiter("Could not load config %s: Error: %v", tapir.PopSourcesCfgFile, err)
 	}
-	viper.SetConfigFile(tapir.TemOutputsCfgFile)
+	viper.SetConfigFile(tapir.PopOutputsCfgFile)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.TemOutputsCfgFile, err)
+		TEMExiter("Could not load config %s: Error: %v", tapir.PopOutputsCfgFile, err)
 	}
-	viper.SetConfigFile(tapir.TemPolicyCfgFile)
+	viper.SetConfigFile(tapir.PopPolicyCfgFile)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.TemPolicyCfgFile, err)
+		TEMExiter("Could not load config %s: Error: %v", tapir.PopPolicyCfgFile, err)
 	}
 
 	SetupLogging(&Gconfig)

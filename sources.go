@@ -113,7 +113,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 
 func (td *TemData) ParseSourcesNG() error {
 	var srcfoo SrcFoo
-	configFile := filepath.Clean(tapir.TemSourcesCfgFile)
+	configFile := filepath.Clean(tapir.PopSourcesCfgFile)
 	data, err := os.ReadFile(configFile)
 	if err != nil {
 		return fmt.Errorf("error reading config file: %v", err)
