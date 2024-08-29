@@ -484,7 +484,7 @@ func SetupRouter(conf *Config) *mux.Router {
 
 	sr := r.PathPrefix("/api/v1").Headers("X-API-Key",
 		viper.GetString("apiserver.key")).Subrouter()
-	sr.HandleFunc("/ping", tapir.APIping("tem", conf.BootTime)).Methods("POST")
+	sr.HandleFunc("/ping", tapir.APIping("tapir-pop", conf.BootTime)).Methods("POST")
 	sr.HandleFunc("/command", APIcommand(conf)).Methods("POST")
 	sr.HandleFunc("/bootstrap", APIbootstrap(conf)).Methods("POST")
 	sr.HandleFunc("/debug", APIdebug(conf)).Methods("POST")
@@ -497,7 +497,7 @@ func SetupBootstrapRouter(conf *Config) *mux.Router {
 	r := mux.NewRouter().StrictSlash(true)
 
 	sr := r.PathPrefix("/api/v1").Headers("X-API-Key", viper.GetString("apiserver.key")).Subrouter()
-	sr.HandleFunc("/ping", tapir.APIping("tem", conf.BootTime)).Methods("POST")
+	sr.HandleFunc("/ping", tapir.APIping("tapir-pop", conf.BootTime)).Methods("POST")
 	sr.HandleFunc("/bootstrap", APIbootstrap(conf)).Methods("POST")
 	// sr.HandleFunc("/debug", APIdebug(conf)).Methods("POST")
 	// sr.HandleFunc("/show/api", tapir.APIshowAPI(r)).Methods("GET")
@@ -533,8 +533,14 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 
 	addresses := viper.GetStringSlice("apiserver.addresses")
 	tlsaddresses := viper.GetStringSlice("apiserver.tlsaddresses")
-	certfile := viper.GetString("certs.tem.cert")
-	keyfile := viper.GetString("certs.tem.key")
+	certfile := viper.GetString("certs.tapir-pop.cert")
+	if certfile == "" {
+		log.Printf("*** APIhandler: Error: TLS cert file not specified under key certs.tapir-pop.cert")
+	}
+	keyfile := viper.GetString("certs.tapir-pop.key")
+	if keyfile == "" {
+		log.Printf("*** APIhandler: Error: TLS key file not specified under key certs.tapir-pop.key")
+	}
 
 	bootstrapaddresses := viper.GetStringSlice("bootstrapserver.addresses")
 	bootstraptlsaddresses := viper.GetStringSlice("bootstrapserver.tlsaddresses")
@@ -547,10 +553,12 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 
 	_, err := os.Stat(certfile)
 	if os.IsNotExist(err) {
+		log.Printf("*** APIhandler: Error: TLS cert file \"%s\" does not exist", certfile)
 		tlspossible = false
 	}
 	_, err = os.Stat(keyfile)
 	if os.IsNotExist(err) {
+		log.Printf("*** APIhandler: Error: TLS key file \"%s\" does not exist", keyfile)
 		tlspossible = false
 	}
 

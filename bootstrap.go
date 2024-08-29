@@ -29,7 +29,7 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 		TEMExiter("BootstrapMqttSource error: missing config key: certs.certdir")
 	}
 	// cert := cd + "/" + certname
-	cert := cd + "/" + "tem"
+	cert := cd + "/" + "tapir-pop"
 	tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"), cert+".key", cert+".crt")
 	if err != nil {
 		TEMExiter("BootstrapMqttSource: Error: Could not set up TLS: %v", err)
