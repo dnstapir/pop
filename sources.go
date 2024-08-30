@@ -40,6 +40,7 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 		MqttLogger:     conf.Loggers.Mqtt,
 		RpzRefreshCh:   make(chan RpzRefresh, 10),
 		RpzCommandCh:   make(chan RpzCmdData, 10),
+		TapirStatusCh:  conf.Internal.TemStatusCh,
 		Rpz:            rpzdata,
 		ReaperInterval: time.Duration(repint) * time.Second,
 		Verbose:        viper.GetBool("log.verbose"),
@@ -162,7 +163,7 @@ func (td *TemData) ParseSourcesNG() error {
 
 	if td.MqttEngine == nil {
 		td.mu.Lock()
-		err := td.CreateMqttEngine(viper.GetString("tapir.mqtt.clientid"), td.MqttLogger)
+		err := td.CreateMqttEngine(viper.GetString("tapir.mqtt.clientid"), td.TapirStatusCh, td.MqttLogger)
 		if err != nil {
 			TEMExiter("Error creating MQTT Engine: %v", err)
 		}

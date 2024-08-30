@@ -179,6 +179,9 @@ func main() {
 
 	var stopch = make(chan struct{}, 10)
 
+	statusch := make(chan tapir.TemStatusUpdate, 10)
+	Gconfig.Internal.TemStatusCh = statusch
+
 	td, err := NewTemData(&Gconfig, log.Default())
 	if err != nil {
 		TEMExiter("Error from NewTemData: %v", err)
@@ -186,7 +189,7 @@ func main() {
 
 	if td.MqttEngine == nil {
 		td.mu.Lock()
-		err := td.CreateMqttEngine(viper.GetString("tapir.mqtt.clientid"), td.MqttLogger)
+		err := td.CreateMqttEngine(viper.GetString("tapir.mqtt.clientid"), statusch, td.MqttLogger)
 		if err != nil {
 			TEMExiter("Error creating MQTT Engine: %v", err)
 		}

@@ -60,21 +60,21 @@ func (td *TemData) GenerateRpzAxfr() error {
 		switch glist.Format {
 		case "map":
 			for k, v := range glist.Names {
-				td.Logger.Printf("Adding name %s from greylist %s to tentative output.", k, gname)
+				// td.Logger.Printf("Adding name %s from greylist %s to tentative output.", k, gname)
 				if _, exists := td.BlacklistedNames[k]; exists {
-					td.Logger.Printf("Greylisted name %s is also blacklisted. No need to add twice.", k)
+					// td.Logger.Printf("Greylisted name %s is also blacklisted. No need to add twice.", k)
 				} else if td.Whitelisted(k) {
-					td.Logger.Printf("Greylisted name %s is also whitelisted. Dropped from output.", k)
+					// td.Logger.Printf("Greylisted name %s is also whitelisted. Dropped from output.", k)
 				} else {
-					td.Logger.Printf("Greylisted name %s is not whitelisted. Evalutate inclusion in output.", k)
+					// td.Logger.Printf("Greylisted name %s is not whitelisted. Evalutate inclusion in output.", k)
 					action := td.ComputeRpzAction(k)
 					if action == tapir.WHITELIST {
-						td.Logger.Printf("Greylisted name %s is not included in output.", k)
+						// td.Logger.Printf("Greylisted name %s is not included in output.", k)
 					} else {
-						td.Logger.Printf("Greylisted name %s is included in output.", k)
+						// td.Logger.Printf("Greylisted name %s is included in output.", k)
 
 						if _, exists := grey[k]; exists {
-							td.Logger.Printf("Grey name %s already in output. Combining tags and actions.", k)
+							// td.Logger.Printf("Grey name %s already in output. Combining tags and actions.", k)
 							tmp := grey[k]
 							tmp.TagMask = grey[k].TagMask | v.TagMask
 							tmp.Action = tmp.Action | v.Action

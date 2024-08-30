@@ -26,8 +26,8 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 		TEMExiter("StatusUpdater: MQTT Engine not running")
 	}
 
-	var TemStatusCh = make(chan tapir.TemStatusUpdate, 100)
-	conf.Internal.TemStatusCh = TemStatusCh
+	// var TemStatusCh = make(chan tapir.TemStatusUpdate, 100)
+	//conf.Internal.TemStatusCh = TemStatusCh
 
 	ticker := time.NewTicker(60 * time.Second)
 
@@ -66,13 +66,13 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 				}
 				dirty = false
 			}
-		case tsu = <-TemStatusCh:
+		case tsu = <-td.TapirStatusCh:
 			log.Printf("StatusUpdater: got status update message: %v", tsu)
 			switch tsu.Status {
 			case "failure":
 				log.Printf("StatusUpdater: status failure: %s", tsu.Msg)
 				switch tsu.Component {
-				case "tapir-observation", "mqtt-event", "rpz", "downstream-notify", "downstream-ixfr", "mqtt-config", "mqtt-unknown":
+				case "tapir-observation", "mqtt-event", "rpz", "rpz-ixfr", "downstream-notify", "downstream-ixfr", "mqtt-config", "mqtt-unknown":
 					s.ErrorMsgs[tsu.Component] = tsu.Msg
 					s.ComponentStatus[tsu.Component] = "failure"
 					s.TimeStamps[tsu.Component] = time.Now()
@@ -87,7 +87,7 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 			case "success":
 				log.Printf("StatusUpdater: status success: %s", tsu.Msg)
 				switch tsu.Component {
-				case "tapir-observation", "mqtt-event", "rpz", "downstream-notify", "downstream-ixfr", "mqtt-config", "mqtt-unknown":
+				case "tapir-observation", "mqtt-event", "rpz", "rpz-ixfr", "downstream-notify", "downstream-ixfr", "mqtt-config", "mqtt-unknown":
 					s.TimeStamps[tsu.Component] = time.Now()
 					s.Counters[tsu.Component]++
 					s.ComponentStatus[tsu.Component] = "ok"
