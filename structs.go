@@ -22,7 +22,7 @@ type TemData struct {
 	TapirMqttCmdCh         chan tapir.MqttEngineCmd
 	TapirMqttSubCh         chan tapir.MqttPkg
 	TapirMqttPubCh         chan tapir.MqttPkg // not used ATM
-	TapirStatusCh          chan tapir.TemStatusUpdate
+	ComponentStatusCh      chan tapir.ComponentStatusUpdate
 	Logger                 *log.Logger
 	MqttLogger             *log.Logger
 	BlacklistedNames       map[string]bool

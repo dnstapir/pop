@@ -11,6 +11,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
@@ -211,10 +212,11 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		err := tr.Out(w, r, outbound_xfr)
 		if err != nil {
 			td.Logger.Printf("Error from transfer.Out(): %v", err)
-			td.TapirStatusCh <- tapir.TemStatusUpdate{
+			td.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 				Component: "rpz-ixfr",
-				Status:    "failure",
+				Status:    "fail",
 				Msg:       fmt.Sprintf("Error from transfer.Out(): %v", err),
+				TimeStamp: time.Now(),
 			}
 		}
 		wg.Done()
@@ -311,9 +313,10 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		td.Logger.Printf("RpzIxfrOut: Error from Close(): %v", err)
 	}
 
-	td.TapirStatusCh <- tapir.TemStatusUpdate{
+	td.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 		Component: "rpz-ixfr",
-		Status:    "success",
+		Status:    "ok",
+		TimeStamp: time.Now(),
 	}
 
 	td.Logger.Printf("RpzIxfrOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)

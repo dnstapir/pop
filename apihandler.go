@@ -71,12 +71,13 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		switch cp.Command {
 		case "status":
 			log.Printf("Daemon status inquiry\n")
-			rt := make(chan tapir.TemStatus)
-			var ts *tapir.TemStatus
+			rt := make(chan tapir.StatusUpdaterResponse)
+			var ts *tapir.StatusUpdaterResponse
 
-			conf.Internal.TemStatusCh <- tapir.TemStatusUpdate{
-				Status:   "status",
-				Response: rt,
+			conf.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+				Component: "status",
+				Status:    "status",
+				Response:  rt,
 			}
 
 			select {
@@ -92,7 +93,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				Msg:    "We're happy, but send more cookies",
 			}
 			if ts != nil {
-				resp.TemStatus = *ts
+				resp.TapirFunctionStatus = ts.FunctionStatus
 			}
 
 		case "stop":
@@ -470,6 +471,37 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			resp.GreylistedNames = td.GreylistedNames
 			for _, rpzn := range td.Rpz.Axfr.Data {
 				resp.RpzOutput = append(resp.RpzOutput, *rpzn)
+			}
+
+		case "send-status":
+			log.Printf("TEM debug send status")
+
+			rt := make(chan tapir.StatusUpdaterResponse)
+			var sur *tapir.StatusUpdaterResponse
+
+			conf.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+				Component: dp.Component,
+				Status:    dp.Status,
+				Msg:       "debug status update",
+				TimeStamp: time.Now(),
+				Response:  rt,
+			}
+
+			select {
+			case foo := <-rt:
+				sur = &foo
+			case <-time.After(2 * time.Second):
+				log.Println("Timeout waiting for response on rt channel")
+				sur = nil
+			}
+
+			if sur != nil {
+				resp.Status = "ok"
+				resp.Msg = sur.Msg
+			} else {
+				resp.Msg = "Status update for component " + dp.Component + " sent"
+				resp.Error = true
+				resp.ErrorMsg = "Timeout waiting for response on rt channel"
 			}
 
 		default:

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
 	"github.com/dnstapir/tapir"
@@ -123,6 +124,11 @@ var Gconfig Config
 
 func main() {
 	// var conf Config
+
+	flag.BoolVarP(&tapir.GlobalCF.Debug, "debug", "d", false, "Debug mode")
+	flag.BoolVarP(&tapir.GlobalCF.Verbose, "verbose", "v", false, "Verbose mode")
+	flag.Parse()
+
 	var cfgFileUsed string
 
 	var cfgFile string
@@ -179,8 +185,8 @@ func main() {
 
 	var stopch = make(chan struct{}, 10)
 
-	statusch := make(chan tapir.TemStatusUpdate, 10)
-	Gconfig.Internal.TemStatusCh = statusch
+	statusch := make(chan tapir.ComponentStatusUpdate, 10)
+	Gconfig.Internal.ComponentStatusCh = statusch
 
 	td, err := NewTemData(&Gconfig, log.Default())
 	if err != nil {
@@ -226,6 +232,13 @@ func main() {
 		}
 	}()
 	Gconfig.BootTime = time.Now()
+
+	statusch <- tapir.ComponentStatusUpdate{
+		Component: "main-boot",
+		Status:    "ok",
+		Msg:       "TAPIR Policy Processor started",
+		TimeStamp: time.Now(),
+	}
 
 	mainloop(&Gconfig, &cfgFileUsed, td)
 }

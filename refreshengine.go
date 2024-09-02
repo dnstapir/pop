@@ -94,15 +94,15 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
 				_, err := td.ProcessTapirUpdate(tpkg)
 				if err != nil {
-					Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
-						Status:    "failure",
+					Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+						Status:    "fail",
 						Component: "tapir-observation",
 						Msg:       fmt.Sprintf("ProcessTapirUpdate error: %v", err),
 					}
 					log.Printf("RefreshEngine: Error from ProcessTapirUpdate(): %v", err)
 				}
-				Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
-					Status:    "success",
+				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+					Status:    "ok",
 					Component: "tapir-observation",
 					Msg:       fmt.Sprintf("ProcessTapirUpdate: MQTT observation message received"),
 				}
@@ -111,8 +111,8 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			case "global-config":
 				if !strings.HasSuffix(tpkg.Topic, "config") {
 					log.Printf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic)
-					Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
-						Status:    "failure",
+					Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+						Status:    "fail",
 						Component: "mqtt-config",
 						Msg:       fmt.Sprintf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic),
 					}
@@ -120,16 +120,16 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				}
 				td.ProcessTapirGlobalConfig(tpkg.Data)
 				log.Printf("RefreshEngine: Tapir Global Config evaluated.")
-				Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
-					Status:    "success",
+				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+					Status:    "ok",
 					Component: "mqtt-config",
 					Msg:       fmt.Sprintf("RefreshEngine: Tapir Global Config evaluated."),
 				}
 
 			default:
 				log.Printf("RefreshEngine: Tapir Message: unknown msg type: %s", tpkg.Data.MsgType)
-				Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
-					Status:    "failure",
+				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+					Status:    "fail",
 					Component: "mqtt-unknown",
 					Msg:       fmt.Sprintf("RefreshEngine: Tapir Message: unknown msg type: %s", tpkg.Data.MsgType),
 				}
@@ -436,48 +436,45 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 func (td *TemData) NotifyDownstreams() error {
 	td.Logger.Printf("RefreshEngine: Notifying %d downstreams for RPZ zone %s", len(td.Downstreams), td.Rpz.ZoneName)
 	for _, d := range td.Downstreams {
+		dest := net.JoinHostPort(d.Address, strconv.Itoa(d.Port))
+		csu := tapir.ComponentStatusUpdate{
+			Component: "downstream-notify",
+			Status:    "fail",
+			Msg:       fmt.Sprintf("Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, td.Rpz.Axfr.SOA.Serial, td.Rpz.ZoneName),
+			TimeStamp: time.Now(),
+		}
+
 		m := new(dns.Msg)
 		m.SetNotify(td.Rpz.ZoneName)
 		td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial
 		// m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
-		dest := net.JoinHostPort(d.Address, strconv.Itoa(d.Port))
 		td.Logger.Printf("RefreshEngine: Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, td.Rpz.Axfr.SOA.Serial, td.Rpz.ZoneName)
 		r, err := dns.Exchange(m, dest)
 		if err != nil {
 			// well, we tried
-			Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
-				Component: "downstream-notify",
-				Status:    "failure",
-				Msg:       fmt.Sprintf("Error from downstream %s on NOTIFY(%s): %v", dest, td.Rpz.ZoneName, err),
-			}
-			td.Logger.Printf("Error from downstream %s on Notify(%s): %v", dest, td.Rpz.ZoneName, err)
+			csu.Msg = fmt.Sprintf("Error from downstream %s on NOTIFY(%s): %v", dest, td.Rpz.ZoneName, err)
+			Gconfig.Internal.ComponentStatusCh <- csu
+			td.Logger.Println(csu.Msg)
 			continue
 		}
 		if r.Opcode != dns.OpcodeNotify {
 			// well, we tried
-			Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
-				Component: "downstream-notify",
-				Status:    "failure",
-				Msg:       fmt.Sprintf("Error: not a NOTIFY response from downstream %s on NOTIFY(%s): %s", dest, td.Rpz.ZoneName, dns.OpcodeToString[r.Opcode]),
-			}
-			td.Logger.Printf("Error: not a NOTIFY QR from downstream %s on Notify(%s): %s",
-				dest, td.Rpz.ZoneName, dns.OpcodeToString[r.Opcode])
+			csu.Msg = fmt.Sprintf("Error: not a NOTIFY response from downstream %s on NOTIFY(%s): %s", dest, td.Rpz.ZoneName, dns.OpcodeToString[r.Opcode])
+			Gconfig.Internal.ComponentStatusCh <- csu
+			td.Logger.Println(csu.Msg)
+			continue
+
 		} else {
 			if r.Rcode != dns.RcodeSuccess {
-				Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
-					Component: "downstream-notify",
-					Status:    "failure",
-					Msg:       fmt.Sprintf("Downstream %s responded with rcode %s to NOTIFY(%s) about new SOA serial (%d)", dest, dns.RcodeToString[r.Rcode], td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial),
-				}
-				td.Logger.Printf("RefreshEngine: Downstream %s responded with rcode %s to Notify(%s) about new SOA serial (%d)", dest, dns.RcodeToString[r.Rcode], td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial)
-			} else {
-				Gconfig.Internal.TemStatusCh <- tapir.TemStatusUpdate{
-					Component: "downstream-notify",
-					Status:    "success",
-					Msg:       fmt.Sprintf("Downstream %s responded correctly to NOTIFY(%s) about new SOA serial (%d)", dest, td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial),
-				}
-				td.Logger.Printf("RefreshEngine: Downstream %s responded correctly to Notify(%s) about new SOA serial (%d)", dest, td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial)
+				csu.Msg = fmt.Sprintf("Downstream %s responded with rcode %s to NOTIFY(%s) about new SOA serial (%d)", dest, dns.RcodeToString[r.Rcode], td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial)
+				Gconfig.Internal.ComponentStatusCh <- csu
+				td.Logger.Println(csu.Msg)
+				continue
 			}
+			csu.Status = "success"
+			csu.Msg = fmt.Sprintf("Downstream %s responded correctly to NOTIFY(%s) about new SOA serial (%d)", dest, td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial)
+			Gconfig.Internal.ComponentStatusCh <- csu
+			td.Logger.Println(csu.Msg)
 		}
 	}
 	return nil

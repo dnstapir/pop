@@ -127,8 +127,8 @@ type GreylistConf struct {
 type InternalConf struct {
 	// RefreshZoneCh chan RpzRefresher
 	// RpzCmdCh      chan RpzCmdData
-	APIStopCh   chan struct{}
-	TemStatusCh chan tapir.TemStatusUpdate
+	APIStopCh         chan struct{}
+	ComponentStatusCh chan tapir.ComponentStatusUpdate
 }
 
 func ValidateConfig(v *viper.Viper, cfgfile string) error {

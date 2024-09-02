@@ -35,16 +35,16 @@ func NewTemData(conf *Config, lg *log.Logger) (*TemData, error) {
 	}
 
 	td := TemData{
-		Lists:          map[string]map[string]*tapir.WBGlist{},
-		Logger:         lg,
-		MqttLogger:     conf.Loggers.Mqtt,
-		RpzRefreshCh:   make(chan RpzRefresh, 10),
-		RpzCommandCh:   make(chan RpzCmdData, 10),
-		TapirStatusCh:  conf.Internal.TemStatusCh,
-		Rpz:            rpzdata,
-		ReaperInterval: time.Duration(repint) * time.Second,
-		Verbose:        viper.GetBool("log.verbose"),
-		Debug:          viper.GetBool("log.debug"),
+		Lists:             map[string]map[string]*tapir.WBGlist{},
+		Logger:            lg,
+		MqttLogger:        conf.Loggers.Mqtt,
+		RpzRefreshCh:      make(chan RpzRefresh, 10),
+		RpzCommandCh:      make(chan RpzCmdData, 10),
+		ComponentStatusCh: conf.Internal.ComponentStatusCh,
+		Rpz:               rpzdata,
+		ReaperInterval:    time.Duration(repint) * time.Second,
+		Verbose:           viper.GetBool("log.verbose"),
+		Debug:             viper.GetBool("log.debug"),
 	}
 
 	td.Lists["whitelist"] = make(map[string]*tapir.WBGlist, 3)
@@ -163,7 +163,7 @@ func (td *TemData) ParseSourcesNG() error {
 
 	if td.MqttEngine == nil {
 		td.mu.Lock()
-		err := td.CreateMqttEngine(viper.GetString("tapir.mqtt.clientid"), td.TapirStatusCh, td.MqttLogger)
+		err := td.CreateMqttEngine(viper.GetString("tapir.mqtt.clientid"), td.ComponentStatusCh, td.MqttLogger)
 		if err != nil {
 			TEMExiter("Error creating MQTT Engine: %v", err)
 		}
@@ -183,10 +183,11 @@ func (td *TemData) ParseSourcesNG() error {
 			TEMExiter("Error fetching MQTT validator key for topic %s: %v", cfgtopic, err)
 		}
 		// err = td.MqttEngine.AddTopic(cfgtopic, nil, valkey)
-		err = td.MqttEngine.PubSubToTopic(cfgtopic, nil, valkey, nil) // XXX: should have a channel to the config processor
+		topicdata, err := td.MqttEngine.PubSubToTopic(cfgtopic, nil, valkey, nil) // XXX: should have a channel to the config processor
 		if err != nil {
 			TEMExiter("Error adding topic %s to MQTT Engine: %v", cfgtopic, err)
 		}
+		td.Logger.Printf("ParseSourcesNG: Topic data for topic %s: %+v", cfgtopic, topicdata)
 	}
 
 	for name, src := range srcs {
@@ -234,10 +235,11 @@ func (td *TemData) ParseSourcesNG() error {
 
 				td.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
 				// err = td.MqttEngine.AddTopic(src.Topic, nil, valkey)
-				err = td.MqttEngine.PubSubToTopic(src.Topic, nil, valkey, nil)
+				topicdata, err := td.MqttEngine.PubSubToTopic(src.Topic, nil, valkey, nil)
 				if err != nil {
 					TEMExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
 				}
+				td.Logger.Printf("ParseSourcesNG: Topic data for topic %s: %+v", src.Topic, topicdata)
 
 				newsource.Format = "map" // for now
 				if len(src.Bootstrap) > 0 {
