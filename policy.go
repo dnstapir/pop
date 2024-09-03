@@ -31,10 +31,10 @@ type TemOutputs struct {
 }
 
 func (td *TemData) ParseOutputs() error {
-	td.Logger.Printf("ParseOutputs: reading outputs from %s", tapir.TemOutputsCfgFile)
-	cfgdata, err := os.ReadFile(tapir.TemOutputsCfgFile)
+	td.Logger.Printf("ParseOutputs: reading outputs from %s", tapir.PopOutputsCfgFile)
+	cfgdata, err := os.ReadFile(tapir.PopOutputsCfgFile)
 	if err != nil {
-		log.Fatalf("Error from ReadFile(%s): %v", tapir.TemOutputsCfgFile, err)
+		log.Fatalf("Error from ReadFile(%s): %v", tapir.PopOutputsCfgFile, err)
 	}
 
 	var oconf = TemOutputs{

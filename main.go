@@ -16,6 +16,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
 	"github.com/dnstapir/tapir"
@@ -119,15 +120,22 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 	log.Println("mainloop: leaving signal dispatcher")
 }
 
+var Gconfig Config
+
 func main() {
-	var conf Config
+	// var conf Config
+
+	flag.BoolVarP(&tapir.GlobalCF.Debug, "debug", "d", false, "Debug mode")
+	flag.BoolVarP(&tapir.GlobalCF.Verbose, "verbose", "v", false, "Verbose mode")
+	flag.Parse()
+
 	var cfgFileUsed string
 
 	var cfgFile string
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		viper.SetConfigFile(tapir.DefaultTemCfgFile)
+		viper.SetConfigFile(tapir.DefaultPopCfgFile)
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
@@ -137,38 +145,38 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.DefaultTemCfgFile, err)
+		TEMExiter("Could not load config %s: Error: %v", tapir.DefaultPopCfgFile, err)
 	}
-	viper.SetConfigFile(tapir.TemSourcesCfgFile)
+	viper.SetConfigFile(tapir.PopSourcesCfgFile)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.TemSourcesCfgFile, err)
+		TEMExiter("Could not load config %s: Error: %v", tapir.PopSourcesCfgFile, err)
 	}
-	viper.SetConfigFile(tapir.TemOutputsCfgFile)
+	viper.SetConfigFile(tapir.PopOutputsCfgFile)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.TemOutputsCfgFile, err)
+		TEMExiter("Could not load config %s: Error: %v", tapir.PopOutputsCfgFile, err)
 	}
-	viper.SetConfigFile(tapir.TemPolicyCfgFile)
+	viper.SetConfigFile(tapir.PopPolicyCfgFile)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.TemPolicyCfgFile, err)
+		TEMExiter("Could not load config %s: Error: %v", tapir.PopPolicyCfgFile, err)
 	}
 
-	SetupLogging(&conf)
+	SetupLogging(&Gconfig)
 
 	err := ValidateConfig(nil, cfgFileUsed) // will terminate on error
 	if err != nil {
 		TEMExiter("Error validating config: %v", err)
 	}
 
-	err = viper.Unmarshal(&conf)
+	err = viper.Unmarshal(&Gconfig)
 	if err != nil {
 		TEMExiter("Error unmarshalling config into struct: %v", err)
 	}
@@ -177,11 +185,29 @@ func main() {
 
 	var stopch = make(chan struct{}, 10)
 
-	td, err := NewTemData(&conf, log.Default())
+	statusch := make(chan tapir.ComponentStatusUpdate, 10)
+	Gconfig.Internal.ComponentStatusCh = statusch
+
+	td, err := NewTemData(&Gconfig, log.Default())
 	if err != nil {
 		TEMExiter("Error from NewTemData: %v", err)
 	}
-	go td.RefreshEngine(&conf, stopch)
+
+	if td.MqttEngine == nil {
+		td.mu.Lock()
+		err := td.CreateMqttEngine(viper.GetString("tapir.mqtt.clientid"), statusch, td.MqttLogger)
+		if err != nil {
+			TEMExiter("Error creating MQTT Engine: %v", err)
+		}
+		td.mu.Unlock()
+		err = td.StartMqttEngine(td.MqttEngine)
+		if err != nil {
+			TEMExiter("Error starting MQTT Engine: %v", err)
+		}
+	}
+
+	go td.StatusUpdater(&Gconfig, stopch) // Note that StatusUpdater must as early as possible
+	go td.RefreshEngine(&Gconfig, stopch)
 
 	log.Println("*** main: Calling ParseSourcesNG()")
 	err = td.ParseSourcesNG()
@@ -196,16 +222,23 @@ func main() {
 	}
 
 	apistopper := make(chan struct{}) //
-	conf.Internal.APIStopCh = apistopper
-	go APIdispatcher(&conf, apistopper)
+	Gconfig.Internal.APIStopCh = apistopper
+	go APIhandler(&Gconfig, apistopper)
 	//	go httpsserver(&conf, apistopper)
 
 	go func() {
-		if err := DnsEngine(&conf); err != nil {
+		if err := DnsEngine(&Gconfig); err != nil {
 			log.Printf("Error starting DnsEngine: %v", err)
 		}
 	}()
-	conf.BootTime = time.Now()
+	Gconfig.BootTime = time.Now()
 
-	mainloop(&conf, &cfgFileUsed, td)
+	statusch <- tapir.ComponentStatusUpdate{
+		Component: "main-boot",
+		Status:    "ok",
+		Msg:       "TAPIR Policy Processor started",
+		TimeStamp: time.Now(),
+	}
+
+	mainloop(&Gconfig, &cfgFileUsed, td)
 }

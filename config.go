@@ -127,7 +127,8 @@ type GreylistConf struct {
 type InternalConf struct {
 	// RefreshZoneCh chan RpzRefresher
 	// RpzCmdCh      chan RpzCmdData
-	APIStopCh chan struct{}
+	APIStopCh         chan struct{}
+	ComponentStatusCh chan tapir.ComponentStatusUpdate
 }
 
 func ValidateConfig(v *viper.Viper, cfgfile string) error {
@@ -139,7 +140,7 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 		}
 	} else {
 		if err := v.Unmarshal(&config); err != nil {
-			TEMExiter("ValidateConfig: unmarshal error: %v", err)
+			TEMExiter("ValidateConfig: Unmarshal error: %v", err)
 		}
 	}
 

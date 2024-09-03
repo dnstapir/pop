@@ -13,13 +13,13 @@ import (
 	"github.com/miekg/dns"
 )
 
-func (td *TemData) CreateMqttEngine(clientid string, lg *log.Logger) error {
+func (td *TemData) CreateMqttEngine(clientid string, statusch chan tapir.ComponentStatusUpdate, lg *log.Logger) error {
 	if clientid == "" {
 		TEMExiter("Error starting MQTT Engine: clientid not specified in config")
 	}
 	var err error
 	td.Logger.Printf("Creating MQTT Engine with clientid %s", clientid)
-	td.MqttEngine, err = tapir.NewMqttEngine(clientid, tapir.TapirSub, lg) // sub, but no pub
+	td.MqttEngine, err = tapir.NewMqttEngine("tapir-pop", clientid, tapir.TapirSub, statusch, lg) // sub, but no pub
 	if err != nil {
 		TEMExiter("Error from NewMqttEngine: %v\n", err)
 	}
@@ -40,11 +40,12 @@ func (td *TemData) StartMqttEngine(meng *tapir.MqttEngine) error {
 	//TEMExiter("Error from NewMqttEngine: %v\n", err)
 	//}
 
-	cmnder, _, inbox, err := meng.StartEngine()
+	cmnder, outbox, inbox, err := meng.StartEngine()
 	if err != nil {
 		log.Fatalf("Error from StartEngine(): %v", err)
 	}
 	td.TapirMqttCmdCh = cmnder
+	td.TapirMqttPubCh = outbox
 	td.TapirMqttSubCh = inbox
 	td.TapirMqttEngineRunning = true
 

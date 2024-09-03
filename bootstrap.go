@@ -8,7 +8,6 @@ import (
 	"encoding/gob"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"time"
 
@@ -27,10 +26,10 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 
 	cd := viper.GetString("certs.certdir")
 	if cd == "" {
-		log.Fatalf("Error: missing config key: certs.certdir")
+		TEMExiter("BootstrapMqttSource error: missing config key: certs.certdir")
 	}
 	// cert := cd + "/" + certname
-	cert := cd + "/" + "tem"
+	cert := cd + "/" + "tapir-pop"
 	tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"), cert+".key", cert+".crt")
 	if err != nil {
 		TEMExiter("BootstrapMqttSource: Error: Could not set up TLS: %v", err)
@@ -39,7 +38,7 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 	tlsConfig.InsecureSkipVerify = true
 	err = api.SetupTLS(tlsConfig)
 	if err != nil {
-		return nil, fmt.Errorf("error setting up TLS for the API client: %v", err)
+		TEMExiter("BootstrapMqttSource: error setting up TLS for the API client: %v", err)
 	}
 
 	bootstrapaddrs := viper.GetStringSlice("bootstrapserver.addresses")
@@ -51,7 +50,7 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 		// Is this myself?
 		for _, bs := range bootstrapaddrs {
 			if bs == server {
-				td.Logger.Printf("MQTT bootstrap server %s is myself, skipping", server)
+				td.Logger.Printf("BootstrapMqttSource: MQTT bootstrap server %s is myself, skipping", server)
 				continue
 			}
 		}
@@ -61,12 +60,12 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 		// Send an API ping command
 		pr, err := api.SendPing(0, false)
 		if err != nil {
-			td.Logger.Printf("Ping to MQTT bootstrap server %s failed: %v", server, err)
+			td.Logger.Printf("BootstrapMqttSource: Ping to MQTT bootstrap server %s failed: %v", server, err)
 			continue
 		}
 
 		uptime := time.Since(pr.BootTime).Round(time.Second)
-		td.Logger.Printf("MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages", server, uptime, 17)
+		td.Logger.Printf("BootstrapMqttSource: MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages", server, uptime, 17)
 
 		status, buf, err := api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
 			Command:  "greylist-status",
@@ -87,30 +86,31 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 		var br tapir.BootstrapResponse
 		err = json.Unmarshal(buf, &br)
 		if err != nil {
-			td.Logger.Printf("Error decoding greylist-status response from %s: %v. Giving up.\n", server, err)
+			td.Logger.Printf("BootstrapMqttSource: Error decoding greylist-status response from %s: %v. Giving up.\n", server, err)
 			continue
 		}
 		if br.Error {
-			td.Logger.Printf("Bootstrap server %s responded with error: %s (instead of greylist status)", server, br.ErrorMsg)
+			td.Logger.Printf("BootstrapMqttSource: Bootstrap server %s responded with error: %s (instead of greylist status)", server, br.ErrorMsg)
 		}
 		if len(br.Msg) != 0 {
-			td.Logger.Printf("Bootstrap server %s responded: %s", server, br.Msg)
+			td.Logger.Printf("BootstrapMqttSource: Bootstrap server %s responded: %s", server, br.Msg)
 		}
 
-		td.Logger.Printf("MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages on the %s topic (last msg arrived at %s), ", server, uptime, br.MsgCounters["greylist"], src.Name, br.MsgTimeStamps["greylist"].Format(time.RFC3339))
+		td.Logger.Printf("BootstrapMqttSource: MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages on the %s topic (last sub msg arrived at %s), ", server, uptime, br.TopicData[src.Name].SubMsgs, src.Name, br.TopicData[src.Name].LatestSub.Format(tapir.TimeLayout))
 
 		status, buf, err = api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
 			Command:  "export-greylist",
 			ListName: src.Name,
 			Encoding: "gob", // XXX: This is our default, but we'll test other encodings later
 		}, true)
+
 		if err != nil {
-			fmt.Printf("Error from RequestNG: %v\n", err)
+			td.Logger.Printf("BootstrapMqttSource: Error from RequestNG: %v\n", err)
 			continue
 		}
 
 		if status != http.StatusOK {
-			td.Logger.Printf("HTTP Error: %s\n", buf)
+			td.Logger.Printf("BootstrapMqttSource: HTTP Error: %s\n", buf)
 			continue
 		}
 
@@ -123,14 +123,14 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 			var br tapir.BootstrapResponse
 			err = json.Unmarshal(buf, &br)
 			if err != nil {
-				td.Logger.Printf("Error decoding bootstrap response from %s: %v. Giving up.\n", server, err)
+				td.Logger.Printf("BootstrapMqttSource: Error decoding bootstrap response from %s: %v. Giving up.\n", server, err)
 				continue
 			}
 			if br.Error {
-				td.Logger.Printf("Bootstrap server %s responded with error: %s (instead of GOB blob)", server, br.ErrorMsg)
+				td.Logger.Printf("BootstrapMqttSource: Bootstrap server %s responded with error: %s (instead of GOB blob)", server, br.ErrorMsg)
 			}
 			if len(br.Msg) != 0 {
-				td.Logger.Printf("Bootstrap server %s responded: %s (instead of GOB blob)", server, br.Msg)
+				td.Logger.Printf("BootstrapMqttSource: Bootstrap server %s responded: %s (instead of GOB blob)", server, br.Msg)
 			}
 			// return nil, fmt.Errorf("Command Error: %s", br.ErrorMsg)
 			continue
@@ -151,5 +151,5 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 	}
 
 	// If no bootstrap server succeeded
-	return nil, fmt.Errorf("all bootstrap servers failed")
+	return nil, fmt.Errorf("BootstrapMqttSource: all bootstrap servers failed")
 }
