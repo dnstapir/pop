@@ -71,9 +71,31 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		switch cp.Command {
 		case "status":
 			log.Printf("Daemon status inquiry\n")
+			rt := make(chan tapir.StatusUpdaterResponse)
+			var ts *tapir.StatusUpdaterResponse
+
+			conf.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+				Component: "status",
+				Status:    "status",
+				Response:  rt,
+			}
+
+			select {
+			case foo := <-rt:
+				ts = &foo
+			case <-time.After(2 * time.Second):
+				log.Println("Timeout waiting for response on rt channel")
+				ts = nil
+			}
+
 			resp = tapir.CommandResponse{
 				Status: "ok", // only status we know, so far
-				Msg:    "We're happy, but send more cookies"}
+				Msg:    "We're happy, but send more cookies",
+			}
+			if ts != nil {
+				resp.TapirFunctionStatus = ts.FunctionStatus
+			}
+
 		case "stop":
 			log.Printf("Daemon instructed to stop\n")
 			resp = tapir.CommandResponse{
@@ -245,9 +267,11 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		case "greylist-status":
 			me := conf.TemData.MqttEngine
 			stats := me.Stats()
-			resp.MsgCounters = stats.MsgCounters
-			resp.MsgTimeStamps = stats.MsgTimeStamps
-			log.Printf("API: greylist-status: msgs: %d last msg: %v", stats.MsgCounters[bp.ListName], stats.MsgTimeStamps[bp.ListName])
+			// resp.MsgCounters = stats.MsgCounters
+			// resp.MsgTimeStamps = stats.MsgTimeStamps
+			resp.TopicData = stats
+			// log.Printf("API: greylist-status: msgs: %d last msg: %v", stats.MsgCounters[bp.ListName], stats.MsgTimeStamps[bp.ListName])
+			log.Printf("API: greylist-status: %v", stats)
 
 		case "export-greylist":
 			td := conf.TemData
@@ -403,7 +427,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "mqtt-stats":
 			log.Printf("TEM debug MQTT stats")
-			resp.MqttStats = td.MqttEngine.Stats()
+			resp.TopicData = td.MqttEngine.Stats()
 
 		case "reaper-stats":
 			log.Printf("TEM debug reaper stats")
@@ -449,6 +473,37 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				resp.RpzOutput = append(resp.RpzOutput, *rpzn)
 			}
 
+		case "send-status":
+			log.Printf("TEM debug send status")
+
+			rt := make(chan tapir.StatusUpdaterResponse)
+			var sur *tapir.StatusUpdaterResponse
+
+			conf.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+				Component: dp.Component,
+				Status:    dp.Status,
+				Msg:       "debug status update",
+				TimeStamp: time.Now(),
+				Response:  rt,
+			}
+
+			select {
+			case foo := <-rt:
+				sur = &foo
+			case <-time.After(2 * time.Second):
+				log.Println("Timeout waiting for response on rt channel")
+				sur = nil
+			}
+
+			if sur != nil {
+				resp.Status = "ok"
+				resp.Msg = sur.Msg
+			} else {
+				resp.Msg = "Status update for component " + dp.Component + " sent"
+				resp.Error = true
+				resp.ErrorMsg = "Timeout waiting for response on rt channel"
+			}
+
 		default:
 			resp.ErrorMsg = fmt.Sprintf("Unknown command: %s", dp.Command)
 			resp.Error = true
@@ -461,7 +516,7 @@ func SetupRouter(conf *Config) *mux.Router {
 
 	sr := r.PathPrefix("/api/v1").Headers("X-API-Key",
 		viper.GetString("apiserver.key")).Subrouter()
-	sr.HandleFunc("/ping", tapir.APIping("tem", conf.BootTime)).Methods("POST")
+	sr.HandleFunc("/ping", tapir.APIping("tapir-pop", conf.BootTime)).Methods("POST")
 	sr.HandleFunc("/command", APIcommand(conf)).Methods("POST")
 	sr.HandleFunc("/bootstrap", APIbootstrap(conf)).Methods("POST")
 	sr.HandleFunc("/debug", APIdebug(conf)).Methods("POST")
@@ -474,7 +529,7 @@ func SetupBootstrapRouter(conf *Config) *mux.Router {
 	r := mux.NewRouter().StrictSlash(true)
 
 	sr := r.PathPrefix("/api/v1").Headers("X-API-Key", viper.GetString("apiserver.key")).Subrouter()
-	sr.HandleFunc("/ping", tapir.APIping("tem", conf.BootTime)).Methods("POST")
+	sr.HandleFunc("/ping", tapir.APIping("tapir-pop", conf.BootTime)).Methods("POST")
 	sr.HandleFunc("/bootstrap", APIbootstrap(conf)).Methods("POST")
 	// sr.HandleFunc("/debug", APIdebug(conf)).Methods("POST")
 	// sr.HandleFunc("/show/api", tapir.APIshowAPI(r)).Methods("GET")
@@ -501,7 +556,7 @@ func walkRoutes(router *mux.Router, address string) {
 
 // In practice APIdispatcher doesn't need a termination signal, as it will
 // just sit inside http.ListenAndServe, but we keep it for symmetry.
-func APIdispatcher(conf *Config, done <-chan struct{}) {
+func APIhandler(conf *Config, done <-chan struct{}) {
 	gob.Register(tapir.WBGlist{}) // Must register the type for gob encoding
 	router := SetupRouter(conf)
 
@@ -510,21 +565,32 @@ func APIdispatcher(conf *Config, done <-chan struct{}) {
 
 	addresses := viper.GetStringSlice("apiserver.addresses")
 	tlsaddresses := viper.GetStringSlice("apiserver.tlsaddresses")
-	certfile := viper.GetString("certs.tem.cert")
-	keyfile := viper.GetString("certs.tem.key")
+	certfile := viper.GetString("certs.tapir-pop.cert")
+	if certfile == "" {
+		log.Printf("*** APIhandler: Error: TLS cert file not specified under key certs.tapir-pop.cert")
+	}
+	keyfile := viper.GetString("certs.tapir-pop.key")
+	if keyfile == "" {
+		log.Printf("*** APIhandler: Error: TLS key file not specified under key certs.tapir-pop.key")
+	}
 
 	bootstrapaddresses := viper.GetStringSlice("bootstrapserver.addresses")
 	bootstraptlsaddresses := viper.GetStringSlice("bootstrapserver.tlsaddresses")
 	bootstraprouter := SetupBootstrapRouter(conf)
 
+	log.Printf("*** APIhandler: addresses: %v bootstrapaddresses: %v", addresses, bootstrapaddresses)
+	log.Printf("*** APIhandler: tlsaddresses: %v bootstraptlsaddresses: %v", tlsaddresses, bootstraptlsaddresses)
+
 	tlspossible := true
 
 	_, err := os.Stat(certfile)
 	if os.IsNotExist(err) {
+		log.Printf("*** APIhandler: Error: TLS cert file \"%s\" does not exist", certfile)
 		tlspossible = false
 	}
 	_, err = os.Stat(keyfile)
 	if os.IsNotExist(err) {
+		log.Printf("*** APIhandler: Error: TLS key file \"%s\" does not exist", keyfile)
 		tlspossible = false
 	}
 

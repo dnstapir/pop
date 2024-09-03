@@ -17,6 +17,15 @@ import (
 func SetupLogging(conf *Config) {
 	logfile := viper.GetString("log.file")
 
+	debug := viper.GetString("log.mode") == "debug"
+	logoptions := log.Ldate | log.Ltime
+	if debug {
+		log.Println("Logging in debug mode (showing file and line number)")
+		logoptions |= log.Lshortfile
+	}
+
+	prefix := ""
+
 	if logfile != "" {
 		log.SetOutput(&lumberjack.Logger{
 			Filename:   logfile,
@@ -24,7 +33,7 @@ func SetupLogging(conf *Config) {
 			MaxBackups: 3,
 			MaxAge:     14,
 		})
-		fmt.Printf("TEM standard logging to: %s\n", logfile)
+		fmt.Printf("TAPIR-POP standard logging to: %s\n", logfile)
 	} else {
 		TEMExiter("Error: standard log (key log.file) not specified")
 	}
@@ -37,14 +46,17 @@ func SetupLogging(conf *Config) {
 			TEMExiter("error opening TEM policy logfile '%s': %v", logfile, err)
 		}
 
-		conf.Loggers.Policy = log.New(f, "policy: ", log.Lshortfile)
+		if debug {
+			prefix = "policy: "
+		}
+		conf.Loggers.Policy = log.New(f, prefix, logoptions)
 		conf.Loggers.Policy.SetOutput(&lumberjack.Logger{
 			Filename:   logfile,
 			MaxSize:    20,
 			MaxBackups: 3,
 			MaxAge:     14,
 		})
-		fmt.Printf("TEM policy logging to: %s\n", logfile)
+		fmt.Printf("TAPIR-POP policy logging to: %s\n", logfile)
 	} else {
 		log.Println("No policy logfile specified, using default")
 		conf.Loggers.Policy = log.Default()
@@ -58,14 +70,17 @@ func SetupLogging(conf *Config) {
 			TEMExiter("error opening TEM dnsengine logfile '%s': %v", logfile, err)
 		}
 
-		conf.Loggers.Dnsengine = log.New(f, "dnsengine: ", log.Lshortfile)
+		if debug {
+			prefix = "dnsengine: "
+		}
+		conf.Loggers.Dnsengine = log.New(f, prefix, logoptions)
 		conf.Loggers.Dnsengine.SetOutput(&lumberjack.Logger{
 			Filename:   logfile,
 			MaxSize:    20,
 			MaxBackups: 3,
 			MaxAge:     14,
 		})
-		fmt.Printf("TEM dnsengine logging to: %s\n", logfile)
+		fmt.Printf("TAPIR-POP dnsengine logging to: %s\n", logfile)
 	} else {
 		log.Println("No dnsengine logfile specified, using default")
 		conf.Loggers.Dnsengine = log.Default()
@@ -79,14 +94,17 @@ func SetupLogging(conf *Config) {
 			TEMExiter("error opening TEM MQTT logfile '%s': %v", logfile, err)
 		}
 
-		conf.Loggers.Mqtt = log.New(f, "mqtt: ", log.Lshortfile)
+		if debug {
+			prefix = "mqtt: "
+		}
+		conf.Loggers.Mqtt = log.New(f, prefix, logoptions)
 		conf.Loggers.Mqtt.SetOutput(&lumberjack.Logger{
 			Filename:   logfile,
 			MaxSize:    20,
 			MaxBackups: 3,
 			MaxAge:     14,
 		})
-		fmt.Printf("TEM MQTT logging to: %s\n", logfile)
+		fmt.Printf("TAPIR-POP MQTT logging to: %s\n", logfile)
 	} else {
 		log.Println("No MQTT logfile specified, using default")
 		conf.Loggers.Mqtt = log.Default()

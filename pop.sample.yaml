@@ -22,7 +22,7 @@ bootstrapserver:
 dnsengine:
    active:	true
    addresses:	[ 127.0.0.1:5360 ]
-   logfile:	/var/log/dnstapir/tem-dnsengine.log
+   logfile:	/var/log/dnstapir/pop-dnsengine.log
 
 services:
    reaper:
@@ -37,7 +37,7 @@ services:
 
 tapir:
    mqtt:
-      logfile:		/var/log/dnstapir/tem-mqtt.log
+      logfile:		/var/log/dnstapir/pop-mqtt.log
       server:		tls://mqtt.dev.dnstapir.se:8883
       uid:		johani
       clientid:		this-must-be-unique
@@ -53,8 +53,12 @@ tapir:
 
    config:
       srcname:		dns-tapir
-      topic:		events/up/johani/config
+      topic:		config/down/tem/johani
       validatorkey:	/etc/dnstapir/certs/mqttsigner-pub.pem
+
+   status:
+      topic:		status/up/tem/must-be-unique
+      signingkey:	/etc/dnstapir/certs/mqttsigner-key.pem
 
 # redirects:
 #    tapir:	landing-page.dnstapir.se
@@ -71,4 +75,4 @@ certs:
       key:	/etc/dnstapir/certs/tem.key
 
 log:
-   file:	/var/log/dnstapir/tem.log
+   file:	/var/log/dnstapir/pop.log
