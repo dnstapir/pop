@@ -2,14 +2,13 @@
 
 if [ $# != 1 ]; then
    echo Usage: $0 instance-id
-   echo \"instance-id\" is a string that you choose yourself that will identify this DNS TAPIR Edge instance.
-   echo A domain name is usually a good idea.
+   echo \"instance-id\" is a string that you receive from TAPIR Core that will identify this DNS TAPIR Edge instance.
    exit 1
 fi
 
 id=$1
 
-echo Your chosen DNS TAPIR Edge Id is \"$id\".
+echo Your DNS TAPIR Edge Id is \"$id\".
 /bin/echo -n "Proceed [yes]: "
 default_ans="yes"
 read answer

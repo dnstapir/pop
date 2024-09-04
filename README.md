@@ -1,28 +1,31 @@
-# tem: DNS TAPIR Edge Manager
+# tapir-pop: DNS TAPIR Policy Processor
 
-The *DNS TAPIR Edge manager*, TEM, is the connection between the core and the
+The *DNS TAPIR Policy Processor*, TAPIR-POP, is the component that processes the intelligence data from the TAPIR-CORE
+(and possibly other sources) and applies local policy to reach a filtering decision. 
+
+It is the connection between the core and the
 edge platform. It manages local configurations and gets updates from
 the core with alerts and config changes.
 
-TEM is responsible for the task of integrating all intelligence sources
+TAPIR-POP is responsible for the task of integrating all intelligence sources
 into a single Response Policy Zone (RPZ) that is as compact as possible.
 The RPZ file is used by the DNS resolver to implement blocklists and other
 policy-related functions.
 
 ## A unified single RPZ zone instead of multiple sources
 
-TEM presents a single output with all conflicts resolved,
+TAPIR-POP presents a single output with all conflicts resolved,
 rather than feeding the resolver multiple sources of data from
 which to look for policy guidance, where sources can even be conflicting
 (eg. a domainname may be flagged by one source but whitelisted by another).
 
 The result is smaller, as no whitelisting information is needed for the resolver.
 
-## TEM supports a local policy configuration
+## TAPIR-POP supports a local policy configuration
 
-TEM is able to apply further policy to the intelligence data,
+TAPIR-POP is able to apply further policy to the intelligence data,
 based on a local policy configuration. To enable the resolver operator to
-design a suitable threat policy TEM uses a number of concepts:
+design a suitable threat policy TAPIR-POP uses a number of concepts:
 
 - __lists__: there are three types of lists of domain names:
 
@@ -30,7 +33,7 @@ design a suitable threat policy TEM uses a number of concepts:
   - blacklists (names that must be blocked)
   - greylists (names that should perhaps be blocked)
 
-- __tags__: these are attributes of a suspicious domain name. In reality
+- __observations__: these are attributes of a suspicious domain name. In reality
   whether a particular domain name should be blocked or not is not an
   absolute, it is a question of propabilities. Therefore, rather than
   a binary directive, "this name must be blocked", some intelligence
@@ -51,13 +54,13 @@ design a suitable threat policy TEM uses a number of concepts:
   - __CSV Files__: Text files on local disk, either with just domain names, or in
     CSV format are supported.
   - __HTTPS__: To bootstrap an intelligence feed that only distributes deltas
-    (like DNS TAPIR, over MQTT), TEM can bootstrap the current state of the
-    complete feed via HTTPS. [NYI]
+    (like DNS TAPIR, over MQTT), TAPIR-POP can bootstrap the current state of the
+    complete feed via HTTPS.
 
-- __outputs__: TEM outputs RPZ zones to one or several recipients. Both AXFR and IXFR
-  is supported
+- __outputs__: TAPIR-POP outputs RPZ zones to one or several recipients. Both AXFR and IXFR
+  is supported.
 
-## Overview of the TEM policy
+## Overview of the TAPIR-POP policy
 
 The resulting policy has the following structure (in order of precedence):
 
