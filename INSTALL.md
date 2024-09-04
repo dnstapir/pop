@@ -1,4 +1,4 @@
-### TAPIR-POP INSTALLATION
+# TAPIR-POP INSTALLATION
 
 TAPIR-POP is most commonly installed as a Docker container, but it can also be run as a separate binary. 
 This document focuses on the latter alternative.
@@ -39,9 +39,12 @@ The configuration files are described in their own README files.
 The primary requisite is a client certificate and key for the TAPIR-POP server issued by the TAPIR-CORE CA. To obtain these, run the script
 `generate-csr.sh` and follow the instructions. The script is only a few lines long and is easy to follow. It takes one parameter, which is a TAPIR "instance id". This is needed to ensure that the CSR is unique.
 
-The result is a file named `tapir-instance-id.csr` and a file named `tapir-instance-id.key`. The CSR file is sent manually to the TAPIR-CORE for signing and in return the TAPIR-CORE will return a signed certificate in a file named `tapir-instance-id.crt`.
+The result is a file named `tapir-instance-id.csr` and a file named `tapir-instance-id.key`. The CSR file is sent manually to the TAPIR-CORE for signing and in return the TAPIR-CORE will return a signed certificate in a file named `tapir-instance-id.crt`. We recommend that both the `.crt` and `.key` files are stored in the `/etc/dnstapir/certs` directory, and that this directory has restricted access.
 
-The next step is to configure TAPIR-POP with the location of the TAPIR-CORE server, the CA certificate, and the signed certificate. This is done with the `tapir-pop.toml` configuration file.
+Once the certificate and key are in place, the exact location of these files must be specified in the `/etc/dnstapir/tapir-pop.yaml` configuration file
+under the keys `tapir.mqtt.clientcert` and `tapir.mqtt.clientkey`.
+
+*** TODO: add stuff on creation of the signingkey
 
 ## Running TAPIR-POP
 
