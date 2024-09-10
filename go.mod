@@ -8,10 +8,11 @@ require (
 	github.com/dnstapir/tapir v0.0.0-00010101000000-000000000000
 	github.com/go-playground/validator/v10 v10.22.0
 	github.com/gorilla/mux v1.8.1
-	github.com/mattn/go-sqlite3 v1.14.22
+	github.com/mattn/go-sqlite3 v1.14.23
 	github.com/miekg/dns v1.1.62
 	github.com/ryanuber/columnize v2.1.2+incompatible
 	github.com/smhanov/dawg v0.0.0-20220118194912-66057bdbf2e3
+	github.com/spf13/pflag v1.0.5
 	github.com/spf13/viper v1.19.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
@@ -43,7 +44,6 @@ require (
 	github.com/sourcegraph/conc v0.3.0 // indirect
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
-	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
