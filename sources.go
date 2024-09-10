@@ -183,7 +183,7 @@ func (td *TemData) ParseSourcesNG() error {
 			TEMExiter("Error fetching MQTT validator key for topic %s: %v", cfgtopic, err)
 		}
 		// err = td.MqttEngine.AddTopic(cfgtopic, nil, valkey)
-		topicdata, err := td.MqttEngine.PubSubToTopic(cfgtopic, nil, valkey, nil) // XXX: should have a channel to the config processor
+		topicdata, err := td.MqttEngine.PubSubToTopic(cfgtopic, nil, valkey, nil, "struct") // XXX: should have a channel to the config processor
 		if err != nil {
 			TEMExiter("Error adding topic %s to MQTT Engine: %v", cfgtopic, err)
 		}
@@ -235,7 +235,7 @@ func (td *TemData) ParseSourcesNG() error {
 
 				td.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
 				// err = td.MqttEngine.AddTopic(src.Topic, nil, valkey)
-				topicdata, err := td.MqttEngine.PubSubToTopic(src.Topic, nil, valkey, nil)
+				topicdata, err := td.MqttEngine.PubSubToTopic(src.Topic, nil, valkey, nil, "struct") // XXX: Brr. kludge.
 				if err != nil {
 					TEMExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
 				}

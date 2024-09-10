@@ -6,6 +6,9 @@ if [ $# != 1 ]; then
    exit 1
 fi
 
+destdir=/etc/dnstapir/certs
+mkdir -p ${destdir}
+
 id=$1
 
 echo Your DNS TAPIR Edge Id is \"$id\".
@@ -25,6 +28,9 @@ if [ "$answer" != "yes" ]; then
 fi
 
 openssl genpkey -genparam -algorithm ec -pkeyopt ec_paramgen_curve:P-256 -out ecparam.pem
-openssl req -new -out ${id}.csr -newkey ec:ecparam.pem -keyout ${id}.key -subj "/CN=${id}" -nodes
+openssl req -new -out tapiredge.csr -newkey ec:ecparam.pem -keyout tapiredge.key -subj "/CN=${id}" -nodes
 
-echo Send the file \"${id}.csr\" to DNS TAPIR admin. You will receive a \"${id}.crt\" in return.
+echo Send the file \"tapiredge.csr\" to DNS TAPIR admin. You will receive a \"${id}.crt\" in return.
+echo If using the default configuration, move the .crt file to ${destdir}/tapiredge.crt and the
+echo tapiredge.key file to ${destdir}/tapiredge.key. Ensure that the .key file is read protected
+echo for common users.
