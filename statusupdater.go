@@ -53,7 +53,7 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 	}
 
 	td.Logger.Printf("StatusUpdater: Adding topic '%s' to MQTT Engine", statusTopic)
-	msg, err := me.PubSubToTopic(statusTopic, signkey, nil, nil)
+	msg, err := me.PubSubToTopic(statusTopic, signkey, nil, nil, "struct") // XXX: Brr. kludge.
 	if err != nil {
 		TEMExiter("Error adding topic %s to MQTT Engine: %v", statusTopic, err)
 	}
