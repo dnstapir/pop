@@ -46,7 +46,7 @@ func (td *TemData) StartMqttEngine(meng *tapir.MqttEngine) error {
 	}
 	td.TapirMqttCmdCh = cmnder
 	td.TapirMqttPubCh = outbox
-	td.TapirMqttSubCh = inbox
+	td.TapirObservations = inbox
 	td.TapirMqttEngineRunning = true
 
 	meng.SetupInterruptHandler()
@@ -62,32 +62,40 @@ func (td *TemData) StartMqttEngine(meng *tapir.MqttEngine) error {
 //    - if different, add the diff (DEL+ADD) to a growing "IXFR" describing the consequences of the update.
 //
 
-func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
+// func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkgIn) (bool, error) {
+func (td *TemData) ProcessTapirUpdate(tm tapir.TapirMsg) (bool, error) {
+	//	tm := tapir.TapirMsg{}
+	//	err := json.Unmarshal(tpkg.Payload, &tm)
+	//	if err != nil {
+	//		fmt.Printf("MQTT: failed to decode json: %v", err)
+	//		return false, fmt.Errorf("MQTT: failed to decode json: %v", err)
+	//	}
+
 	if td.Debug {
 		td.Logger.Printf("ProcessTapirUpdate: update of MQTT source %s contains %d adds and %d removes",
-			tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
-		tapir.PrintTapirMqttPkg(tpkg, td.Logger)
+			tm.SrcName, len(tm.Added), len(tm.Removed))
+		tapir.PrintTapirMsg(tm, td.Logger)
 	}
 
 	var wbgl *tapir.WBGlist
 	var exists bool
 
-	td.Logger.Printf("ProcessTapirUpdate: looking up list [%s][%s]", tpkg.Data.ListType, tpkg.Data.SrcName)
+	td.Logger.Printf("ProcessTapirUpdate: looking up list [%s][%s]", tm.ListType, tm.SrcName)
 
-	switch tpkg.Data.ListType {
+	switch tm.ListType {
 	case "whitelist", "greylist", "blacklist":
-		wbgl, exists = td.Lists[tpkg.Data.ListType][tpkg.Data.SrcName]
+		wbgl, exists = td.Lists[tm.ListType][tm.SrcName]
 	default:
-		td.Logger.Printf("TapirUpdate for unknown listtype from source \"%s\" rejected.", tpkg.Data.SrcName)
-		return false, fmt.Errorf("MQTT ListType %s is unknown, update rejected", tpkg.Data.ListType)
+		td.Logger.Printf("TapirUpdate for unknown listtype from source \"%s\" rejected.", tm.SrcName)
+		return false, fmt.Errorf("MQTT ListType %s is unknown, update rejected", tm.ListType)
 	}
 
 	if !exists {
-		td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tpkg.Data.SrcName)
-		return false, fmt.Errorf("MQTT Source %s is unknown, update rejected", tpkg.Data.SrcName)
+		td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tm.SrcName)
+		return false, fmt.Errorf("MQTT Source %s is unknown, update rejected", tm.SrcName)
 	}
 
-	for _, tname := range tpkg.Data.Added {
+	for _, tname := range tm.Added {
 		ttl := time.Duration(tname.TTL) * time.Second
 		tmp := tapir.TapirName{
 			Name:      dns.Fqdn(tname.Name),
@@ -123,7 +131,7 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 		wbgl.ReaperData[reptime][tname.Name] = true
 	}
 
-	td.Logger.Printf("ProcessTapirUpdate: current state of %s %s ReaperData:", tpkg.Data.ListType, wbgl.Name)
+	td.Logger.Printf("ProcessTapirUpdate: current state of %s %s ReaperData:", tm.ListType, wbgl.Name)
 	for t, v := range wbgl.ReaperData {
 		if len(v) > 0 {
 			td.Logger.Printf("== At time %s the following names will be removed from the dns-tapir list:", t.Format(tapir.TimeLayout))
@@ -136,11 +144,11 @@ func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkg) (bool, error) {
 		}
 	}
 
-	for _, tname := range tpkg.Data.Removed {
+	for _, tname := range tm.Removed {
 		delete(wbgl.Names, dns.Fqdn(tname.Name))
 	}
 
-	ixfr, err := td.GenerateRpzIxfr(&tpkg.Data)
+	ixfr, err := td.GenerateRpzIxfr(&tm)
 	if err != nil {
 		return false, err
 	}

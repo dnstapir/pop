@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -45,7 +46,7 @@ type RefreshCounter struct {
 
 func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
-	var TapirIntelCh = td.TapirMqttSubCh
+	var ObservationsCh = td.TapirObservations
 
 	var zonerefch = td.RpzRefreshCh
 	var rpzcmdch = td.RpzCommandCh
@@ -80,19 +81,25 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	var updated bool
 	var err error
 	var cmd RpzCmdData
-	var tpkg tapir.MqttPkg
+	var tpkg tapir.MqttPkgIn
 	var zr RpzRefresh
 
 	resetSoaSerial := viper.GetBool("service.reset_soa_serial")
 
 	for {
 		select {
-		case tpkg = <-TapirIntelCh:
-			switch tpkg.Data.MsgType {
+		case tpkg = <-ObservationsCh:
+			tm := tapir.TapirMsg{}
+			err := json.Unmarshal(tpkg.Payload, &tm)
+			if err != nil {
+				log.Printf("RefreshEngine: Error unmarshalling TapirMsg: %v", err)
+				continue
+			}
+			switch tm.MsgType {
 			case "observation", "intel-update":
 				log.Printf("RefreshEngine: Tapir Observation update: (src: %s) %d additions and %d removals\n",
-					tpkg.Data.SrcName, len(tpkg.Data.Added), len(tpkg.Data.Removed))
-				_, err := td.ProcessTapirUpdate(tpkg)
+					tm.SrcName, len(tm.Added), len(tm.Removed))
+				_, err := td.ProcessTapirUpdate(tm)
 				if err != nil {
 					Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 						Status:    "fail",
@@ -118,7 +125,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					}
 					continue
 				}
-				td.ProcessTapirGlobalConfig(tpkg.Data)
+				td.ProcessTapirGlobalConfig(tm)
 				log.Printf("RefreshEngine: Tapir Global Config evaluated.")
 				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 					Status:    "ok",
@@ -127,11 +134,11 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				}
 
 			default:
-				log.Printf("RefreshEngine: Tapir Message: unknown msg type: %s", tpkg.Data.MsgType)
+				log.Printf("RefreshEngine: Tapir Message: unknown msg type: %s", tm.MsgType)
 				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 					Status:    "fail",
 					Component: "mqtt-unknown",
-					Msg:       fmt.Sprintf("RefreshEngine: Tapir Message: unknown msg type: %s", tpkg.Data.MsgType),
+					Msg:       fmt.Sprintf("RefreshEngine: Tapir Message: unknown msg type: %s", tm.MsgType),
 				}
 			}
 			// log.Printf("RefreshEngine: Tapir IntelUpdate: %v", tpkg.Data)
@@ -258,7 +265,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			}
 
 		case <-refreshTicker.C:
-			TapirIntelCh = td.TapirMqttSubCh // stupid kludge
+			ObservationsCh = td.TapirObservations // stupid kludge
 			// log.Printf("RefEng: ticker. refCounters: %v", refreshCounters)
 			for zone, rc := range refreshCounters {
 				// log.Printf("RefEng: ticker for %s: curref: %d", zone, v.CurRefresh)

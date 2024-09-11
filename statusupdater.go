@@ -52,8 +52,8 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 		TEMExiter("StatusUpdater: Error fetching MQTT signing key for topic %s: %v", statusTopic, err)
 	}
 
-	td.Logger.Printf("StatusUpdater: Adding topic '%s' to MQTT Engine", statusTopic)
-	msg, err := me.PubSubToTopic(statusTopic, signkey, nil, nil, "struct") // XXX: Brr. kludge.
+	td.Logger.Printf("StatusUpdater: Adding pub topic '%s' to MQTT Engine", statusTopic)
+	msg, err := me.PubToTopic(statusTopic, signkey, "struct", true) // XXX: Brr. kludge.
 	if err != nil {
 		TEMExiter("Error adding topic %s to MQTT Engine: %v", statusTopic, err)
 	}
@@ -77,10 +77,10 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 			if dirty {
 				td.Logger.Printf("StatusUpdater: Status is dirty, publishing status update: %+v", s)
 				// publish an mqtt status update
-				outbox <- tapir.MqttPkg{
-					Topic: statusTopic,
-					Type:  "data",
-					Data:  tapir.TapirMsg{TapirFunctionStatus: s},
+				outbox <- tapir.MqttPkgOut{
+					Topic:   statusTopic,
+					Type:    "raw",
+					RawData: s,
 				}
 				dirty = false
 			}
