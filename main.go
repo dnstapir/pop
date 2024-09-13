@@ -206,6 +206,7 @@ func main() {
 		}
 	}
 
+	go td.ConfigUpdater(&Gconfig, stopch) // Note that ConfigUpdater must as early as possible
 	go td.StatusUpdater(&Gconfig, stopch) // Note that StatusUpdater must as early as possible
 	go td.RefreshEngine(&Gconfig, stopch)
 
@@ -235,7 +236,7 @@ func main() {
 
 	statusch <- tapir.ComponentStatusUpdate{
 		Component: "main-boot",
-		Status:    "ok",
+		Status:    tapir.StatusOK,
 		Msg:       "TAPIR Policy Processor started",
 		TimeStamp: time.Now(),
 	}

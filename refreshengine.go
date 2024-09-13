@@ -1,5 +1,5 @@
 /*
- * Johan Stenstam, johan.stenstam@internetstiftelsen.se
+ * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 package main
 
@@ -102,41 +102,41 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				_, err := td.ProcessTapirUpdate(tm)
 				if err != nil {
 					Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
-						Status:    "fail",
+						Status:    tapir.StatusFail,
 						Component: "tapir-observation",
 						Msg:       fmt.Sprintf("ProcessTapirUpdate error: %v", err),
 					}
 					log.Printf("RefreshEngine: Error from ProcessTapirUpdate(): %v", err)
 				}
 				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
-					Status:    "ok",
+					Status:    tapir.StatusOK,
 					Component: "tapir-observation",
 					Msg:       fmt.Sprintf("ProcessTapirUpdate: MQTT observation message received"),
 				}
 				log.Printf("RefreshEngine: Tapir Observation update evaluated.")
 
-			case "global-config":
-				if !strings.HasSuffix(tpkg.Topic, "config") {
-					log.Printf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic)
-					Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
-						Status:    "fail",
-						Component: "mqtt-config",
-						Msg:       fmt.Sprintf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic),
-					}
-					continue
-				}
-				td.ProcessTapirGlobalConfig(tm)
-				log.Printf("RefreshEngine: Tapir Global Config evaluated.")
-				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
-					Status:    "ok",
-					Component: "mqtt-config",
-					Msg:       fmt.Sprintf("RefreshEngine: Tapir Global Config evaluated."),
-				}
+				//			case "global-config":
+				//				if !strings.HasSuffix(tpkg.Topic, "config") {
+				//					log.Printf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic)
+				//					Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+				//						Status:    "fail",
+				//						Component: "mqtt-config",
+				//						Msg:       fmt.Sprintf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic),
+				//					}
+				//					continue
+				//				}
+				//				td.ProcessTapirGlobalConfig(tm)
+				//				log.Printf("RefreshEngine: Tapir Global Config evaluated.")
+				//				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+				//					Status:    "ok",
+				//					Component: "mqtt-config",
+				//					Msg:       fmt.Sprintf("RefreshEngine: Tapir Global Config evaluated."),
+				//				}
 
 			default:
 				log.Printf("RefreshEngine: Tapir Message: unknown msg type: %s", tm.MsgType)
 				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
-					Status:    "fail",
+					Status:    tapir.StatusFail,
 					Component: "mqtt-unknown",
 					Msg:       fmt.Sprintf("RefreshEngine: Tapir Message: unknown msg type: %s", tm.MsgType),
 				}
@@ -446,7 +446,7 @@ func (td *TemData) NotifyDownstreams() error {
 		dest := net.JoinHostPort(d.Address, strconv.Itoa(d.Port))
 		csu := tapir.ComponentStatusUpdate{
 			Component: "downstream-notify",
-			Status:    "fail",
+			Status:    tapir.StatusFail,
 			Msg:       fmt.Sprintf("Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, td.Rpz.Axfr.SOA.Serial, td.Rpz.ZoneName),
 			TimeStamp: time.Now(),
 		}
@@ -478,7 +478,7 @@ func (td *TemData) NotifyDownstreams() error {
 				td.Logger.Println(csu.Msg)
 				continue
 			}
-			csu.Status = "success"
+			csu.Status = tapir.StatusOK
 			csu.Msg = fmt.Sprintf("Downstream %s responded correctly to NOTIFY(%s) about new SOA serial (%d)", dest, td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial)
 			Gconfig.Internal.ComponentStatusCh <- csu
 			td.Logger.Println(csu.Msg)

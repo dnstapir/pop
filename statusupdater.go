@@ -87,7 +87,7 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 		case csu = <-td.ComponentStatusCh:
 			log.Printf("StatusUpdater: got status update message: %v", csu)
 			switch csu.Status {
-			case "fail", "warn", "ok":
+			case tapir.StatusFail, tapir.StatusWarn, tapir.StatusOK:
 				log.Printf("StatusUpdater: status failure: %s", csu.Msg)
 				var sur tapir.StatusUpdaterResponse
 				switch {
@@ -96,26 +96,26 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 					comp.Status = csu.Status
 					comp.Msg = csu.Msg
 					switch csu.Status {
-					case "fail":
+					case tapir.StatusFail:
 						comp.NumFails++
 						comp.LastFail = csu.TimeStamp
 						comp.ErrorMsg = csu.Msg
-					case "warn":
-						comp.NumWarns++
+					case tapir.StatusWarn:
+						comp.NumWarnings++
 						comp.LastWarn = csu.TimeStamp
-						comp.ErrorMsg = csu.Msg
-					case "ok":
+						comp.WarningMsg = csu.Msg
+					case tapir.StatusOK:
 						comp.NumFails = 0
-						comp.NumWarns = 0
+						comp.NumWarnings = 0
 						comp.LastSuccess = csu.TimeStamp
 					}
 					s.ComponentStatus[csu.Component] = comp
 					dirty = true
 					sur.Msg = fmt.Sprintf("StatusUpdater: %s report for known component: %s", csu.Status, csu.Component)
 				default:
-					log.Printf("StatusUpdater: %s report for unknown component: %s", csu.Status, csu.Component)
+					log.Printf("StatusUpdater: %s report for unknown component: %s", tapir.StatusToString[csu.Status], csu.Component)
 					sur.Error = true
-					sur.ErrorMsg = fmt.Sprintf("StatusUpdater: %s report for unknown component: %s", csu.Status, csu.Component)
+					sur.ErrorMsg = fmt.Sprintf("StatusUpdater: %s report for unknown component: %s", tapir.StatusToString[csu.Status], csu.Component)
 					sur.Msg = fmt.Sprintf("StatusUpdater: known components are: %v", known_components)
 				}
 
@@ -123,7 +123,7 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 					csu.Response <- sur
 				}
 
-			case "status":
+			case tapir.StatusReport:
 				log.Printf("StatusUpdater: request for status report. Response: %v", csu.Response)
 				if csu.Response != nil {
 					csu.Response <- tapir.StatusUpdaterResponse{

@@ -1,5 +1,5 @@
 /*
- * Johan Stenstam, johan.stenstam@internetstiftelsen.se
+ * Copyright (c) 2024Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
 package main
@@ -182,8 +182,4 @@ func ValidateBySection(config *Config, configsections map[string]interface{}, cf
 		}
 	}
 	return nil
-}
-
-func (td *TemData) ProcessTapirGlobalConfig(tpkg tapir.TapirMsg) {
-	log.Printf("TapirProcessGlobalConfig: %+v", tpkg)
 }

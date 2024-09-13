@@ -1,5 +1,5 @@
 /*
- * Copyright (c) DNS TAPIR
+ * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 package main
 
@@ -170,24 +170,6 @@ func (td *TemData) ParseSourcesNG() error {
 		td.mu.Unlock()
 	} else {
 		td.Logger.Printf("ParseSourcesNG: MQTT Engine already created")
-	}
-
-	// Ensure that the MQTT Engine listens on the DNS TAPIR config topic
-	cfgtopic := viper.GetString("tapir.config.topic")
-	if cfgtopic != "" {
-		if td.Debug {
-			td.Logger.Printf("ParseSourcesNG: Fetching MQTT validator key for topic %s", cfgtopic)
-		}
-		valkey, err := tapir.FetchMqttValidatorKey(cfgtopic, viper.GetString("tapir.config.validatorkey"))
-		if err != nil {
-			TEMExiter("Error fetching MQTT validator key for topic %s: %v", cfgtopic, err)
-		}
-		// err = td.MqttEngine.AddTopic(cfgtopic, nil, valkey)
-		topicdata, err := td.MqttEngine.SubToTopic(cfgtopic, valkey, nil, "struct", true) // XXX: should have a channel to the config processor
-		if err != nil {
-			TEMExiter("Error adding topic %s to MQTT Engine: %v", cfgtopic, err)
-		}
-		td.Logger.Printf("ParseSourcesNG: Topic data for topic %s: %+v", cfgtopic, topicdata)
 	}
 
 	for name, src := range srcs {
