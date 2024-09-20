@@ -216,8 +216,7 @@ func (td *TemData) ParseSourcesNG() error {
 				}
 
 				td.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
-				// err = td.MqttEngine.AddTopic(src.Topic, nil, valkey)
-				topicdata, err := td.MqttEngine.SubToTopic(src.Topic, valkey, nil, "struct", true) // XXX: Brr. kludge.
+				topicdata, err := td.MqttEngine.SubToTopic(src.Topic, valkey, td.TapirObservations, "struct", true) // XXX: Brr. kludge.
 				if err != nil {
 					TEMExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
 				}

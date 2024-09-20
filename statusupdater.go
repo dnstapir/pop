@@ -28,24 +28,37 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 	//	}
 
 	// Create a new mqtt engine just for the statusupdater.
-	me, err := tapir.NewMqttEngine("statusupdater", viper.GetString("tapir.mqtt.clientid")+"statusupdates", tapir.TapirPub, td.ComponentStatusCh, log.Default())
-	if err != nil {
-		TEMExiter("StatusUpdater: Error creating MQTT Engine: %v", err)
-	}
-
-	// var TemStatusCh = make(chan tapir.TemStatusUpdate, 100)
-	//conf.Internal.TemStatusCh = TemStatusCh
+	//	me, err := tapir.NewMqttEngine("statusupdater", viper.GetString("tapir.mqtt.clientid")+"statusupdates", tapir.TapirPub, td.ComponentStatusCh, log.Default())
+	// if err != nil {
+	// 	TEMExiter("StatusUpdater: Error creating MQTT Engine: %v", err)
+	// }
+	me := td.MqttEngine
 
 	ticker := time.NewTicker(60 * time.Second)
 
-	statusTopic := viper.GetString("tapir.status.topic")
-	if statusTopic == "" {
+	// var statusch = make(chan tapir.ComponentStatusUpdate, 10)
+	// If any status updates arrive, print them out
+	// go func() {
+	// 	for status := range statusch {
+	// 		fmt.Printf("Status update: %+v\n", status)
+	// 	}
+	// }()
+
+	certCN, _, _, err := tapir.FetchTapirClientCert(log.Default(), td.ComponentStatusCh)
+	if err != nil {
+		TEMExiter("StatusUpdater: Error fetching client certificate: %v", err)
+	}
+
+	statusTopic, err := tapir.MqttTopic(certCN, "tapir.status.topic")
+	if err != nil {
 		TEMExiter("StatusUpdater: MQTT status topic not set")
 	}
+
 	keyfile := viper.GetString("tapir.status.signingkey")
 	if keyfile == "" {
 		TEMExiter("StatusUpdater: MQTT status signing key not set")
 	}
+
 	keyfile = filepath.Clean(keyfile)
 	signkey, err := tapir.FetchMqttSigningKey(statusTopic, keyfile)
 	if err != nil {
