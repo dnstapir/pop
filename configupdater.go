@@ -14,6 +14,12 @@ import (
 
 func (td *TemData) ConfigUpdater(conf *Config, stopch chan struct{}) {
 
+	active := viper.GetBool("tapir.config.active")
+	if !active {
+		td.Logger.Printf("*** ConfigUpdater: not active, skipping")
+		return
+	}
+
 	// Create a new mqtt engine just for the statusupdater.
 	me := td.MqttEngine
 	if me == nil {

@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
@@ -121,12 +122,15 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 }
 
 var Gconfig Config
+var mqttclientid string
 
 func main() {
 	// var conf Config
-
+	mqttclientid = "tapir-pop-" + uuid.New().String()
 	flag.BoolVarP(&tapir.GlobalCF.Debug, "debug", "d", false, "Debug mode")
 	flag.BoolVarP(&tapir.GlobalCF.Verbose, "verbose", "v", false, "Verbose mode")
+	flag.StringVarP(&mqttclientid, "client-id", "", mqttclientid, "MQTT client id, default is a random string")
+
 	flag.Parse()
 
 	var cfgFileUsed string
@@ -195,7 +199,7 @@ func main() {
 
 	if td.MqttEngine == nil {
 		td.mu.Lock()
-		err := td.CreateMqttEngine(viper.GetString("tapir.mqtt.clientid"), statusch, td.MqttLogger)
+		err := td.CreateMqttEngine(mqttclientid, statusch, td.MqttLogger)
 		if err != nil {
 			TEMExiter("Error creating MQTT Engine: %v", err)
 		}

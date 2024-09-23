@@ -16,6 +16,14 @@ import (
 
 func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 
+	active := viper.GetBool("tapir.status.active")
+	if !active {
+		td.Logger.Printf("*** StatusUpdater: not active, will just read status updates from channel and not publish anything")
+		for csu := range td.ComponentStatusCh {
+			log.Printf("StatusUpdater: got status update message: %+v", csu)
+		}
+	}
+
 	var s = tapir.TapirFunctionStatus{
 		Function:        "tapir-pop",
 		FunctionID:      "random-popper",
