@@ -20,22 +20,23 @@ type TemData struct {
 	RpzCommandCh           chan RpzCmdData
 	TapirMqttEngineRunning bool
 	TapirMqttCmdCh         chan tapir.MqttEngineCmd
-	TapirMqttSubCh         chan tapir.MqttPkg
-	TapirMqttPubCh         chan tapir.MqttPkg // not used ATM
-	ComponentStatusCh      chan tapir.ComponentStatusUpdate
-	Logger                 *log.Logger
-	MqttLogger             *log.Logger
-	BlacklistedNames       map[string]bool
-	GreylistedNames        map[string]*tapir.TapirName
-	Policy                 TemPolicy
-	Rpz                    RpzData
-	RpzSources             map[string]*tapir.ZoneData
-	Downstreams            map[string]RpzDownstream // map[ipaddr]RpzDownstream
-	DownstreamSerials      map[string]uint32        // New map to track SOA serials by address
-	ReaperInterval         time.Duration
-	MqttEngine             *tapir.MqttEngine
-	Verbose                bool
-	Debug                  bool
+	// TapirMqttSubCh         chan tapir.MqttPkg
+	TapirObservations chan tapir.MqttPkgIn
+	TapirMqttPubCh    chan tapir.MqttPkgOut
+	ComponentStatusCh chan tapir.ComponentStatusUpdate
+	Logger            *log.Logger
+	MqttLogger        *log.Logger
+	BlacklistedNames  map[string]bool
+	GreylistedNames   map[string]*tapir.TapirName
+	Policy            TemPolicy
+	Rpz               RpzData
+	RpzSources        map[string]*tapir.ZoneData
+	Downstreams       map[string]RpzDownstream // map[ipaddr]RpzDownstream
+	DownstreamSerials map[string]uint32        // New map to track SOA serials by address
+	ReaperInterval    time.Duration
+	MqttEngine        *tapir.MqttEngine
+	Verbose           bool
+	Debug             bool
 }
 
 type RpzDownstream struct {

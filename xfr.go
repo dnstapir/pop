@@ -214,7 +214,7 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 			td.Logger.Printf("Error from transfer.Out(): %v", err)
 			td.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 				Component: "rpz-ixfr",
-				Status:    "fail",
+				Status:    tapir.StatusFail,
 				Msg:       fmt.Sprintf("Error from transfer.Out(): %v", err),
 				TimeStamp: time.Now(),
 			}
@@ -315,7 +315,7 @@ func (td *TemData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 
 	td.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 		Component: "rpz-ixfr",
-		Status:    "ok",
+		Status:    tapir.StatusOK,
 		TimeStamp: time.Now(),
 	}
 

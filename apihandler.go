@@ -76,7 +76,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 			conf.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 				Component: "status",
-				Status:    "status",
+				Status:    tapir.StatusReport,
 				Response:  rt,
 			}
 

@@ -7,6 +7,7 @@ replace github.com/dnstapir/tapir => ../tapir
 require (
 	github.com/dnstapir/tapir v0.0.0-00010101000000-000000000000
 	github.com/go-playground/validator/v10 v10.22.1
+	github.com/google/uuid v1.4.0
 	github.com/gorilla/mux v1.8.1
 	github.com/mattn/go-sqlite3 v1.14.23
 	github.com/miekg/dns v1.1.62
@@ -26,6 +27,8 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/goccy/go-json v0.10.2 // indirect
+	github.com/gookit/color v1.5.4 // indirect
+	github.com/gookit/goutil v0.6.16 // indirect
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
@@ -45,6 +48,7 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.6.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
+	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/crypto v0.25.0 // indirect

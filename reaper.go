@@ -18,7 +18,8 @@ import (
 // 5. Send the IXFR to the RPZ
 func (td *TemData) Reaper(full bool) error {
 	timekey := time.Now().Truncate(td.ReaperInterval)
-	tpkg := tapir.MqttPkg{}
+	// tpkg := tapir.MqttPkgIn{}
+	tm := tapir.TapirMsg{}
 	td.Logger.Printf("Reaper: working on time slot %s across all lists", timekey.Format(tapir.TimeLayout))
 	for _, listtype := range []string{"whitelist", "greylist", "blacklist"} {
 		for listname, wbgl := range td.Lists[listtype] {
@@ -52,7 +53,7 @@ func (td *TemData) Reaper(full bool) error {
 					td.Logger.Printf("Reaper: removing %s from %s %s", name, listtype, listname)
 					delete(td.Lists[listtype][listname].Names, name)
 					delete(wbgl.ReaperData[timekey], name)
-					tpkg.Data.Removed = append(tpkg.Data.Removed, tapir.Domain{Name: name})
+					tm.Removed = append(tm.Removed, tapir.Domain{Name: name})
 				}
 				// td.Logger.Printf("Reaper: %s %s now has %d items:", listtype, listname, len(td.Lists[listtype][listname].Names))
 				// for name, item := range td.Lists[listtype][listname].Names {
@@ -64,8 +65,8 @@ func (td *TemData) Reaper(full bool) error {
 		}
 	}
 
-	if len(tpkg.Data.Removed) > 0 {
-		ixfr, err := td.GenerateRpzIxfr(&tpkg.Data)
+	if len(tm.Removed) > 0 {
+		ixfr, err := td.GenerateRpzIxfr(&tm)
 		if err != nil {
 			td.Logger.Printf("Reaper: Error from GenerateRpzIxfr(): %v", err)
 		}

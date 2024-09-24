@@ -22,4 +22,5 @@
 # Go workspace file
 go.work
 tem
+tapir-pop
 version.go
