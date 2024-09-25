@@ -16,7 +16,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir.WBGlist, error) {
+func (td *PopData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir.WBGlist, error) {
 	// Initialize the API client
 	api := &tapir.ApiClient{
 		BaseUrl:    fmt.Sprintf(src.BootstrapUrl, src.Bootstrap[0]), // Must specify a valid BaseUrl
@@ -26,19 +26,19 @@ func (td *TemData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir
 
 	cd := viper.GetString("certs.certdir")
 	if cd == "" {
-		TEMExiter("BootstrapMqttSource error: missing config key: certs.certdir")
+		POPExiter("BootstrapMqttSource error: missing config key: certs.certdir")
 	}
 	// cert := cd + "/" + certname
 	cert := cd + "/" + "tapir-pop"
 	tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"), cert+".key", cert+".crt")
 	if err != nil {
-		TEMExiter("BootstrapMqttSource: Error: Could not set up TLS: %v", err)
+		POPExiter("BootstrapMqttSource: Error: Could not set up TLS: %v", err)
 	}
 	// XXX: Need to verify that the server cert is valid for the bootstrap server
 	tlsConfig.InsecureSkipVerify = true
 	err = api.SetupTLS(tlsConfig)
 	if err != nil {
-		TEMExiter("BootstrapMqttSource: error setting up TLS for the API client: %v", err)
+		POPExiter("BootstrapMqttSource: error setting up TLS for the API client: %v", err)
 	}
 
 	bootstrapaddrs := viper.GetStringSlice("bootstrapserver.addresses")

@@ -1,6 +1,5 @@
 /*
- * Johan Stenstam, johan.stenstam@internetstiftelsen.se
- * Copyright (c) DNS TAPIR
+ * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 package main
 
@@ -13,7 +12,7 @@ import (
 	"github.com/miekg/dns"
 )
 
-type TemData struct {
+type PopData struct {
 	mu                     sync.RWMutex
 	Lists                  map[string]map[string]*tapir.WBGlist
 	RpzRefreshCh           chan RpzRefresh
@@ -28,7 +27,7 @@ type TemData struct {
 	MqttLogger        *log.Logger
 	BlacklistedNames  map[string]bool
 	GreylistedNames   map[string]*tapir.TapirName
-	Policy            TemPolicy
+	Policy            PopPolicy
 	Rpz               RpzData
 	RpzSources        map[string]*tapir.ZoneData
 	Downstreams       map[string]RpzDownstream // map[ipaddr]RpzDownstream
@@ -70,7 +69,7 @@ type RpzAxfr struct {
 	ZoneData *tapir.ZoneData
 }
 
-type TemPolicy struct {
+type PopPolicy struct {
 	Logger          *log.Logger
 	WhitelistAction tapir.Action
 	BlacklistAction tapir.Action

@@ -35,7 +35,7 @@ func SetupLogging(conf *Config) {
 		})
 		fmt.Printf("TAPIR-POP standard logging to: %s\n", logfile)
 	} else {
-		TEMExiter("Error: standard log (key log.file) not specified")
+		POPExiter("Error: standard log (key log.file) not specified")
 	}
 
 	logfile = viper.GetString("policy.logfile")
@@ -43,7 +43,7 @@ func SetupLogging(conf *Config) {
 		logfile = filepath.Clean(logfile)
 		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec G302
 		if err != nil {
-			TEMExiter("error opening TEM policy logfile '%s': %v", logfile, err)
+			POPExiter("error opening TAPIR-POP policy logfile '%s': %v", logfile, err)
 		}
 
 		if debug {
@@ -67,7 +67,7 @@ func SetupLogging(conf *Config) {
 		logfile = filepath.Clean(logfile)
 		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec G302
 		if err != nil {
-			TEMExiter("error opening TEM dnsengine logfile '%s': %v", logfile, err)
+			POPExiter("error opening TAPIR-POP dnsengine logfile '%s': %v", logfile, err)
 		}
 
 		if debug {
@@ -91,7 +91,7 @@ func SetupLogging(conf *Config) {
 		logfile = filepath.Clean(logfile)
 		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec G302
 		if err != nil {
-			TEMExiter("error opening TEM MQTT logfile '%s': %v", logfile, err)
+			POPExiter("error opening TAPIR-POP MQTT logfile '%s': %v", logfile, err)
 		}
 
 		if debug {

@@ -12,19 +12,19 @@ import (
 	"github.com/dnstapir/tapir"
 )
 
-func (td *TemData) Whitelisted(name string) bool {
-	for _, list := range td.Lists["whitelist"] {
+func (pd *PopData) Whitelisted(name string) bool {
+	for _, list := range pd.Lists["whitelist"] {
 		switch list.Format {
 		case "dawg":
 			if tapir.GlobalCF.Debug {
-				td.Logger.Printf("Whitelisted: DAWG: checking %s in whitelist %s", name, list.Name)
+				pd.Logger.Printf("Whitelisted: DAWG: checking %s in whitelist %s", name, list.Name)
 			}
 			if list.Dawgf.IndexOf(name) != -1 {
 				return true
 			}
 		case "map":
 			if tapir.GlobalCF.Debug {
-				td.Logger.Printf("Whitelisted: MAP: checking %s in whitelist %s", name, list.Name)
+				pd.Logger.Printf("Whitelisted: MAP: checking %s in whitelist %s", name, list.Name)
 			}
 			if _, exists := list.Names[name]; exists {
 				return true
@@ -34,10 +34,10 @@ func (td *TemData) Whitelisted(name string) bool {
 	return false
 }
 
-func (td *TemData) Blacklisted(name string) bool {
-	for _, list := range td.Lists["blacklist"] {
+func (pd *PopData) Blacklisted(name string) bool {
+	for _, list := range pd.Lists["blacklist"] {
 		if tapir.GlobalCF.Debug {
-			td.Logger.Printf("Blacklisted: checking %s in blacklist %s", name, list.Name)
+			pd.Logger.Printf("Blacklisted: checking %s in blacklist %s", name, list.Name)
 		}
 		switch list.Format {
 		case "dawg":
@@ -53,10 +53,10 @@ func (td *TemData) Blacklisted(name string) bool {
 	return false
 }
 
-func (td *TemData) Greylisted(name string) bool {
-	for _, list := range td.Lists["greylist"] {
+func (pd *PopData) Greylisted(name string) bool {
+	for _, list := range pd.Lists["greylist"] {
 		if tapir.GlobalCF.Debug {
-			td.Logger.Printf("Greylisted: checking %s in greylist %s", name, list.Name)
+			pd.Logger.Printf("Greylisted: checking %s in greylist %s", name, list.Name)
 		}
 		switch list.Format {
 		case "map":
@@ -72,23 +72,23 @@ func (td *TemData) Greylisted(name string) bool {
 	return false
 }
 
-func (td *TemData) GreylistingReport(name string) (bool, string) {
+func (pd *PopData) GreylistingReport(name string) (bool, string) {
 	var report string
-	// 	if len(td.Greylists) == 0 {
-	if len(td.Lists["greylist"]) == 0 {
+	// 	if len(pd.Greylists) == 0 {
+	if len(pd.Lists["greylist"]) == 0 {
 		return false, fmt.Sprintf("Domain name \"%s\" is not greylisted (there are no active greylists).\n", name)
 	}
 
-	// 	for _, list := range td.Greylists {
-	for _, list := range td.Lists["greylist"] {
-		td.Logger.Printf("Greylisted: checking %s in greylist %s", name, list.Name)
+	// 	for _, list := range pd.Greylists {
+	for _, list := range pd.Lists["greylist"] {
+		pd.Logger.Printf("Greylisted: checking %s in greylist %s", name, list.Name)
 		report += fmt.Sprintf("Domain name \"%s\" could be present in greylist %s\n", name, list.Name)
 	}
 	return false, report
 
 }
 
-func (td *TemData) GreylistAdd(name, policy, source string) (string, error) {
+func (pd *PopData) GreylistAdd(name, policy, source string) (string, error) {
 	msg := fmt.Sprintf("Domain name \"%s\" added to RPZ source %s with policy %s", name, source, policy)
 	return msg, nil
 }

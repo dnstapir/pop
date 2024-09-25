@@ -12,42 +12,42 @@ import (
 	"github.com/spf13/viper"
 )
 
-func (td *TemData) ConfigUpdater(conf *Config, stopch chan struct{}) {
+func (pd *PopData) ConfigUpdater(conf *Config, stopch chan struct{}) {
 
 	active := viper.GetBool("tapir.config.active")
 	if !active {
-		td.Logger.Printf("*** ConfigUpdater: not active, skipping")
+		pd.Logger.Printf("*** ConfigUpdater: not active, skipping")
 		return
 	}
 
 	// Create a new mqtt engine just for the statusupdater.
-	me := td.MqttEngine
+	me := pd.MqttEngine
 	if me == nil {
-		TEMExiter("ConfigUpdater: MQTT Engine not running")
+		POPExiter("ConfigUpdater: MQTT Engine not running")
 	}
 
 	ConfigChan := make(chan tapir.MqttPkgIn, 5)
 
 	configTopic := viper.GetString("tapir.config.topic")
 	if configTopic == "" {
-		TEMExiter("ConfigUpdater: MQTT config topic not set")
+		POPExiter("ConfigUpdater: MQTT config topic not set")
 	}
 	keyfile := viper.GetString("tapir.config.validatorkey")
 	if keyfile == "" {
-		TEMExiter("ConfigUpdater: MQTT validator key not set for topic %s", configTopic)
+		POPExiter("ConfigUpdater: MQTT validator key not set for topic %s", configTopic)
 	}
 	keyfile = filepath.Clean(keyfile)
 	validatorkey, err := tapir.FetchMqttValidatorKey(configTopic, keyfile)
 	if err != nil {
-		TEMExiter("ConfigUpdater: Error fetching MQTT validator key for topic %s: %v", configTopic, err)
+		POPExiter("ConfigUpdater: Error fetching MQTT validator key for topic %s: %v", configTopic, err)
 	}
 
-	td.Logger.Printf("ConfigUpdater: Adding sub topic '%s' to MQTT Engine", configTopic)
+	pd.Logger.Printf("ConfigUpdater: Adding sub topic '%s' to MQTT Engine", configTopic)
 	msg, err := me.SubToTopic(configTopic, validatorkey, ConfigChan, "struct", true) // XXX: Brr. kludge.
 	if err != nil {
-		TEMExiter("ConfigUpdater: Error adding topic %s to MQTT Engine: %v", configTopic, err)
+		POPExiter("ConfigUpdater: Error adding topic %s to MQTT Engine: %v", configTopic, err)
 	}
-	td.Logger.Printf("ConfigUpdater: Topic status for MQTT engine %s: %+v", me.Creator, msg)
+	pd.Logger.Printf("ConfigUpdater: Topic status for MQTT engine %s: %+v", me.Creator, msg)
 
 	log.Printf("ConfigUpdater: Starting")
 
@@ -59,13 +59,13 @@ func (td *TemData) ConfigUpdater(conf *Config, stopch chan struct{}) {
 			log.Printf("ConfigUpdater: error unmarshalling config update message: %v", err)
 			continue
 		}
-		td.ProcessTapirGlobalConfig(gconfig)
+		pd.ProcessTapirGlobalConfig(gconfig)
 		if err != nil {
 			log.Printf("ConfigUpdater: error processing config update message: %v", err)
 		}
 	}
 }
 
-func (td *TemData) ProcessTapirGlobalConfig(gconfig tapir.GlobalConfig) {
+func (pd *PopData) ProcessTapirGlobalConfig(gconfig tapir.GlobalConfig) {
 	log.Printf("TapirProcessGlobalConfig: %+v", gconfig)
 }

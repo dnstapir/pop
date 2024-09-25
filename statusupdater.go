@@ -14,12 +14,12 @@ import (
 	"github.com/spf13/viper"
 )
 
-func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
+func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 
 	active := viper.GetBool("tapir.status.active")
 	if !active {
-		td.Logger.Printf("*** StatusUpdater: not active, will just read status updates from channel and not publish anything")
-		for csu := range td.ComponentStatusCh {
+		pd.Logger.Printf("*** StatusUpdater: not active, will just read status updates from channel and not publish anything")
+		for csu := range pd.ComponentStatusCh {
 			log.Printf("StatusUpdater: got status update message: %+v", csu)
 		}
 	}
@@ -30,17 +30,17 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 		ComponentStatus: make(map[string]tapir.TapirComponentStatus),
 	}
 
-	//	me := td.MqttEngine
+	//	me := pd.MqttEngine
 	//	if me == nil {
-	//		TEMExiter("StatusUpdater: MQTT Engine not running")
+	//		POPExiter("StatusUpdater: MQTT Engine not running")
 	//	}
 
 	// Create a new mqtt engine just for the statusupdater.
-	//	me, err := tapir.NewMqttEngine("statusupdater", viper.GetString("tapir.mqtt.clientid")+"statusupdates", tapir.TapirPub, td.ComponentStatusCh, log.Default())
+	//	me, err := tapir.NewMqttEngine("statusupdater", viper.GetString("tapir.mqtt.clientid")+"statusupdates", tapir.TapirPub, pd.ComponentStatusCh, log.Default())
 	// if err != nil {
-	// 	TEMExiter("StatusUpdater: Error creating MQTT Engine: %v", err)
+	// 	POPExiter("StatusUpdater: Error creating MQTT Engine: %v", err)
 	// }
-	me := td.MqttEngine
+	me := pd.MqttEngine
 
 	ticker := time.NewTicker(60 * time.Second)
 
@@ -52,37 +52,37 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 	// 	}
 	// }()
 
-	certCN, _, _, err := tapir.FetchTapirClientCert(log.Default(), td.ComponentStatusCh)
+	certCN, _, _, err := tapir.FetchTapirClientCert(log.Default(), pd.ComponentStatusCh)
 	if err != nil {
-		TEMExiter("StatusUpdater: Error fetching client certificate: %v", err)
+		POPExiter("StatusUpdater: Error fetching client certificate: %v", err)
 	}
 
 	statusTopic, err := tapir.MqttTopic(certCN, "tapir.status.topic")
 	if err != nil {
-		TEMExiter("StatusUpdater: MQTT status topic not set")
+		POPExiter("StatusUpdater: MQTT status topic not set")
 	}
 
 	keyfile := viper.GetString("tapir.status.signingkey")
 	if keyfile == "" {
-		TEMExiter("StatusUpdater: MQTT status signing key not set")
+		POPExiter("StatusUpdater: MQTT status signing key not set")
 	}
 
 	keyfile = filepath.Clean(keyfile)
 	signkey, err := tapir.FetchMqttSigningKey(statusTopic, keyfile)
 	if err != nil {
-		TEMExiter("StatusUpdater: Error fetching MQTT signing key for topic %s: %v", statusTopic, err)
+		POPExiter("StatusUpdater: Error fetching MQTT signing key for topic %s: %v", statusTopic, err)
 	}
 
-	td.Logger.Printf("StatusUpdater: Adding pub topic '%s' to MQTT Engine", statusTopic)
+	pd.Logger.Printf("StatusUpdater: Adding pub topic '%s' to MQTT Engine", statusTopic)
 	msg, err := me.PubToTopic(statusTopic, signkey, "struct", true) // XXX: Brr. kludge.
 	if err != nil {
-		TEMExiter("Error adding topic %s to MQTT Engine: %v", statusTopic, err)
+		POPExiter("Error adding topic %s to MQTT Engine: %v", statusTopic, err)
 	}
-	td.Logger.Printf("StatusUpdater: Topic status for MQTT engine %s: %+v", me.Creator, msg)
+	pd.Logger.Printf("StatusUpdater: Topic status for MQTT engine %s: %+v", me.Creator, msg)
 
 	_, outbox, _, err := me.StartEngine()
 	if err != nil {
-		TEMExiter("StatusUpdater: Error starting MQTT Engine: %v", err)
+		POPExiter("StatusUpdater: Error starting MQTT Engine: %v", err)
 	}
 
 	log.Printf("StatusUpdater: Starting")
@@ -96,7 +96,7 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 		select {
 		case <-ticker.C:
 			if dirty {
-				td.Logger.Printf("StatusUpdater: Status is dirty, publishing status update: %+v", s)
+				pd.Logger.Printf("StatusUpdater: Status is dirty, publishing status update: %+v", s)
 				// publish an mqtt status update
 				outbox <- tapir.MqttPkgOut{
 					Topic:   statusTopic,
@@ -105,7 +105,7 @@ func (td *TemData) StatusUpdater(conf *Config, stopch chan struct{}) {
 				}
 				dirty = false
 			}
-		case csu = <-td.ComponentStatusCh:
+		case csu = <-pd.ComponentStatusCh:
 			log.Printf("StatusUpdater: got status update message: %v", csu)
 			switch csu.Status {
 			case tapir.StatusFail, tapir.StatusWarn, tapir.StatusOK:

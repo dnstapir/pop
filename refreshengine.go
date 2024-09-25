@@ -44,22 +44,22 @@ type RefreshCounter struct {
 	Downstreams []string
 }
 
-func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
+func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
-	var ObservationsCh = td.TapirObservations
+	var ObservationsCh = pd.TapirObservations
 
-	var zonerefch = td.RpzRefreshCh
-	var rpzcmdch = td.RpzCommandCh
+	var zonerefch = pd.RpzRefreshCh
+	var rpzcmdch = pd.RpzCommandCh
 
 	var refreshCounters = make(map[string]*RefreshCounter, 5)
 	refreshTicker := time.NewTicker(1 * time.Second)
 
-	reaperStart := time.Now().Truncate(td.ReaperInterval).Add(td.ReaperInterval)
-	reaperTicker := time.NewTicker(td.ReaperInterval)
+	reaperStart := time.Now().Truncate(pd.ReaperInterval).Add(pd.ReaperInterval)
+	reaperTicker := time.NewTicker(pd.ReaperInterval)
 
 	go func() {
 		time.Sleep(time.Until(reaperStart))
-		reaperTicker.Reset(td.ReaperInterval)
+		reaperTicker.Reset(pd.ReaperInterval)
 	}()
 
 	if !viper.GetBool("services.refreshengine.active") {
@@ -99,7 +99,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			case "observation", "intel-update":
 				log.Printf("RefreshEngine: Tapir Observation update: (src: %s) %d additions and %d removals\n",
 					tm.SrcName, len(tm.Added), len(tm.Removed))
-				_, err := td.ProcessTapirUpdate(tm)
+				_, err := pd.ProcessTapirUpdate(tm)
 				if err != nil {
 					Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 						Status:    tapir.StatusFail,
@@ -125,7 +125,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				//					}
 				//					continue
 				//				}
-				//				td.ProcessTapirGlobalConfig(tm)
+				//				pd.ProcessTapirGlobalConfig(tm)
 				//				log.Printf("RefreshEngine: Tapir Global Config evaluated.")
 				//				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 				//					Status:    "ok",
@@ -147,7 +147,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			zone = zr.Name
 			log.Printf("RefreshEngine: Requested to refresh zone \"%s\"", zone)
 			if zone != "" {
-				if zonedata, exist := td.RpzSources[zone]; exist {
+				if zonedata, exist := pd.RpzSources[zone]; exist {
 					log.Printf("RefreshEngine: scheduling immediate refresh for known zone '%s'",
 						zone)
 					if _, known := refreshCounters[zone]; !known {
@@ -177,25 +177,25 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					} else {
 						rc = refreshCounters[zone]
 					}
-					updated, err = td.RpzSources[zone].Refresh(rc.Upstream)
+					updated, err = pd.RpzSources[zone].Refresh(rc.Upstream)
 					if err != nil {
 						log.Printf("RefreshEngine: Error from zone refresh(%s): %v", zone, err)
 					}
 
 					if updated {
 						if resetSoaSerial {
-							td.RpzSources[zone].SOA.Serial = uint32(time.Now().Unix())
+							pd.RpzSources[zone].SOA.Serial = uint32(time.Now().Unix())
 							log.Printf("RefreshEngine: %s updated from upstream. Resetting serial to unixtime: %d",
-								zone, td.RpzSources[zone].SOA.Serial)
+								zone, pd.RpzSources[zone].SOA.Serial)
 						}
-						err := td.NotifyDownstreams()
+						err := pd.NotifyDownstreams()
 						if err != nil {
 							log.Printf("RefreshEngine: Error notifying downstreams: %v", err)
 						}
 					}
 					// showing some apex details:
 					log.Printf("Showing some details for zone %s: ", zone)
-					log.Printf("%s SOA: %s", zone, td.RpzSources[zone].SOA.String())
+					log.Printf("%s SOA: %s", zone, pd.RpzSources[zone].SOA.String())
 					zr.Resp <- RpzRefreshResult{Msg: "all ok"}
 				} else {
 					log.Printf("RefreshEngine: adding the new zone '%s'", zone)
@@ -255,9 +255,9 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						// NotifyDownstreams(zonedata, downstreams)
 
 					}
-					td.mu.Lock()
-					td.RpzSources[zone] = zonedata
-					td.mu.Unlock()
+					pd.mu.Lock()
+					pd.RpzSources[zone] = zonedata
+					pd.mu.Unlock()
 					// XXX: as parsing is done inline to the zone xfr, we don't need to inform
 					// the caller (I hope). I think we do.
 					zr.Resp <- RpzRefreshResult{Msg: "all ok"}
@@ -265,7 +265,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			}
 
 		case <-refreshTicker.C:
-			ObservationsCh = td.TapirObservations // stupid kludge
+			ObservationsCh = pd.TapirObservations // stupid kludge
 			// log.Printf("RefEng: ticker. refCounters: %v", refreshCounters)
 			for zone, rc := range refreshCounters {
 				// log.Printf("RefEng: ticker for %s: curref: %d", zone, v.CurRefresh)
@@ -281,21 +281,21 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 					log.Printf("RefreshEngine: will refresh zone %s due to refresh counter", zone)
 					// log.Printf("Len(RpzZones) = %d", len(RpzZones))
-					updated, err := td.RpzSources[zone].Refresh(upstream)
+					updated, err := pd.RpzSources[zone].Refresh(upstream)
 					rc.CurRefresh = rc.SOARefresh
 					if err != nil {
 						log.Printf("RefreshEngine: Error from zd.Refresh(%s): %v", zone, err)
 					}
 					if updated {
 						if resetSoaSerial {
-							td.RpzSources[zone].SOA.Serial = uint32(time.Now().Unix())
+							pd.RpzSources[zone].SOA.Serial = uint32(time.Now().Unix())
 							log.Printf("RefreshEngine: %s updated from upstream. Resetting serial to unixtime: %d",
-								zone, td.RpzSources[zone].SOA.Serial)
+								zone, pd.RpzSources[zone].SOA.Serial)
 
 						}
 					}
 					if updated {
-						err := td.NotifyDownstreams()
+						err := pd.NotifyDownstreams()
 						if err != nil {
 							log.Printf("RefreshEngine: Error notifying downstreams: %v", err)
 						}
@@ -304,7 +304,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			}
 
 		case <-reaperTicker.C:
-			err := td.Reaper(false)
+			err := pd.Reaper(false)
 			if err != nil {
 				log.Printf("Reaper: error: %v", err)
 			}
@@ -319,14 +319,14 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			case "BUMP":
 				zone = cmd.Zone
 				if zone != "" {
-					if zd, exist := td.RpzSources[zone]; exist {
+					if zd, exist := pd.RpzSources[zone]; exist {
 						log.Printf("RefreshEngine: bumping SOA serial for known zone '%s'",
 							zone)
 						resp.OldSerial = zd.SOA.Serial
 						zd.SOA.Serial = uint32(time.Now().Unix())
 						resp.NewSerial = zd.SOA.Serial
 						rc = refreshCounters[zone]
-						err := td.NotifyDownstreams()
+						err := pd.NotifyDownstreams()
 						if err != nil {
 							resp.Error = true
 							resp.ErrorMsg = fmt.Sprintf("Error notifying downstreams: %v", err)
@@ -345,7 +345,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 			case "RPZ-ADD":
 				log.Printf("RefreshEngine: recieved an RPZ ADD command: %s (policy %s)", cmd.Domain, cmd.Policy)
-				if td.Whitelisted(cmd.Domain) {
+				if pd.Whitelisted(cmd.Domain) {
 					resp.Error = true
 					resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is whitelisted. No change.",
 						cmd.Domain)
@@ -353,7 +353,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					continue
 				}
 
-				if td.Blacklisted(cmd.Domain) {
+				if pd.Blacklisted(cmd.Domain) {
 					resp.Error = true
 					resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is already blacklisted. No change.",
 						cmd.Domain)
@@ -364,7 +364,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 				// if the name isn't either whitelisted or blacklisted
 				if cmd.ListType == "greylist" {
-					_, err := td.GreylistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
+					_, err := pd.GreylistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
 					if err != nil {
 						resp.Error = true
 						resp.ErrorMsg = fmt.Sprintf("Error adding domain name \"%s\" to greylisting DB: %v", cmd.Domain, err)
@@ -385,14 +385,14 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			case "RPZ-LOOKUP":
 				log.Printf("RefreshEngine: recieved an RPZ LOOKUP command: %s", cmd.Domain)
 				var msg string
-				if td.Whitelisted(cmd.Domain) {
+				if pd.Whitelisted(cmd.Domain) {
 					resp.Msg = fmt.Sprintf("Domain name \"%s\" is whitelisted.", cmd.Domain)
 					cmd.Result <- resp
 					continue
 				}
 				msg += fmt.Sprintf("Domain name \"%s\" is not whitelisted.\n", cmd.Domain)
 
-				if td.Blacklisted(cmd.Domain) {
+				if pd.Blacklisted(cmd.Domain) {
 					resp.Msg = fmt.Sprintf("Domain name \"%s\" is blacklisted.", cmd.Domain)
 					cmd.Result <- resp
 					continue
@@ -400,7 +400,7 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				msg += fmt.Sprintf("Domain name \"%s\" is not blacklisted.\n", cmd.Domain)
 
 				// if the name isn't either whitelisted or blacklisted: go though all greylists
-				_, greymsg := td.GreylistingReport(cmd.Domain)
+				_, greymsg := pd.GreylistingReport(cmd.Domain)
 				resp.Msg = msg + greymsg
 				cmd.Result <- resp
 				continue
@@ -408,29 +408,29 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			case "RPZ-LIST-SOURCES":
 				log.Printf("RefreshEngine: recieved an RPZ LIST-SOURCES command")
 				list := []string{}
-				//				for _, wl := range td.Whitelists {
-				for _, wl := range td.Lists["whitelist"] {
+				//				for _, wl := range pd.Whitelists {
+				for _, wl := range pd.Lists["whitelist"] {
 					list = append(list, wl.Name)
 				}
 				resp.Msg += fmt.Sprintf("Whitelist srcs: %s\n", strings.Join(list, ", "))
 
 				list = []string{}
-				//				for _, bl := range td.Blacklists {
-				for _, bl := range td.Lists["blacklist"] {
+				//				for _, bl := range pd.Blacklists {
+				for _, bl := range pd.Lists["blacklist"] {
 					list = append(list, bl.Name)
 				}
 				resp.Msg += fmt.Sprintf("Blacklist srcs: %s\n", strings.Join(list, ", "))
 
 				list = []string{}
-				//				for _, gl := range td.Greylists {
-				for _, gl := range td.Lists["greylist"] {
+				//				for _, gl := range pd.Greylists {
+				for _, gl := range pd.Lists["greylist"] {
 					list = append(list, gl.Name)
 				}
 				resp.Msg += fmt.Sprintf("Greylist srcs: %s\n", strings.Join(list, ", "))
 				cmd.Result <- resp
 
 			default:
-				td.Logger.Printf("RefreshEngine: unknown command: \"%s\". Ignored.", command)
+				pd.Logger.Printf("RefreshEngine: unknown command: \"%s\". Ignored.", command)
 				resp.Error = true
 				resp.ErrorMsg = fmt.Sprintf("RefreshEngine: unknown command: \"%s\". Ignored.",
 					command)
@@ -440,48 +440,48 @@ func (td *TemData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	}
 }
 
-func (td *TemData) NotifyDownstreams() error {
-	td.Logger.Printf("RefreshEngine: Notifying %d downstreams for RPZ zone %s", len(td.Downstreams), td.Rpz.ZoneName)
-	for _, d := range td.Downstreams {
+func (pd *PopData) NotifyDownstreams() error {
+	pd.Logger.Printf("RefreshEngine: Notifying %d downstreams for RPZ zone %s", len(pd.Downstreams), pd.Rpz.ZoneName)
+	for _, d := range pd.Downstreams {
 		dest := net.JoinHostPort(d.Address, strconv.Itoa(d.Port))
 		csu := tapir.ComponentStatusUpdate{
 			Component: "downstream-notify",
 			Status:    tapir.StatusFail,
-			Msg:       fmt.Sprintf("Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, td.Rpz.Axfr.SOA.Serial, td.Rpz.ZoneName),
+			Msg:       fmt.Sprintf("Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, pd.Rpz.Axfr.SOA.Serial, pd.Rpz.ZoneName),
 			TimeStamp: time.Now(),
 		}
 
 		m := new(dns.Msg)
-		m.SetNotify(td.Rpz.ZoneName)
-		td.Rpz.Axfr.SOA.Serial = td.Rpz.CurrentSerial
-		// m.Ns = append(m.Ns, dns.RR(&td.Rpz.Axfr.SOA))
-		td.Logger.Printf("RefreshEngine: Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, td.Rpz.Axfr.SOA.Serial, td.Rpz.ZoneName)
+		m.SetNotify(pd.Rpz.ZoneName)
+		pd.Rpz.Axfr.SOA.Serial = pd.Rpz.CurrentSerial
+		// m.Ns = append(m.Ns, dns.RR(&pd.Rpz.Axfr.SOA))
+		pd.Logger.Printf("RefreshEngine: Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, pd.Rpz.Axfr.SOA.Serial, pd.Rpz.ZoneName)
 		r, err := dns.Exchange(m, dest)
 		if err != nil {
 			// well, we tried
-			csu.Msg = fmt.Sprintf("Error from downstream %s on NOTIFY(%s): %v", dest, td.Rpz.ZoneName, err)
+			csu.Msg = fmt.Sprintf("Error from downstream %s on NOTIFY(%s): %v", dest, pd.Rpz.ZoneName, err)
 			Gconfig.Internal.ComponentStatusCh <- csu
-			td.Logger.Println(csu.Msg)
+			pd.Logger.Println(csu.Msg)
 			continue
 		}
 		if r.Opcode != dns.OpcodeNotify {
 			// well, we tried
-			csu.Msg = fmt.Sprintf("Error: not a NOTIFY response from downstream %s on NOTIFY(%s): %s", dest, td.Rpz.ZoneName, dns.OpcodeToString[r.Opcode])
+			csu.Msg = fmt.Sprintf("Error: not a NOTIFY response from downstream %s on NOTIFY(%s): %s", dest, pd.Rpz.ZoneName, dns.OpcodeToString[r.Opcode])
 			Gconfig.Internal.ComponentStatusCh <- csu
-			td.Logger.Println(csu.Msg)
+			pd.Logger.Println(csu.Msg)
 			continue
 
 		} else {
 			if r.Rcode != dns.RcodeSuccess {
-				csu.Msg = fmt.Sprintf("Downstream %s responded with rcode %s to NOTIFY(%s) about new SOA serial (%d)", dest, dns.RcodeToString[r.Rcode], td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial)
+				csu.Msg = fmt.Sprintf("Downstream %s responded with rcode %s to NOTIFY(%s) about new SOA serial (%d)", dest, dns.RcodeToString[r.Rcode], pd.Rpz.ZoneName, pd.Rpz.Axfr.SOA.Serial)
 				Gconfig.Internal.ComponentStatusCh <- csu
-				td.Logger.Println(csu.Msg)
+				pd.Logger.Println(csu.Msg)
 				continue
 			}
 			csu.Status = tapir.StatusOK
-			csu.Msg = fmt.Sprintf("Downstream %s responded correctly to NOTIFY(%s) about new SOA serial (%d)", dest, td.Rpz.ZoneName, td.Rpz.Axfr.SOA.Serial)
+			csu.Msg = fmt.Sprintf("Downstream %s responded correctly to NOTIFY(%s) about new SOA serial (%d)", dest, pd.Rpz.ZoneName, pd.Rpz.Axfr.SOA.Serial)
 			Gconfig.Internal.ComponentStatusCh <- csu
-			td.Logger.Println(csu.Msg)
+			pd.Logger.Println(csu.Msg)
 		}
 	}
 	return nil

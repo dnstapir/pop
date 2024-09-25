@@ -1,5 +1,5 @@
 /*
- * Copyright (c) DNS TAPIR
+ * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 package main
 
@@ -16,13 +16,13 @@ import (
 // 3. Delete the bucket from the ReaperData map
 // 4. Generate a new IXFR for the deleted items
 // 5. Send the IXFR to the RPZ
-func (td *TemData) Reaper(full bool) error {
-	timekey := time.Now().Truncate(td.ReaperInterval)
+func (pd *PopData) Reaper(full bool) error {
+	timekey := time.Now().Truncate(pd.ReaperInterval)
 	// tpkg := tapir.MqttPkgIn{}
 	tm := tapir.TapirMsg{}
-	td.Logger.Printf("Reaper: working on time slot %s across all lists", timekey.Format(tapir.TimeLayout))
+	pd.Logger.Printf("Reaper: working on time slot %s across all lists", timekey.Format(tapir.TimeLayout))
 	for _, listtype := range []string{"whitelist", "greylist", "blacklist"} {
-		for listname, wbgl := range td.Lists[listtype] {
+		for listname, wbgl := range pd.Lists[listtype] {
 			// This loop is here to ensure that we don't have any old data in the ReaperData bucket
 			// that has already passed its time slot.
 			for t, d := range wbgl.ReaperData {
@@ -31,8 +31,8 @@ func (td *TemData) Reaper(full bool) error {
 						continue
 					}
 
-					td.Logger.Printf("Reaper: Warning: found old reaperdata for time slot %s (that has already passed). Moving %d names to current time slot (%s)", t.Format(tapir.TimeLayout), len(d), timekey.Format(tapir.TimeLayout))
-					td.mu.Lock()
+					pd.Logger.Printf("Reaper: Warning: found old reaperdata for time slot %s (that has already passed). Moving %d names to current time slot (%s)", t.Format(tapir.TimeLayout), len(d), timekey.Format(tapir.TimeLayout))
+					pd.mu.Lock()
 					if _, exist := wbgl.ReaperData[timekey]; !exist {
 						wbgl.ReaperData[timekey] = map[string]bool{}
 					}
@@ -41,38 +41,38 @@ func (td *TemData) Reaper(full bool) error {
 					}
 					// wbgl.ReaperData[timekey] = d
 					delete(wbgl.ReaperData, t)
-					td.mu.Unlock()
+					pd.mu.Unlock()
 				}
 			}
-			// td.Logger.Printf("Reaper: working on %s %s", listtype, listname)
+			// pd.Logger.Printf("Reaper: working on %s %s", listtype, listname)
 			if len(wbgl.ReaperData[timekey]) > 0 {
-				td.Logger.Printf("Reaper: list [%s][%s] has %d timekeys stored", listtype, listname,
+				pd.Logger.Printf("Reaper: list [%s][%s] has %d timekeys stored", listtype, listname,
 					len(wbgl.ReaperData[timekey]))
-				td.mu.Lock()
+				pd.mu.Lock()
 				for name := range wbgl.ReaperData[timekey] {
-					td.Logger.Printf("Reaper: removing %s from %s %s", name, listtype, listname)
-					delete(td.Lists[listtype][listname].Names, name)
+					pd.Logger.Printf("Reaper: removing %s from %s %s", name, listtype, listname)
+					delete(pd.Lists[listtype][listname].Names, name)
 					delete(wbgl.ReaperData[timekey], name)
 					tm.Removed = append(tm.Removed, tapir.Domain{Name: name})
 				}
-				// td.Logger.Printf("Reaper: %s %s now has %d items:", listtype, listname, len(td.Lists[listtype][listname].Names))
-				// for name, item := range td.Lists[listtype][listname].Names {
-				// 	td.Logger.Printf("Reaper: remaining: key: %s name: %s", name, item.Name)
+				// pd.Logger.Printf("Reaper: %s %s now has %d items:", listtype, listname, len(pd.Lists[listtype][listname].Names))
+				// for name, item := range pd.Lists[listtype][listname].Names {
+				// 	pd.Logger.Printf("Reaper: remaining: key: %s name: %s", name, item.Name)
 				// }
 				delete(wbgl.ReaperData, timekey)
-				td.mu.Unlock()
+				pd.mu.Unlock()
 			}
 		}
 	}
 
 	if len(tm.Removed) > 0 {
-		ixfr, err := td.GenerateRpzIxfr(&tm)
+		ixfr, err := pd.GenerateRpzIxfr(&tm)
 		if err != nil {
-			td.Logger.Printf("Reaper: Error from GenerateRpzIxfr(): %v", err)
+			pd.Logger.Printf("Reaper: Error from GenerateRpzIxfr(): %v", err)
 		}
-		err = td.ProcessIxfrIntoAxfr(ixfr)
+		err = pd.ProcessIxfrIntoAxfr(ixfr)
 		if err != nil {
-			td.Logger.Printf("Reaper: Error from ProcessIxfrIntoAxfr(): %v", err)
+			pd.Logger.Printf("Reaper: Error from ProcessIxfrIntoAxfr(): %v", err)
 		}
 	}
 	return nil

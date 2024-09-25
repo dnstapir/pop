@@ -1,5 +1,5 @@
 /*
- * Johan Stenstam, johan.stenstam@internetstiftelsen.se
+ * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 package main
 
@@ -103,7 +103,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				Msg:    "Daemon was happy, but now winding down",
 			}
 			log.Printf("Stopping MQTT engine\n")
-			_, err := conf.TemData.MqttEngine.StopEngine()
+			_, err := conf.PopData.MqttEngine.StopEngine()
 			if err != nil {
 				resp.Error = true
 				resp.ErrorMsg = err.Error()
@@ -117,7 +117,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "mqtt-start":
-			_, _, _, err := conf.TemData.MqttEngine.StartEngine()
+			_, _, _, err := conf.PopData.MqttEngine.StartEngine()
 			if err != nil {
 				resp.Error = true
 				resp.ErrorMsg = err.Error()
@@ -125,7 +125,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			resp.Msg = "MQTT engine started"
 
 		case "mqtt-stop":
-			_, err := conf.TemData.MqttEngine.StopEngine()
+			_, err := conf.PopData.MqttEngine.StopEngine()
 			if err != nil {
 				resp.Error = true
 				resp.ErrorMsg = err.Error()
@@ -133,7 +133,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			resp.Msg = "MQTT engine stopped"
 
 		case "mqtt-restart":
-			_, err := conf.TemData.MqttEngine.RestartEngine()
+			_, err := conf.PopData.MqttEngine.RestartEngine()
 			if err != nil {
 				resp.Error = true
 				resp.ErrorMsg = err.Error()
@@ -143,9 +143,9 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		case "rpz-add":
 			log.Printf("Received RPZ-ADD %s policy %s RPZ source %s command", cp.Name, cp.Policy, cp.RpzSource)
 
-			log.Printf("apihandler: RPZ-ADD 1. Len(ch): %d", len(conf.TemData.RpzCommandCh))
+			log.Printf("apihandler: RPZ-ADD 1. Len(ch): %d", len(conf.PopData.RpzCommandCh))
 			var respch = make(chan RpzCmdResponse, 1)
-			conf.TemData.RpzCommandCh <- RpzCmdData{
+			conf.PopData.RpzCommandCh <- RpzCmdData{
 				Command:   "RPZ-ADD",
 				Domain:    cp.Name,
 				Policy:    cp.Policy,
@@ -168,7 +168,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Received RPZ-LOOKUP %s command", cp.Name)
 
 			var respch = make(chan RpzCmdResponse, 1)
-			conf.TemData.RpzCommandCh <- RpzCmdData{
+			conf.PopData.RpzCommandCh <- RpzCmdData{
 				Command: "RPZ-LOOKUP",
 				Domain:  cp.Name,
 				Result:  respch,
@@ -186,7 +186,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Received RPZ-REMOVE %s source %s command", cp.Name, cp.RpzSource)
 
 			var respch = make(chan RpzCmdResponse, 1)
-			conf.TemData.RpzCommandCh <- RpzCmdData{
+			conf.PopData.RpzCommandCh <- RpzCmdData{
 				Command:   "RPZ-REMOVE",
 				Domain:    cp.Name,
 				RpzSource: cp.RpzSource,
@@ -205,7 +205,7 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("Received RPZ-LIST-SOURCES command")
 
 			var respch = make(chan RpzCmdResponse, 1)
-			conf.TemData.RpzCommandCh <- RpzCmdData{
+			conf.PopData.RpzCommandCh <- RpzCmdData{
 				Command: "RPZ-LIST-SOURCES",
 				Result:  respch,
 			}
@@ -265,7 +265,7 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		switch bp.Command {
 		case "greylist-status":
-			me := conf.TemData.MqttEngine
+			me := conf.PopData.MqttEngine
 			stats := me.Stats()
 			// resp.MsgCounters = stats.MsgCounters
 			// resp.MsgTimeStamps = stats.MsgTimeStamps
@@ -274,7 +274,7 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			log.Printf("API: greylist-status: %v", stats)
 
 		case "export-greylist":
-			td := conf.TemData
+			td := conf.PopData
 			td.mu.RLock()
 			defer td.mu.RUnlock()
 
@@ -371,7 +371,7 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 }
 
 func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
-	td := conf.TemData
+	td := conf.PopData
 
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -401,36 +401,36 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		switch dp.Command {
 		case "rrset":
-			log.Printf("TEM debug rrset inquiry")
+			log.Printf("TAPIR-POP debug rrset inquiry")
 			if zd, ok := td.RpzSources[dp.Zone]; ok {
 				if owner := &zd.Owners[zd.OwnerIndex[dp.Qname]]; owner != nil {
 					if rrset, ok := owner.RRtypes[dp.Qtype]; ok {
 						resp.RRset = rrset
 					}
-					log.Printf("TEM debug rrset: owner: %v", owner)
+					log.Printf("TAPIR-POP debug rrset: owner: %v", owner)
 				}
 			} else {
 				resp.Msg = fmt.Sprintf("Zone %s is unknown", dp.Zone)
 			}
 
 		case "zonedata":
-			log.Printf("TEM debug zone inquiry")
+			log.Printf("TAPIR-POP debug zone inquiry")
 			if zd, ok := td.RpzSources[dp.Zone]; ok {
 				//			       resp.ZoneData = *zd
 				//			       resp.ZoneData.RRKeepFunc = nil
 				//			       resp.ZoneData.RRParseFunc = nil
-				log.Printf("TEM debug zone: name: %s rrs: %d owners: %d", dp.Zone,
+				log.Printf("TAPIR-POP debug zone: name: %s rrs: %d owners: %d", dp.Zone,
 					len(zd.RRs), len(zd.Owners))
 			} else {
 				resp.Msg = fmt.Sprintf("Zone %s is unknown", dp.Zone)
 			}
 
 		case "mqtt-stats":
-			log.Printf("TEM debug MQTT stats")
+			log.Printf("TAPIR-POP debug MQTT stats")
 			resp.TopicData = td.MqttEngine.Stats()
 
 		case "reaper-stats":
-			log.Printf("TEM debug reaper stats")
+			log.Printf("TAPIR-POP debug reaper stats")
 			resp.ReaperStats = make(map[string]map[time.Time][]string)
 			for SrcName, list := range td.Lists["greylist"] {
 				resp.ReaperStats[SrcName] = make(map[time.Time][]string)
@@ -442,7 +442,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "colourlists":
-			log.Printf("TEM debug white/black/grey lists")
+			log.Printf("TAPIR-POP debug white/black/grey lists")
 			resp.Lists = map[string]map[string]*tapir.WBGlist{}
 			for t, l := range td.Lists {
 				resp.Lists[t] = map[string]*tapir.WBGlist{}
@@ -461,7 +461,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "gen-output":
-			log.Printf("TEM debug generate RPZ output")
+			log.Printf("TAPIR-POP debug generate RPZ output")
 			err = td.GenerateRpzAxfr()
 			if err != nil {
 				resp.Error = true
@@ -474,7 +474,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "send-status":
-			log.Printf("TEM debug send status")
+			log.Printf("TAPIR-POP debug send status")
 
 			rt := make(chan tapir.StatusUpdaterResponse)
 			var sur *tapir.StatusUpdaterResponse
@@ -599,7 +599,7 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 	// tls.RequireAnyClientCert, tls.RequestClientCert, tls.NoClientCert
 
 	if err != nil {
-		TEMExiter("Error creating API server tls config: %v\n", err)
+		POPExiter("Error creating API server tls config: %v\n", err)
 	}
 
 	var wg sync.WaitGroup
@@ -619,7 +619,7 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 
 				log.Printf("*** API: Starting API dispatcher #%d. Listening on %s", idx+1, address)
 				wg.Done()
-				TEMExiter(apiServer.ListenAndServe())
+				POPExiter(apiServer.ListenAndServe())
 			}(&wg)
 		}
 	}
@@ -638,7 +638,7 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 					}
 					log.Printf("*** API: Starting TLS API dispatcher #%d. Listening on %s", idx+1, tlsaddress)
 					wg.Done()
-					TEMExiter(tlsServer.ListenAndServeTLS(certfile, keyfile))
+					POPExiter(tlsServer.ListenAndServeTLS(certfile, keyfile))
 				}(&wg)
 			}
 		} else {
@@ -658,7 +658,7 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 				}
 				log.Printf("*** API: Starting Bootstrap API dispatcher #%d. Listening on %s", idx+1, address)
 				wg.Done()
-				TEMExiter(apiServer.ListenAndServe())
+				POPExiter(apiServer.ListenAndServe())
 			}(&wg)
 		}
 	} else {
@@ -680,7 +680,7 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 
 					log.Printf("*** API: Starting Bootstrap TLS API dispatcher #%d. Listening on %s", idx+1, address)
 					wg.Done()
-					TEMExiter(bootstrapTlsServer.ListenAndServeTLS(certfile, keyfile))
+					POPExiter(bootstrapTlsServer.ListenAndServeTLS(certfile, keyfile))
 				}(&wg)
 			}
 		} else {
@@ -696,7 +696,7 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 
 func BumpSerial(conf *Config, zone string) (string, error) {
 	var respch = make(chan RpzCmdResponse, 1)
-	conf.TemData.RpzCommandCh <- RpzCmdData{
+	conf.PopData.RpzCommandCh <- RpzCmdData{
 		Command: "BUMP",
 		Zone:    zone,
 		Result:  respch,

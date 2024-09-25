@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024Johan Stenstam, johan.stenstam@internetstiftelsen.se
+ * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
 package main
@@ -32,7 +32,7 @@ type Config struct {
 		Policy    *log.Logger
 	}
 	Internal InternalConf
-	TemData  *TemData
+	PopData  *PopData
 	BootTime time.Time
 }
 
@@ -136,11 +136,11 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 
 	if v == nil {
 		if err := viper.Unmarshal(&config); err != nil {
-			TEMExiter("ValidateConfig: Unmarshal error: %v", err)
+			POPExiter("ValidateConfig: Unmarshal error: %v", err)
 		}
 	} else {
 		if err := v.Unmarshal(&config); err != nil {
-			TEMExiter("ValidateConfig: Unmarshal error: %v", err)
+			POPExiter("ValidateConfig: Unmarshal error: %v", err)
 		}
 	}
 
@@ -161,7 +161,7 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 	//	configsections["oldsources"] = config.OldSources
 
 	if err := ValidateBySection(&config, configsections, cfgfile); err != nil {
-		TEMExiter("Config \"%s\" is missing required attributes:\n%v\n", cfgfile, err)
+		POPExiter("Config \"%s\" is missing required attributes:\n%v\n", cfgfile, err)
 	}
 	return nil
 }
@@ -178,7 +178,7 @@ func ValidateBySection(config *Config, configsections map[string]interface{}, cf
 		}
 		if err := validate.Struct(data); err != nil {
 			log.Printf("ValidateBySection: data that caused validation to fail:\n%v\n", data)
-			TEMExiter("ValidateBySection: Config %s, section %s: missing required attributes:\n%v\n", cfgfile, k, err)
+			POPExiter("ValidateBySection: Config %s, section %s: missing required attributes:\n%v\n", cfgfile, k, err)
 		}
 	}
 	return nil

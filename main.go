@@ -23,55 +23,55 @@ import (
 	"github.com/dnstapir/tapir"
 )
 
-var TEMExiter = func(args ...interface{}) {
-	log.Printf("TEMExiter: [placeholderfunction w/o real cleanup]")
-	log.Printf("TEMExiter: Exit message: %s", fmt.Sprintf(args[0].(string), args[1:]...))
+var POPExiter = func(args ...interface{}) {
+	log.Printf("POPExiter: [placeholderfunction w/o real cleanup]")
+	log.Printf("POPExiter: Exit message: %s", fmt.Sprintf(args[0].(string), args[1:]...))
 	os.Exit(1)
 }
 
-func (td *TemData) SaveRpzSerial() error {
-	// Save the current value of td.Downstreams.Serial to a text file
+func (pd *PopData) SaveRpzSerial() error {
+	// Save the current value of pd.Downstreams.Serial to a text file
 	serialFile := viper.GetString("services.rpz.serialcache")
 	if serialFile == "" {
-		log.Fatalf("TEMExiter:No serial cache file specified")
+		log.Fatalf("POPExiter:No serial cache file specified")
 	}
-	// serialData := []byte(fmt.Sprintf("%d", td.Rpz.CurrentSerial))
+	// serialData := []byte(fmt.Sprintf("%d", pd.Rpz.CurrentSerial))
 	// err := os.WriteFile(serialFile, serialData, 0644)
-	serialYaml := fmt.Sprintf("current_serial: %d\n", td.Rpz.CurrentSerial)
+	serialYaml := fmt.Sprintf("current_serial: %d\n", pd.Rpz.CurrentSerial)
 	err := os.WriteFile(serialFile, []byte(serialYaml), 0644) // #nosec G306
 	if err != nil {
 		log.Printf("Error writing YAML serial to file: %v", err)
 	} else {
-		log.Printf("Saved current serial %d to file %s", td.Rpz.CurrentSerial, serialFile)
+		log.Printf("Saved current serial %d to file %s", pd.Rpz.CurrentSerial, serialFile)
 	}
 	return err
 }
 
-func mainloop(conf *Config, configfile *string, td *TemData) {
+func mainloop(conf *Config, configfile *string, pd *PopData) {
 	log.Println("mainloop: enter")
 	exit := make(chan os.Signal, 1)
 	signal.Notify(exit, syscall.SIGINT, syscall.SIGTERM)
 	hupper := make(chan os.Signal, 1)
 	signal.Notify(hupper, syscall.SIGHUP)
 
-	TEMExiter = func(args ...interface{}) {
+	POPExiter = func(args ...interface{}) {
 		var msg string
-		log.Printf("TEMExiter: will try to clean up.")
+		log.Printf("POPExiter: will try to clean up.")
 
-		err := td.SaveRpzSerial()
+		err := pd.SaveRpzSerial()
 		if err != nil {
 			log.Printf("Error saving RPZ serial: %v", err)
 		}
 
 		switch args[0].(type) {
 		case string:
-			msg = fmt.Sprintf("TEMExiter: Exit message: %s",
+			msg = fmt.Sprintf("POPExiter: Exit message: %s",
 				fmt.Sprintf(args[0].(string), args[1:]...))
 		case error:
-			msg = fmt.Sprintf("TEMExiter: Error message: %s", args[0].(error).Error())
+			msg = fmt.Sprintf("POPExiter: Error message: %s", args[0].(error).Error())
 
 		default:
-			msg = fmt.Sprintf("TEMExiter: Exit message: %v", args[0])
+			msg = fmt.Sprintf("POPExiter: Exit message: %v", args[0])
 		}
 
 		fmt.Println(msg)
@@ -89,7 +89,7 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 			select {
 			case <-exit:
 				log.Println("mainloop: Exit signal received. Cleaning up.")
-				err := td.SaveRpzSerial()
+				err := pd.SaveRpzSerial()
 				if err != nil {
 					log.Printf("Error saving RPZ serial: %v", err)
 				}
@@ -100,15 +100,15 @@ func mainloop(conf *Config, configfile *string, td *TemData) {
 				if err := viper.ReadInConfig(); err == nil {
 					fmt.Fprintln(os.Stderr, "Using config file:", *configfile)
 				} else {
-					TEMExiter("Could not load config %s: Error: %v", *configfile, err)
+					POPExiter("Could not load config %s: Error: %v", *configfile, err)
 				}
 
 				log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
 				log.Printf("mainloop: Requesting refresh of all RPZ zones")
-				conf.TemData.RpzRefreshCh <- RpzRefresh{Name: ""}
+				conf.PopData.RpzRefreshCh <- RpzRefresh{Name: ""}
 			case <-conf.Internal.APIStopCh:
 				log.Printf("mainloop: API instruction to stop\n")
-				err := td.SaveRpzSerial()
+				err := pd.SaveRpzSerial()
 				if err != nil {
 					log.Printf("Error saving RPZ serial: %v", err)
 				}
@@ -149,40 +149,40 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.DefaultPopCfgFile, err)
+		POPExiter("Could not load config %s: Error: %v", tapir.DefaultPopCfgFile, err)
 	}
 	viper.SetConfigFile(tapir.PopSourcesCfgFile)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.PopSourcesCfgFile, err)
+		POPExiter("Could not load config %s: Error: %v", tapir.PopSourcesCfgFile, err)
 	}
 	viper.SetConfigFile(tapir.PopOutputsCfgFile)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.PopOutputsCfgFile, err)
+		POPExiter("Could not load config %s: Error: %v", tapir.PopOutputsCfgFile, err)
 	}
 	viper.SetConfigFile(tapir.PopPolicyCfgFile)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		TEMExiter("Could not load config %s: Error: %v", tapir.PopPolicyCfgFile, err)
+		POPExiter("Could not load config %s: Error: %v", tapir.PopPolicyCfgFile, err)
 	}
 
 	SetupLogging(&Gconfig)
 
 	err := ValidateConfig(nil, cfgFileUsed) // will terminate on error
 	if err != nil {
-		TEMExiter("Error validating config: %v", err)
+		POPExiter("Error validating config: %v", err)
 	}
 
 	err = viper.Unmarshal(&Gconfig)
 	if err != nil {
-		TEMExiter("Error unmarshalling config into struct: %v", err)
+		POPExiter("Error unmarshalling config into struct: %v", err)
 	}
 
 	fmt.Printf("%s (TAPIR Edge Manager) version %s (%s) starting.\n", appName, appVersion, appDate)
@@ -192,38 +192,38 @@ func main() {
 	statusch := make(chan tapir.ComponentStatusUpdate, 10)
 	Gconfig.Internal.ComponentStatusCh = statusch
 
-	td, err := NewTemData(&Gconfig, log.Default())
+	pd, err := NewPopData(&Gconfig, log.Default())
 	if err != nil {
-		TEMExiter("Error from NewTemData: %v", err)
+		POPExiter("Error from NewPopData: %v", err)
 	}
 
-	if td.MqttEngine == nil {
-		td.mu.Lock()
-		err := td.CreateMqttEngine(mqttclientid, statusch, td.MqttLogger)
+	if pd.MqttEngine == nil {
+		pd.mu.Lock()
+		err := pd.CreateMqttEngine(mqttclientid, statusch, pd.MqttLogger)
 		if err != nil {
-			TEMExiter("Error creating MQTT Engine: %v", err)
+			POPExiter("Error creating MQTT Engine: %v", err)
 		}
-		td.mu.Unlock()
-		err = td.StartMqttEngine(td.MqttEngine)
+		pd.mu.Unlock()
+		err = pd.StartMqttEngine(pd.MqttEngine)
 		if err != nil {
-			TEMExiter("Error starting MQTT Engine: %v", err)
+			POPExiter("Error starting MQTT Engine: %v", err)
 		}
 	}
 
-	go td.ConfigUpdater(&Gconfig, stopch) // Note that ConfigUpdater must as early as possible
-	go td.StatusUpdater(&Gconfig, stopch) // Note that StatusUpdater must as early as possible
-	go td.RefreshEngine(&Gconfig, stopch)
+	go pd.ConfigUpdater(&Gconfig, stopch) // Note that ConfigUpdater must as early as possible
+	go pd.StatusUpdater(&Gconfig, stopch) // Note that StatusUpdater must as early as possible
+	go pd.RefreshEngine(&Gconfig, stopch)
 
 	log.Println("*** main: Calling ParseSourcesNG()")
-	err = td.ParseSourcesNG()
+	err = pd.ParseSourcesNG()
 	if err != nil {
-		TEMExiter("Error from ParseSourcesNG: %v", err)
+		POPExiter("Error from ParseSourcesNG: %v", err)
 	}
 	log.Println("*** main: Returned from ParseSourcesNG()")
 
-	err = td.ParseOutputs()
+	err = pd.ParseOutputs()
 	if err != nil {
-		TEMExiter("Error from ParseOutputs: %v", err)
+		POPExiter("Error from ParseOutputs: %v", err)
 	}
 
 	apistopper := make(chan struct{}) //
@@ -245,5 +245,5 @@ func main() {
 		TimeStamp: time.Now(),
 	}
 
-	mainloop(&Gconfig, &cfgFileUsed, td)
+	mainloop(&Gconfig, &cfgFileUsed, pd)
 }

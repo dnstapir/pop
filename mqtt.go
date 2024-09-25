@@ -13,41 +13,32 @@ import (
 	"github.com/miekg/dns"
 )
 
-func (td *TemData) CreateMqttEngine(clientid string, statusch chan tapir.ComponentStatusUpdate, lg *log.Logger) error {
+func (pd *PopData) CreateMqttEngine(clientid string, statusch chan tapir.ComponentStatusUpdate, lg *log.Logger) error {
 	if clientid == "" {
-		TEMExiter("Error starting MQTT Engine: clientid not specified in config")
+		POPExiter("Error starting MQTT Engine: clientid not specified in config")
 	}
 	var err error
-	td.Logger.Printf("Creating MQTT Engine with clientid %s", clientid)
-	td.MqttEngine, err = tapir.NewMqttEngine("tapir-pop", clientid, tapir.TapirSub, statusch, lg) // sub, but no pub
+	pd.Logger.Printf("Creating MQTT Engine with clientid %s", clientid)
+	pd.MqttEngine, err = tapir.NewMqttEngine("tapir-pop", clientid, tapir.TapirSub, statusch, lg) // sub, but no pub
 	if err != nil {
-		TEMExiter("Error from NewMqttEngine: %v\n", err)
+		POPExiter("Error from NewMqttEngine: %v\n", err)
 	}
 	return nil
 }
 
-func (td *TemData) StartMqttEngine(meng *tapir.MqttEngine) error {
-	if td.TapirMqttEngineRunning {
+func (pd *PopData) StartMqttEngine(meng *tapir.MqttEngine) error {
+	if pd.TapirMqttEngineRunning {
 		return nil
 	}
-
-	//	clientid := viper.GetString("mqtt.clientid")
-	// if clientid == "" {
-	//		TEMExiter("Error starting MQTT Engine: clientid not specified in config")
-	//}
-	//meng, err := tapir.NewMqttEngine(clientid, tapir.TapirSub) // sub, but no pub
-	//if err != nil {
-	//TEMExiter("Error from NewMqttEngine: %v\n", err)
-	//}
 
 	cmnder, outbox, inbox, err := meng.StartEngine()
 	if err != nil {
 		log.Fatalf("Error from StartEngine(): %v", err)
 	}
-	td.TapirMqttCmdCh = cmnder
-	td.TapirMqttPubCh = outbox
-	td.TapirObservations = inbox
-	td.TapirMqttEngineRunning = true
+	pd.TapirMqttCmdCh = cmnder
+	pd.TapirMqttPubCh = outbox
+	pd.TapirObservations = inbox
+	pd.TapirMqttEngineRunning = true
 
 	meng.SetupInterruptHandler()
 	return nil
@@ -62,8 +53,8 @@ func (td *TemData) StartMqttEngine(meng *tapir.MqttEngine) error {
 //    - if different, add the diff (DEL+ADD) to a growing "IXFR" describing the consequences of the update.
 //
 
-// func (td *TemData) ProcessTapirUpdate(tpkg tapir.MqttPkgIn) (bool, error) {
-func (td *TemData) ProcessTapirUpdate(tm tapir.TapirMsg) (bool, error) {
+// func (pd *PopData) ProcessTapirUpdate(tpkg tapir.MqttPkgIn) (bool, error) {
+func (pd *PopData) ProcessTapirUpdate(tm tapir.TapirMsg) (bool, error) {
 	//	tm := tapir.TapirMsg{}
 	//	err := json.Unmarshal(tpkg.Payload, &tm)
 	//	if err != nil {
@@ -71,27 +62,27 @@ func (td *TemData) ProcessTapirUpdate(tm tapir.TapirMsg) (bool, error) {
 	//		return false, fmt.Errorf("MQTT: failed to decode json: %v", err)
 	//	}
 
-	if td.Debug {
-		td.Logger.Printf("ProcessTapirUpdate: update of MQTT source %s contains %d adds and %d removes",
+	if pd.Debug {
+		pd.Logger.Printf("ProcessTapirUpdate: update of MQTT source %s contains %d adds and %d removes",
 			tm.SrcName, len(tm.Added), len(tm.Removed))
-		tapir.PrintTapirMsg(tm, td.Logger)
+		tapir.PrintTapirMsg(tm, pd.Logger)
 	}
 
 	var wbgl *tapir.WBGlist
 	var exists bool
 
-	td.Logger.Printf("ProcessTapirUpdate: looking up list [%s][%s]", tm.ListType, tm.SrcName)
+	pd.Logger.Printf("ProcessTapirUpdate: looking up list [%s][%s]", tm.ListType, tm.SrcName)
 
 	switch tm.ListType {
 	case "whitelist", "greylist", "blacklist":
-		wbgl, exists = td.Lists[tm.ListType][tm.SrcName]
+		wbgl, exists = pd.Lists[tm.ListType][tm.SrcName]
 	default:
-		td.Logger.Printf("TapirUpdate for unknown listtype from source \"%s\" rejected.", tm.SrcName)
+		pd.Logger.Printf("TapirUpdate for unknown listtype from source \"%s\" rejected.", tm.SrcName)
 		return false, fmt.Errorf("MQTT ListType %s is unknown, update rejected", tm.ListType)
 	}
 
 	if !exists {
-		td.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tm.SrcName)
+		pd.Logger.Printf("TapirUpdate for unknown source \"%s\" rejected.", tm.SrcName)
 		return false, fmt.Errorf("MQTT Source %s is unknown, update rejected", tm.SrcName)
 	}
 
@@ -105,12 +96,12 @@ func (td *TemData) ProcessTapirUpdate(tm tapir.TapirMsg) (bool, error) {
 		}
 		wbgl.Names[tname.Name] = tmp
 
-		td.Logger.Printf("ProcessTapirUpdate: adding name %s to %s (TimeAdded: %s ttl: %v)",
+		pd.Logger.Printf("ProcessTapirUpdate: adding name %s to %s (TimeAdded: %s ttl: %v)",
 			tname.Name, wbgl.Name, tname.TimeAdded.Format(tapir.TimeLayout), tname.TTL)
 
 		// Time that the name will be removed from the list
 		// must ensure that reapertime is at least ReaperInterval into the future
-		reptime := tname.TimeAdded.Add(ttl).Truncate(td.ReaperInterval).Add(td.ReaperInterval)
+		reptime := tname.TimeAdded.Add(ttl).Truncate(pd.ReaperInterval).Add(pd.ReaperInterval)
 
 		// Ensure that there are no prior removal events for this name
 		for reaperTime, namesMap := range wbgl.ReaperData {
@@ -131,15 +122,15 @@ func (td *TemData) ProcessTapirUpdate(tm tapir.TapirMsg) (bool, error) {
 		wbgl.ReaperData[reptime][tname.Name] = true
 	}
 
-	td.Logger.Printf("ProcessTapirUpdate: current state of %s %s ReaperData:", tm.ListType, wbgl.Name)
+	pd.Logger.Printf("ProcessTapirUpdate: current state of %s %s ReaperData:", tm.ListType, wbgl.Name)
 	for t, v := range wbgl.ReaperData {
 		if len(v) > 0 {
-			td.Logger.Printf("== At time %s the following names will be removed from the dns-tapir list:", t.Format(tapir.TimeLayout))
+			pd.Logger.Printf("== At time %s the following names will be removed from the dns-tapir list:", t.Format(tapir.TimeLayout))
 			for name := range v {
-				td.Logger.Printf("  %s", name)
+				pd.Logger.Printf("  %s", name)
 			}
 		} else {
-			td.Logger.Printf("ReaperData: timekey %s is empty, deleting", t.Format(tapir.TimeLayout))
+			pd.Logger.Printf("ReaperData: timekey %s is empty, deleting", t.Format(tapir.TimeLayout))
 			delete(wbgl.ReaperData, t)
 		}
 	}
@@ -148,35 +139,35 @@ func (td *TemData) ProcessTapirUpdate(tm tapir.TapirMsg) (bool, error) {
 		delete(wbgl.Names, dns.Fqdn(tname.Name))
 	}
 
-	ixfr, err := td.GenerateRpzIxfr(&tm)
+	ixfr, err := pd.GenerateRpzIxfr(&tm)
 	if err != nil {
 		return false, err
 	}
-	err = td.ProcessIxfrIntoAxfr(ixfr)
+	err = pd.ProcessIxfrIntoAxfr(ixfr)
 	return true, err // return to RefreshEngine
 }
 
-func (td *TemData) ProcessIxfrIntoAxfr(ixfr RpzIxfr) error {
+func (pd *PopData) ProcessIxfrIntoAxfr(ixfr RpzIxfr) error {
 	for _, tn := range ixfr.Removed {
-		delete(td.Rpz.Axfr.Data, tn.Name)
-		if td.Debug {
-			td.Logger.Printf("PIIA: Deleting domain %s", tn.Name)
+		delete(pd.Rpz.Axfr.Data, tn.Name)
+		if pd.Debug {
+			pd.Logger.Printf("PIIA: Deleting domain %s", tn.Name)
 		}
 	}
 	for _, tn := range ixfr.Added {
-		if _, exist := td.Rpz.Axfr.Data[tn.Name]; exist {
+		if _, exist := pd.Rpz.Axfr.Data[tn.Name]; exist {
 			// XXX: this should not happen.
-			td.Logger.Printf("Error: ProcessIxfrIntoAxfr: domain %s already exists. This should not happen.",
+			pd.Logger.Printf("Error: ProcessIxfrIntoAxfr: domain %s already exists. This should not happen.",
 				tn.Name)
 		} else {
-			td.Rpz.Axfr.Data[tn.Name] = tn
-			if td.Debug {
-				td.Logger.Printf("PIIA: Adding domain %s", tn.Name)
+			pd.Rpz.Axfr.Data[tn.Name] = tn
+			if pd.Debug {
+				pd.Logger.Printf("PIIA: Adding domain %s", tn.Name)
 			}
 		}
 	}
 
-	//	td.Logger.Printf("PIIA Notifying %d downstreams for RPZ zone %s", len(td.RpzDownstreams), td.Rpz.ZoneName)
-	err := td.NotifyDownstreams()
+	//	pd.Logger.Printf("PIIA Notifying %d downstreams for RPZ zone %s", len(pd.RpzDownstreams), pd.Rpz.ZoneName)
+	err := pd.NotifyDownstreams()
 	return err
 }
