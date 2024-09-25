@@ -254,12 +254,12 @@ func (td *TemData) ParseSourcesNG() error {
 	}
 
 	for {
-		tmp := <-rptchan
-		threads--
-		td.Logger.Printf("ParseSources: source \"%s\" is now complete. %d remaining", tmp, threads)
 		if threads == 0 {
 			break
 		}
+		tmp := <-rptchan
+		threads--
+		td.Logger.Printf("ParseSources: source \"%s\" is now complete. %d remaining", tmp, threads)
 	}
 
 	if td.MqttEngine != nil && !td.TapirMqttEngineRunning {
