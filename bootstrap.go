@@ -1,6 +1,7 @@
 /*
- * Copyright (c) DNS TAPIR
+ * Copyright (c) Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
+
 package main
 
 import (
