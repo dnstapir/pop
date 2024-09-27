@@ -1,28 +1,26 @@
 # manually maintained
 
 cli:
-   tem:
-      url:	https://127.0.0.1:9099/api/v1
-      tlsurl:	https://127.0.0.1:9098/api/v1
-      apikey:	be-nice-to-a-bad-tempered-tapir
-   dtm:
-      tlsurl:	https://127.0.0.1:9090/
+   tapir-pop:
+      url:		https://127.0.0.1:9099/api/v1
+      tlsurl:		https://127.0.0.1:9098/api/v1
+      apikey:		be-nice-to-a-bad-tempered-tapir
 
 apiserver:
-   key:		be-nice-to-a-bad-tempered-tapir
-   addresses:	[ 127.0.0.1:9099 ]
+   key:			be-nice-to-a-bad-tempered-tapir
+   addresses:		[ 127.0.0.1:9099 ]
    tlsaddresses:	[ 127.0.0.1:9098 ]
 
 # Note: This should only be active for a TEM bootstrapserver
 bootstrapserver:
-   active:	false
-   addresses:	[]
+   active:		false
+   addresses:		[]
    tlsaddresses:	[]
 
 dnsengine:
-   active:	true
-   addresses:	[ 127.0.0.1:5360 ]
-   logfile:	/var/log/dnstapir/pop-dnsengine.log
+   active:		true
+   addresses:		[ 127.0.0.1:5360 ]
+   logfile:		/var/log/dnstapir/pop-dnsengine.log
 
 services:
    reaper:
@@ -33,7 +31,7 @@ services:
       serialcache:	/etc/dnstapir/rpz-serial.yaml
    refreshengine:
       active:		true
-      name:		TEM Source Refresher
+      name:		TAPIR-POP Source Refresher
 
 tapir:
    mqtt:
@@ -42,8 +40,8 @@ tapir:
       uid:		johani
       clientid:		this-must-be-unique
       cacert:		/etc/dnstapir/certs/tapirCA.crt
-      clientcert:	/etc/dnstapir/certs/mqttclient.crt
-      clientkey:	/etc/dnstapir/certs/mqttclient-key.pem
+      clientcert:	/etc/dnstapir/certs/tapir-edge.crt
+      clientkey:	/etc/dnstapir/certs/tapir-edge.pem
       qos:		2
 
    observations:
@@ -53,26 +51,22 @@ tapir:
 
    config:
       srcname:		dns-tapir
-      topic:		config/down/tem/johani
+      topic:		config/down/tapir-pop/johani
       validatorkey:	/etc/dnstapir/certs/mqttsigner-pub.pem
 
    status:
-      topic:		status/up/tem/must-be-unique
+      topic:		status/up/tapir-pop/must-be-unique
       signingkey:	/etc/dnstapir/certs/mqttsigner-key.pem
-
-# redirects:
-#    tapir:	landing-page.dnstapir.se
-#    police:	www.polisen.se
 
 certs:
    certdir:	/etc/dnstapir/certs
-   cacertfile:	/etc/dnstapir/certs/axfr.netCA.crt
+   cacertfile:	/etc/dnstapir/certs/tapirCA.crt
    tem:
-      cert:	/etc/dnstapir/certs/tem.crt
-      key:	/etc/dnstapir/certs/tem.key
+      cert:	/etc/dnstapir/certs/tapir-egde.crt
+      key:	/etc/dnstapir/certs/tapir-edge.key
    tapir-cli:
-      cert:	/etc/dnstapir/certs/tem.crt
-      key:	/etc/dnstapir/certs/tem.key
+      cert:	/etc/dnstapir/certs/tapir-edge.crt
+      key:	/etc/dnstapir/certs/tapir-edge.key
 
 log:
-   file:	/var/log/dnstapir/pop.log
+   file:	/var/log/dnstapir/tapir-pop.log
