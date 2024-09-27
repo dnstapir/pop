@@ -1,38 +1,20 @@
-name: Go
+name: Build
 
 on: [push]
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: ['1.22.3']
-
+        go-version: ['1.23.1']
     steps:
       - uses: actions/checkout@v4
-      - name: Clone private module
-        uses: actions/checkout@v4
-        with:
-          repository: dnstapir/tapir
-          ssh-key: ${{ secrets.TAPIR_REPO_SSH_PRIVATE_KEY }}
-          path: tapir
-      - name: Update path to private module
-        run: sed -i.old "s,\.\./tapir,./tapir,g" go.mod
       - name: Setup Go ${{ matrix.go-version }}
         uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go-version }}
       - name: Display Go version
         run: go version
-      - name: Install dependencies
-        run: go mod download
-      - name: Make version
-        run: make version.go
-      - name: Vet
-        run: go vet -v
-      - name: Test
-        run: go test -v
       - name: Build
-        run: go build -v
+        run: make build
