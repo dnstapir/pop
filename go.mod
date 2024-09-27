@@ -2,10 +2,8 @@ module tapir-pop
 
 go 1.22.0
 
-replace github.com/dnstapir/tapir => ../tapir
-
 require (
-	github.com/dnstapir/tapir v0.0.0-00010101000000-000000000000
+	github.com/dnstapir/tapir v0.0.0-20240927111630-589bd474c6e4
 	github.com/go-playground/validator/v10 v10.22.1
 	github.com/google/uuid v1.4.0
 	github.com/gorilla/mux v1.8.1
