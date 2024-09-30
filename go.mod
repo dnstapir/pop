@@ -5,7 +5,7 @@ go 1.22.0
 require (
 	github.com/dnstapir/tapir v0.0.0-20240927111630-589bd474c6e4
 	github.com/go-playground/validator/v10 v10.22.1
-	github.com/google/uuid v1.4.0
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/mattn/go-sqlite3 v1.14.23
 	github.com/miekg/dns v1.1.62
