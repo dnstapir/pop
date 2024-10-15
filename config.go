@@ -84,6 +84,7 @@ type SourceConf struct {
 	Type         string `validate:"required"`
 	Format       string `validate:"required"`
 	Source       string `validate:"required"`
+    Mutable      bool
 	Topic        string
 	ValidatorKey string
 	Bootstrap    []string
