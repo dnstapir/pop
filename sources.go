@@ -4,6 +4,7 @@
 package main
 
 import (
+    "crypto/ecdsa"
 	"fmt"
 	"log"
 	"os"
@@ -211,10 +212,19 @@ func (pd *PopData) ParseSourcesNG() error {
 				}
 				pd.Logger.Printf("ParseSourcesNG: Topic data for topic %s: %+v", src.Topic, topicdata)
 
+                mqttDetails := tapir.MqttDetails{
+                    ValidatorKeys: map[string]*ecdsa.PublicKey{src.Topic: valkey},
+                    Bootstrap:     src.Bootstrap,
+                    BootstrapUrl:  src.BootstrapUrl,
+                    BootstrapKey:  src.BootstrapKey,
+                }
+                newsource.MqttDetails = &mqttDetails
+                newsource.Immutable = src.Immutable
+
 				newsource.Format = "map" // for now
 				if len(src.Bootstrap) > 0 {
 					pd.Logger.Printf("ParseSourcesNG: The %s MQTT source has %d bootstrap servers: %v", src.Name, len(src.Bootstrap), src.Bootstrap)
-					tmp, err := pd.BootstrapMqttSource(&newsource, src)
+					tmp, err := pd.BootstrapMqttSource(src)
 					if err != nil {
 						pd.Logger.Printf("Error bootstrapping MQTT source %s: %v", src.Name, err)
 					} else {
