@@ -457,6 +457,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 						Filename:    td.Lists[t][n].Filename,
 						RpzZoneName: td.Lists[t][n].RpzZoneName,
 						RpzSerial:   td.Lists[t][n].RpzSerial,
+						SrcFormat:   td.Lists[t][n].SrcFormat,
 					}
 				}
 			}
