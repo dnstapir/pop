@@ -68,5 +68,60 @@ func (pd *PopData) ConfigUpdater(conf *Config, stopch chan struct{}) {
 }
 
 func (pd *PopData) ProcessTapirGlobalConfig(gconfig tapir.GlobalConfig) {
-	log.Printf("TapirProcessGlobalConfig: %+v", gconfig)
+    log.Printf("TapirProcessGlobalConfig: %+v", gconfig)
+
+    // Assume there is only one topic and that it is the one we want
+    // TODO maybe sanitize or sanity check or something
+    newTopic := gconfig.ObservationTopics[0]
+    bootstrapServers := gconfig.Bootstrap.Servers
+    bootstrapUrl := gconfig.Bootstrap.BaseUrl
+    bootstrapKey := gconfig.Bootstrap.ApiToken
+
+	//for _, listtype := range []string{"whitelist", "blacklist", "greylist"} {
+	for _, wbgl := range pd.Lists["greylist"] {
+        if  wbgl.Immutable || wbgl.Datasource != "mqtt" {
+            continue
+        }
+
+        for topic := range wbgl.MqttDetails.ValidatorKeys {
+            pd.MqttEngine.RemoveTopic(topic)
+            delete(wbgl.MqttDetails.ValidatorKeys, topic)
+            break // Only one topic
+        }
+
+        valkey := GetValidationKeyByKeyName(newTopic.PubKeyName)
+		pd.mu.Lock()
+        wbgl.MqttDetails.ValidatorKeys[newTopic.Topic] = valkey
+        wbgl.MqttDetails.Bootstrap = bootstrapServers
+        wbgl.MqttDetails.BootstrapUrl = bootstrapUrl
+        wbgl.MqttDetails.BootstrapKey = bootstrapKey
+		pd.mu.Unlock()
+
+        _, err := pd.MqttEngine.SubToTopic(newTopic.Topic, valkey, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
+        if err != nil {
+            POPExiter("ProcessTapirGlobalConfig: Error adding topic %s: %v", newTopic, err)
+        }
+
+        src := SourceConf{
+            Bootstrap:    wbgl.MqttDetails.Bootstrap,
+            BootstrapUrl: wbgl.MqttDetails.BootstrapUrl,
+            BootstrapKey: wbgl.MqttDetails.BootstrapKey,
+            Name:         wbgl.Name,
+            Format:       wbgl.Format,
+        }
+
+        if len(gconfig.Bootstrap.Servers) > 0 {
+            pd.Logger.Printf("ProcessTapirGlobalConfig: %d bootstrap servers advertised: %v", wbgl.Name, len(src.Bootstrap), src.Bootstrap)
+            tmp, err := pd.BootstrapMqttSource(src)
+            if err != nil {
+                pd.Logger.Printf("ProcessTapirGlobalConfig: Error bootstrapping MQTT source %s: %v", wbgl.Name, err)
+            } else {
+		        pd.mu.Lock()
+                *wbgl = *tmp
+		        pd.mu.Unlock()
+            }
+        }
+
+		pd.Logger.Printf("*** DONE Processing global config")
+    }
 }
