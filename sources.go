@@ -178,7 +178,7 @@ func (pd *PopData) ParseSourcesNG() error {
 			//			defer func() {
 			//pd.Logger.Printf("<--Thread %d: source \"%s\" (%s) is now complete. %d remaining", thread, name, src.Source, threads)
 			// }()
-			pd.Logger.Printf("-->Thread %d: parsing source \"%s\" (source %s)", thread, name, src.Source)
+			pd.Logger.Printf("ParseSourcesNG: Thread %d: parsing source \"%s\" (source %s)", thread, name, src.Source)
 
 			newsource := tapir.WBGlist{
 				Name:        src.Name,
@@ -251,12 +251,12 @@ func (pd *PopData) ParseSourcesNG() error {
 		pd.Logger.Printf("ParseSources: source \"%s\" is now complete. %d remaining", tmp, threads)
 	}
 
-	if pd.MqttEngine != nil && !pd.TapirMqttEngineRunning {
-		err := pd.StartMqttEngine(pd.MqttEngine)
-		if err != nil {
-			POPExiter("Error starting MQTT Engine: %v", err)
-		}
-	}
+	// if pd.MqttEngine != nil && !pd.TapirMqttEngineRunning {
+	// 	err := pd.StartMqttEngine(pd.MqttEngine)
+	// 	if err != nil {
+	// 		POPExiter("Error starting MQTT Engine: %v", err)
+	// 	}
+	// }
 
 	pd.Logger.Printf("ParseSources: static sources done.")
 

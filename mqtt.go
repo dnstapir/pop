@@ -15,8 +15,13 @@ import (
 
 func (pd *PopData) CreateMqttEngine(clientid string, statusch chan tapir.ComponentStatusUpdate, lg *log.Logger) error {
 	if clientid == "" {
-		POPExiter("Error starting MQTT Engine: clientid not specified in config")
+		POPExiter("CreateMqttEngine: Error: clientid not specified in config")
 	}
+
+	if pd.MqttEngine != nil && pd.MqttEngine.ClientID == clientid {
+		POPExiter("CreateMqttEngine: Error: clientid %s already in use", clientid)
+	}
+
 	var err error
 	pd.Logger.Printf("Creating MQTT Engine with clientid %s", clientid)
 	pd.MqttEngine, err = tapir.NewMqttEngine("tapir-pop", clientid, tapir.TapirSub, statusch, lg) // sub, but no pub
@@ -31,9 +36,10 @@ func (pd *PopData) StartMqttEngine(meng *tapir.MqttEngine) error {
 		return nil
 	}
 
+	pd.Logger.Printf("StartMqttEngine: starting MQTT Engine")
 	cmnder, outbox, inbox, err := meng.StartEngine()
 	if err != nil {
-		log.Fatalf("Error from StartEngine(): %v", err)
+		POPExiter("StartMqttEngine: Error from StartEngine(): %v", err)
 	}
 	pd.TapirMqttCmdCh = cmnder
 	pd.TapirMqttPubCh = outbox

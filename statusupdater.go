@@ -80,9 +80,12 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 	}
 	pd.Logger.Printf("StatusUpdater: Topic status for MQTT engine %s: %+v", me.Creator, msg)
 
-	_, outbox, _, err := me.StartEngine()
-	if err != nil {
-		POPExiter("StatusUpdater: Error starting MQTT Engine: %v", err)
+	var outbox chan tapir.MqttPkgOut
+	if !me.Running {
+		_, outbox, _, err = me.StartEngine()
+		if err != nil {
+			POPExiter("StatusUpdater: Error starting MQTT Engine: %v", err)
+		}
 	}
 
 	log.Printf("StatusUpdater: Starting")

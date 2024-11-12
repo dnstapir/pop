@@ -129,7 +129,7 @@ func main() {
 	mqttclientid = "tapir-pop-" + uuid.New().String()
 	flag.BoolVarP(&tapir.GlobalCF.Debug, "debug", "d", false, "Debug mode")
 	flag.BoolVarP(&tapir.GlobalCF.Verbose, "verbose", "v", false, "Verbose mode")
-	flag.StringVarP(&mqttclientid, "client-id", "", mqttclientid, "MQTT client id, default is a random string")
+	// flag.StringVarP(&mqttclientid, "client-id", "", mqttclientid, "MQTT client id, default is a random string")
 
 	flag.Parse()
 
@@ -185,7 +185,7 @@ func main() {
 		POPExiter("Error unmarshalling config into struct: %v", err)
 	}
 
-	fmt.Printf("%s (TAPIR Edge Manager) version %s (%s) starting.\n", appName, appVersion, appDate)
+	fmt.Printf("%s (TAPIR Policy Processor) version %s (%s) starting.\n", appName, appVersion, appDate)
 
 	var stopch = make(chan struct{}, 10)
 

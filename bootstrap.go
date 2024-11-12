@@ -17,7 +17,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func (td *PopData) BootstrapMqttSource(s *tapir.WBGlist, src SourceConf) (*tapir.WBGlist, error) {
+func (td *PopData) BootstrapMqttSource(xxxs *tapir.WBGlist, src SourceConf) (*tapir.WBGlist, error) {
 	// Initialize the API client
 	api := &tapir.ApiClient{
 		BaseUrl:    fmt.Sprintf(src.BootstrapUrl, src.Bootstrap[0]), // Must specify a valid BaseUrl
