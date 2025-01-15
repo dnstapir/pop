@@ -25,8 +25,8 @@ type PopData struct {
 	ComponentStatusCh chan tapir.ComponentStatusUpdate
 	Logger            *log.Logger
 	MqttLogger        *log.Logger
-	BlacklistedNames  map[string]bool
-	GreylistedNames   map[string]*tapir.TapirName
+	DenylistedNames  map[string]bool
+	DoubtlistedNames   map[string]*tapir.TapirName
 	Policy            PopPolicy
 	Rpz               RpzData
 	RpzSources        map[string]*tapir.ZoneData
@@ -71,18 +71,18 @@ type RpzAxfr struct {
 
 type PopPolicy struct {
 	Logger          *log.Logger
-	WhitelistAction tapir.Action
-	BlacklistAction tapir.Action
-	Greylist        GreylistPolicy
+	AllowlistAction tapir.Action
+	DenylistAction tapir.Action
+	Doubtlist        DoubtlistPolicy
 }
 
-type GreylistPolicy struct {
+type DoubtlistPolicy struct {
 	NumSources         int
 	NumSourcesAction   tapir.Action
 	NumTapirTags       int
 	NumTapirTagsAction tapir.Action
-	BlackTapirTags     tapir.TagMask
-	BlackTapirAction   tapir.Action
+	DenyTapirTags     tapir.TagMask
+	DenyTapirAction   tapir.Action
 }
 
 // type WBGC map[string]*tapir.WBGlist

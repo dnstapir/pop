@@ -345,31 +345,31 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 			case "RPZ-ADD":
 				log.Printf("RefreshEngine: recieved an RPZ ADD command: %s (policy %s)", cmd.Domain, cmd.Policy)
-				if pd.Whitelisted(cmd.Domain) {
+				if pd.Allowlisted(cmd.Domain) {
 					resp.Error = true
-					resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is whitelisted. No change.",
+					resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is allowlisted. No change.",
 						cmd.Domain)
 					cmd.Result <- resp
 					continue
 				}
 
-				if pd.Blacklisted(cmd.Domain) {
+				if pd.Denylisted(cmd.Domain) {
 					resp.Error = true
-					resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is already blacklisted. No change.",
+					resp.ErrorMsg = fmt.Sprintf("Domain name \"%s\" is already denylisted. No change.",
 						cmd.Domain)
 
 					cmd.Result <- resp
 					continue
 				}
 
-				// if the name isn't either whitelisted or blacklisted
-				if cmd.ListType == "greylist" {
-					_, err := pd.GreylistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
+				// if the name isn't either allowlisted or denylisted
+				if cmd.ListType == "doubtlist" {
+					_, err := pd.DoubtlistAdd(cmd.Domain, cmd.Policy, cmd.RpzSource)
 					if err != nil {
 						resp.Error = true
-						resp.ErrorMsg = fmt.Sprintf("Error adding domain name \"%s\" to greylisting DB: %v", cmd.Domain, err)
+						resp.ErrorMsg = fmt.Sprintf("Error adding domain name \"%s\" to doubtlisting DB: %v", cmd.Domain, err)
 					} else {
-						resp.Msg = fmt.Sprintf("Domain name \"%s\" (policy %s) added to greylisting DB.",
+						resp.Msg = fmt.Sprintf("Domain name \"%s\" (policy %s) added to doubtlisting DB.",
 							cmd.Domain, cmd.Policy)
 					}
 					cmd.Result <- resp
@@ -385,48 +385,48 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 			case "RPZ-LOOKUP":
 				log.Printf("RefreshEngine: recieved an RPZ LOOKUP command: %s", cmd.Domain)
 				var msg string
-				if pd.Whitelisted(cmd.Domain) {
-					resp.Msg = fmt.Sprintf("Domain name \"%s\" is whitelisted.", cmd.Domain)
+				if pd.Allowlisted(cmd.Domain) {
+					resp.Msg = fmt.Sprintf("Domain name \"%s\" is allowlisted.", cmd.Domain)
 					cmd.Result <- resp
 					continue
 				}
-				msg += fmt.Sprintf("Domain name \"%s\" is not whitelisted.\n", cmd.Domain)
+				msg += fmt.Sprintf("Domain name \"%s\" is not allowlisted.\n", cmd.Domain)
 
-				if pd.Blacklisted(cmd.Domain) {
-					resp.Msg = fmt.Sprintf("Domain name \"%s\" is blacklisted.", cmd.Domain)
+				if pd.Denylisted(cmd.Domain) {
+					resp.Msg = fmt.Sprintf("Domain name \"%s\" is denylisted.", cmd.Domain)
 					cmd.Result <- resp
 					continue
 				}
-				msg += fmt.Sprintf("Domain name \"%s\" is not blacklisted.\n", cmd.Domain)
+				msg += fmt.Sprintf("Domain name \"%s\" is not denylisted.\n", cmd.Domain)
 
-				// if the name isn't either whitelisted or blacklisted: go though all greylists
-				_, greymsg := pd.GreylistingReport(cmd.Domain)
-				resp.Msg = msg + greymsg
+				// if the name isn't either allowlisted or denylisted: go though all doubtlists
+				_, doubtmsg := pd.DoubtlistingReport(cmd.Domain)
+				resp.Msg = msg + doubtmsg
 				cmd.Result <- resp
 				continue
 
 			case "RPZ-LIST-SOURCES":
 				log.Printf("RefreshEngine: recieved an RPZ LIST-SOURCES command")
 				list := []string{}
-				//				for _, wl := range pd.Whitelists {
-				for _, wl := range pd.Lists["whitelist"] {
+				//				for _, wl := range pd.Allowlists {
+				for _, wl := range pd.Lists["allowlist"] {
 					list = append(list, wl.Name)
 				}
-				resp.Msg += fmt.Sprintf("Whitelist srcs: %s\n", strings.Join(list, ", "))
+				resp.Msg += fmt.Sprintf("Allowlist srcs: %s\n", strings.Join(list, ", "))
 
 				list = []string{}
-				//				for _, bl := range pd.Blacklists {
-				for _, bl := range pd.Lists["blacklist"] {
+				//				for _, bl := range pd.Denylists {
+				for _, bl := range pd.Lists["denylist"] {
 					list = append(list, bl.Name)
 				}
-				resp.Msg += fmt.Sprintf("Blacklist srcs: %s\n", strings.Join(list, ", "))
+				resp.Msg += fmt.Sprintf("denylist srcs: %s\n", strings.Join(list, ", "))
 
 				list = []string{}
-				//				for _, gl := range pd.Greylists {
-				for _, gl := range pd.Lists["greylist"] {
+				//				for _, gl := range pd.Doubtlists {
+				for _, gl := range pd.Lists["doubtlist"] {
 					list = append(list, gl.Name)
 				}
-				resp.Msg += fmt.Sprintf("Greylist srcs: %s\n", strings.Join(list, ", "))
+				resp.Msg += fmt.Sprintf("Doubtlist srcs: %s\n", strings.Join(list, ", "))
 				cmd.Result <- resp
 
 			default:

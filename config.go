@@ -103,19 +103,19 @@ type SourceConf struct {
 type PolicyConf struct {
 	Logfile string
 	//	Logger    *log.Logger
-	Whitelist struct {
+	Allowlist struct {
 		Action string `validate:"required"`
 	}
-	Blacklist struct {
+	Denylist struct {
 		Action string `validate:"required"`
 	}
-	Greylist GreylistConf
+	Doubtlist DoubtlistConf
 }
 
 type ListConf struct {
 }
 
-type GreylistConf struct {
+type DoubtlistConf struct {
 	NumSources struct {
 		Limit  int    `validate:"required"`
 		Action string `validate:"required"`
@@ -124,7 +124,7 @@ type GreylistConf struct {
 		Limit  int    `validate:"required"`
 		Action string `validate:"required"`
 	}
-	BlackTapir struct {
+	DenyTapir struct {
 		Tags   []string `validate:"required"`
 		Action string   `validate:"required"`
 	}

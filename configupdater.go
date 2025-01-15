@@ -77,8 +77,8 @@ func (pd *PopData) ProcessTapirGlobalConfig(gconfig tapir.GlobalConfig) {
     bootstrapUrl := gconfig.Bootstrap.BaseUrl
     bootstrapKey := gconfig.Bootstrap.ApiToken
 
-	//for _, listtype := range []string{"whitelist", "blacklist", "greylist"} {
-	for _, wbgl := range pd.Lists["greylist"] {
+	//for _, listtype := range []string{"allowlist", "denylist", "doubtlist"} {
+	for _, wbgl := range pd.Lists["doubtlist"] {
         if  wbgl.Immutable || wbgl.Datasource != "mqtt" {
             continue
         }

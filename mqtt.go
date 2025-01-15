@@ -74,7 +74,7 @@ func (pd *PopData) ProcessTapirUpdate(tm tapir.TapirMsg) (bool, error) {
 	pd.Logger.Printf("ProcessTapirUpdate: looking up list [%s][%s]", tm.ListType, tm.SrcName)
 
 	switch tm.ListType {
-	case "whitelist", "greylist", "blacklist":
+	case "allowlist", "doubtlist", "denylist":
 		wbgl, exists = pd.Lists[tm.ListType][tm.SrcName]
 	default:
 		pd.Logger.Printf("TapirUpdate for unknown listtype from source \"%s\" rejected.", tm.SrcName)

@@ -21,7 +21,7 @@ func (pd *PopData) Reaper(full bool) error {
 	// tpkg := tapir.MqttPkgIn{}
 	tm := tapir.TapirMsg{}
 	pd.Logger.Printf("Reaper: working on time slot %s across all lists", timekey.Format(tapir.TimeLayout))
-	for _, listtype := range []string{"whitelist", "greylist", "blacklist"} {
+	for _, listtype := range []string{"allowlist", "doubtlist", "denylist"} {
 		for listname, wbgl := range pd.Lists[listtype] {
 			// This loop is here to ensure that we don't have any old data in the ReaperData bucket
 			// that has already passed its time slot.

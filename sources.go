@@ -48,9 +48,9 @@ func NewPopData(conf *Config, lg *log.Logger) (*PopData, error) {
 		Debug:             viper.GetBool("log.debug"),
 	}
 
-	pd.Lists["whitelist"] = make(map[string]*tapir.WBGlist, 3)
-	pd.Lists["greylist"] = make(map[string]*tapir.WBGlist, 3)
-	pd.Lists["blacklist"] = make(map[string]*tapir.WBGlist, 3)
+	pd.Lists["allowlist"] = make(map[string]*tapir.WBGlist, 3)
+	pd.Lists["doubtlist"] = make(map[string]*tapir.WBGlist, 3)
+	pd.Lists["denylist"] = make(map[string]*tapir.WBGlist, 3)
 	pd.Downstreams = map[string]RpzDownstream{}
 	pd.DownstreamSerials = map[string]uint32{}
 
@@ -68,42 +68,42 @@ func NewPopData(conf *Config, lg *log.Logger) (*PopData, error) {
 	}
 
 	pd.Policy.Logger = conf.Loggers.Policy
-	pd.Policy.WhitelistAction, err = tapir.StringToAction(viper.GetString("policy.whitelist.action"))
+	pd.Policy.AllowlistAction, err = tapir.StringToAction(viper.GetString("policy.allowlist.action"))
 	if err != nil {
-		POPExiter("Error parsing whitelist policy: %v", err)
+		POPExiter("Error parsing allowlist policy: %v", err)
 	}
-	pd.Policy.BlacklistAction, err = tapir.StringToAction(viper.GetString("policy.blacklist.action"))
+	pd.Policy.DenylistAction, err = tapir.StringToAction(viper.GetString("policy.denylist.action"))
 	if err != nil {
-		POPExiter("Error parsing blacklist policy: %v", err)
+		POPExiter("Error parsing denylist policy: %v", err)
 	}
-	pd.Policy.Greylist.NumSources = viper.GetInt("policy.greylist.numsources.limit")
-	if pd.Policy.Greylist.NumSources == 0 {
+	pd.Policy.Doubtlist.NumSources = viper.GetInt("policy.doubtlist.numsources.limit")
+	if pd.Policy.Doubtlist.NumSources == 0 {
 		//nolint:typecheck
-		POPExiter("Error parsing policy: greylist.numsources.limit cannot be 0")
+		POPExiter("Error parsing policy: doubtlist.numsources.limit cannot be 0")
 	}
-	pd.Policy.Greylist.NumSourcesAction, err =
-		tapir.StringToAction(viper.GetString("policy.greylist.numsources.action"))
+	pd.Policy.Doubtlist.NumSourcesAction, err =
+		tapir.StringToAction(viper.GetString("policy.doubtlist.numsources.action"))
 	if err != nil {
 		POPExiter("Error parsing policy: %v", err)
 	}
 
-	pd.Policy.Greylist.NumTapirTags = viper.GetInt("policy.greylist.numtapirtags.limit")
-	if pd.Policy.Greylist.NumTapirTags == 0 {
-		POPExiter("Error parsing policy: greylist.numtapirtags.limit cannot be 0")
+	pd.Policy.Doubtlist.NumTapirTags = viper.GetInt("policy.doubtlist.numtapirtags.limit")
+	if pd.Policy.Doubtlist.NumTapirTags == 0 {
+		POPExiter("Error parsing policy: doubtlist.numtapirtags.limit cannot be 0")
 	}
-	pd.Policy.Greylist.NumTapirTagsAction, err =
-		tapir.StringToAction(viper.GetString("policy.greylist.numtapirtags.action"))
+	pd.Policy.Doubtlist.NumTapirTagsAction, err =
+		tapir.StringToAction(viper.GetString("policy.doubtlist.numtapirtags.action"))
 	if err != nil {
 		POPExiter("Error parsing policy: %v", err)
 	}
 
-	tmp := viper.GetStringSlice("policy.greylist.blacktapir.tags")
-	pd.Policy.Greylist.BlackTapirTags, err = tapir.StringsToTagMask(tmp)
+	tmp := viper.GetStringSlice("policy.doubtlist.denytapir.tags")
+	pd.Policy.Doubtlist.DenyTapirTags, err = tapir.StringsToTagMask(tmp)
 	if err != nil {
 		POPExiter("Error parsing policy: %v", err)
 	}
-	pd.Policy.Greylist.BlackTapirAction, err =
-		tapir.StringToAction(viper.GetString("policy.greylist.blacktapir.action"))
+	pd.Policy.Doubtlist.DenyTapirAction, err =
+		tapir.StringToAction(viper.GetString("policy.doubtlist.denytapir.action"))
 	if err != nil {
 		POPExiter("Error parsing policy: %v", err)
 	}
@@ -131,22 +131,22 @@ func (pd *PopData) ParseSourcesNG() error {
 	//	}
 
 	pd.mu.Lock()
-	pd.Lists["whitelist"]["white_catchall"] =
+	pd.Lists["allowlist"]["allow_catchall"] =
 		&tapir.WBGlist{
-			Name:        "white_catchall",
-			Description: "Whitelist consisting of white names found in black- or greylist sources",
-			Type:        "whitelist",
+			Name:        "allow_catchall",
+			Description: "Allowlist consisting of allow names found in deny- or doubtlist sources",
+			Type:        "allowlist",
 			SrcFormat:   "none",
 			Format:      "map",
 			Datasource:  "Data misplaced in other sources",
 			Names:       map[string]tapir.TapirName{},
 			ReaperData:  map[time.Time]map[string]bool{},
 		}
-	pd.Lists["greylist"]["grey_catchall"] =
+	pd.Lists["doubtlist"]["doubt_catchall"] =
 		&tapir.WBGlist{
-			Name:        "grey_catchall",
-			Description: "Greylist consisting of grey names found in whitelist sources",
-			Type:        "greylist",
+			Name:        "doubt_catchall",
+			Description: "Doubtlist consisting of doubt names found in allowlist sources",
+			Type:        "doubtlist",
 			SrcFormat:   "none",
 			Format:      "map",
 			Datasource:  "Data misplaced in other sources",
@@ -232,8 +232,8 @@ func (pd *PopData) ParseSourcesNG() error {
 					}
 				}
 				pd.mu.Lock()
-				pd.Lists["greylist"][newsource.Name] = &newsource
-				pd.Logger.Printf("Created list [greylist][%s]", newsource.Name)
+				pd.Lists["doubtlist"][newsource.Name] = &newsource
+				pd.Logger.Printf("Created list [doubtlist][%s]", newsource.Name)
 				pd.mu.Unlock()
 				pd.Logger.Printf("*** MQTT sources are only managed via RefreshEngine.")
 				rptchan <- name
@@ -315,8 +315,8 @@ func (pd *PopData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 		}
 
 	case "dawg":
-		if s.Type != "whitelist" {
-			POPExiter("Error: source %s (file %s): DAWG is only defined for whitelists.",
+		if s.Type != "allowlist" {
+			POPExiter("Error: source %s (file %s): DAWG is only defined for allowlists.",
 				sourceid, s.Filename)
 		}
 		pd.Logger.Printf("ParseLocalFile: loading DAWG: %s", s.Filename)
@@ -381,11 +381,11 @@ func (pd *PopData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan stri
 
 // Parse the CNAME (in the shape of a dns.RR) that is found in the RPZ and sort the data into the
 // appropriate list in PopData. Note that there are two special cases:
-//  1. If a "whitelist" RPZ source has a rule with an action other than "rpz-passthru." then that rule doesn't
-//     really belong in a "whitelist" source. So we take that rule an put it in the grey_catchall bucket instead.
-//  2. If a "{grey|black}list" RPZ source has a rule with an "rpz-passthru." (i.e. whitelist) action then that
-//     rule doesn't really belong in a "{grey|black}list" source. So we take that rule an put it in the
-//     white_catchall bucket instead.
+//  1. If a "allowlist" RPZ source has a rule with an action other than "rpz-passthru." then that rule doesn't
+//     really belong in a "allowlist" source. So we take that rule an put it in the doubt_catchall bucket instead.
+//  2. If a "{doubt|deny}list" RPZ source has a rule with an "rpz-passthru." (i.e. allowlist) action then that
+//     rule doesn't really belong in a "{doubt|deny}list" source. So we take that rule an put it in the
+//     allow_catchall bucket instead.
 func (pd *PopData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.ZoneData) bool {
 	return func(rr *dns.RR, zd *tapir.ZoneData) bool {
 		var action tapir.Action
@@ -406,7 +406,7 @@ func (pd *PopData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 			case "rpz-drop.":
 				action = tapir.DROP
 			case "rpz-passthru.":
-				action = tapir.WHITELIST
+				action = tapir.ALLOWLIST
 			default:
 				pd.Logger.Printf("UNKNOWN RPZ action: \"%s\" (src: %s)", (*rr).(*dns.CNAME).Target, s.Name)
 				action = tapir.UnknownAction
@@ -416,38 +416,38 @@ func (pd *PopData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 					name, action)
 			}
 			switch s.Type {
-			case "whitelist":
-				if action == tapir.WHITELIST {
+			case "allowlist":
+				if action == tapir.ALLOWLIST {
 					s.Names[name] = tapir.TapirName{Name: name} // drop all other actions
 				} else {
-					pd.Logger.Printf("Warning: whitelist RPZ source %s has blacklisted name: %s",
+					pd.Logger.Printf("Warning: allowlist RPZ source %s has denylisted name: %s",
 						s.RpzZoneName, name)
 					pd.mu.Lock()
-					pd.Lists["greylist"]["grey_catchall"].Names[name] =
+					pd.Lists["doubtlist"]["doubt_catchall"].Names[name] =
 						tapir.TapirName{
 							Name:   name,
 							Action: action,
 						} // drop all other actions
 					pd.mu.Unlock()
 				}
-			case "blacklist":
-				if action != tapir.WHITELIST {
+			case "denylist":
+				if action != tapir.ALLOWLIST {
 					s.Names[name] = tapir.TapirName{Name: name, Action: action}
 				} else {
-					pd.Logger.Printf("Warning: blacklist RPZ source %s has whitelisted name: %s",
+					pd.Logger.Printf("Warning: denylist RPZ source %s has allowlisted name: %s",
 						s.RpzZoneName, name)
 					pd.mu.Lock()
-					pd.Lists["whitelist"]["white_catchall"].Names[name] = tapir.TapirName{Name: name}
+					pd.Lists["allowlist"]["allow_catchall"].Names[name] = tapir.TapirName{Name: name}
 					pd.mu.Unlock()
 				}
-			case "greylist":
-				if action != tapir.WHITELIST {
+			case "doubtlist":
+				if action != tapir.ALLOWLIST {
 					s.Names[name] = tapir.TapirName{Name: name, Action: action}
 				} else {
-					pd.Logger.Printf("Warning: greylist RPZ source %s has whitelisted name: %s",
+					pd.Logger.Printf("Warning: doubtlist RPZ source %s has allowlisted name: %s",
 						s.RpzZoneName, name)
 					pd.mu.Lock()
-					pd.Lists["whitelist"]["white_catchall"].Names[name] = tapir.TapirName{Name: name}
+					pd.Lists["allowlist"]["allow_catchall"].Names[name] = tapir.TapirName{Name: name}
 					pd.mu.Unlock()
 				}
 			}
