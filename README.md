@@ -1,7 +1,8 @@
 # tapir-pop: DNS TAPIR Policy Processor
 
-The *DNS TAPIR Policy Processor*, TAPIR-POP, is the component that processes the intelligence data from the TAPIR-CORE
-(and possibly other sources) and applies local policy to reach a filtering decision. 
+The *DNS TAPIR Policy Processor*, TAPIR-POP, is the component that
+processes the intelligence data from the TAPIR-CORE (and possibly
+other sources) and applies local policy to reach a filtering decision.
 
 It is the connection between the core and the
 edge platform. It manages local configurations and gets updates from
