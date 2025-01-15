@@ -70,7 +70,7 @@ func (td *PopData) BootstrapMqttSource(src SourceConf) (*tapir.WBGlist, error) {
 		td.Logger.Printf("BootstrapMqttSource: MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages", server, uptime, 17)
 
 		status, buf, err := api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
-			Command:  "greylist-status",
+			Command:  "doubtlist-status",
 			ListName: src.Name,
 			Encoding: "json", // XXX: This is our default, but we'll test other encodings later
 		}, true)
@@ -88,11 +88,11 @@ func (td *PopData) BootstrapMqttSource(src SourceConf) (*tapir.WBGlist, error) {
 		var br tapir.BootstrapResponse
 		err = json.Unmarshal(buf, &br)
 		if err != nil {
-			td.Logger.Printf("BootstrapMqttSource: Error decoding greylist-status response from %s: %v. Giving up.\n", server, err)
+			td.Logger.Printf("BootstrapMqttSource: Error decoding doubtlist-status response from %s: %v. Giving up.\n", server, err)
 			continue
 		}
 		if br.Error {
-			td.Logger.Printf("BootstrapMqttSource: Bootstrap server %s responded with error: %s (instead of greylist status)", server, br.ErrorMsg)
+			td.Logger.Printf("BootstrapMqttSource: Bootstrap server %s responded with error: %s (instead of doubtlist status)", server, br.ErrorMsg)
 		}
 		if len(br.Msg) != 0 {
 			td.Logger.Printf("BootstrapMqttSource: Bootstrap server %s responded: %s", server, br.Msg)
@@ -101,7 +101,7 @@ func (td *PopData) BootstrapMqttSource(src SourceConf) (*tapir.WBGlist, error) {
 		td.Logger.Printf("BootstrapMqttSource: MQTT bootstrap server %s uptime: %v. It has processed %d MQTT messages on the %s topic (last sub msg arrived at %s), ", server, uptime, br.TopicData[src.Name].SubMsgs, src.Name, br.TopicData[src.Name].LatestSub.Format(tapir.TimeLayout))
 
 		status, buf, err = api.RequestNG(http.MethodPost, "/bootstrap", tapir.BootstrapPost{
-			Command:  "export-greylist",
+			Command:  "export-doubtlist",
 			ListName: src.Name,
 			Encoding: "gob", // XXX: This is our default, but we'll test other encodings later
 		}, true)
@@ -116,11 +116,11 @@ func (td *PopData) BootstrapMqttSource(src SourceConf) (*tapir.WBGlist, error) {
 			continue
 		}
 
-		var greylist tapir.WBGlist
+		var doubtlist tapir.WBGlist
 		decoder := gob.NewDecoder(bytes.NewReader(buf))
-		err = decoder.Decode(&greylist)
+		err = decoder.Decode(&doubtlist)
 		if err != nil {
-			// fmt.Printf("Error decoding greylist data: %v\n", err)
+			// fmt.Printf("Error decoding doubtlist data: %v\n", err)
 			// If decoding the gob failed, perhaps we received a tapir.BootstrapResponse instead?
 			var br tapir.BootstrapResponse
 			err = json.Unmarshal(buf, &br)
@@ -139,17 +139,17 @@ func (td *PopData) BootstrapMqttSource(src SourceConf) (*tapir.WBGlist, error) {
 		}
 
 		if td.Debug {
-			td.Logger.Printf("%v", greylist)
-			td.Logger.Printf("Names present in greylist %s:", src.Name)
+			td.Logger.Printf("%v", doubtlist)
+			td.Logger.Printf("Names present in doubtlist %s:", src.Name)
 			out := []string{"Name|Time added|TTL|Tags"}
-			for _, n := range greylist.Names {
+			for _, n := range doubtlist.Names {
 				out = append(out, fmt.Sprintf("%s|%v|%v|%v", n.Name, n.TimeAdded.Format(tapir.TimeLayout), n.TTL, n.TagMask))
 			}
 			td.Logger.Printf("%s", columnize.SimpleFormat(out))
 		}
 
 		// Successfully received and decoded bootstrap data
-		return &greylist, nil
+		return &doubtlist, nil
 	}
 
 	// If no bootstrap server succeeded

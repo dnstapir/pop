@@ -17,9 +17,9 @@ policy-related functions.
 TAPIR-POP presents a single output with all conflicts resolved,
 rather than feeding the resolver multiple sources of data from
 which to look for policy guidance, where sources can even be conflicting
-(eg. a domainname may be flagged by one source but whitelisted by another).
+(eg. a domainname may be flagged by one source but allowlisted by another).
 
-The result is smaller, as no whitelisting information is needed for the resolver.
+The result is smaller, as no allowlisting information is needed for the resolver.
 
 ## TAPIR-POP supports a local policy configuration
 
@@ -29,9 +29,9 @@ design a suitable threat policy TAPIR-POP uses a number of concepts:
 
 - __lists__: there are three types of lists of domain names:
 
-  - whitelists (names that must not be blocked)
-  - blacklists (names that must be blocked)
-  - greylists (names that should perhaps be blocked)
+  - allowlists (names that must not be blocked)
+  - denylists (names that must be blocked)
+  - doubtlists (names that should perhaps be blocked)
 
 - __observations__: these are attributes of a suspicious domain name. In reality
   whether a particular domain name should be blocked or not is not an
@@ -50,7 +50,7 @@ design a suitable threat policy TAPIR-POP uses a number of concepts:
   - __MQTT__: DNS TAPIR Core Analyser sends out rapid updates for small numbers
     of names via an MQTT message bus infrastructure.
   - __DAWG__: Directed Acyclic Word Graphs are extremely compact data structures.
-    TEM is able to mmap very large lists in DAWG format which is used for large whitelists.
+    TEM is able to mmap very large lists in DAWG format which is used for large allowlists.
   - __CSV Files__: Text files on local disk, either with just domain names, or in
     CSV format are supported.
   - __HTTPS__: To bootstrap an intelligence feed that only distributes deltas
@@ -64,12 +64,12 @@ design a suitable threat policy TAPIR-POP uses a number of concepts:
 
 The resulting policy has the following structure (in order of precedence):
 
-- no whitelisted name is ever included.
+- no allowlisted name is ever included.
 - blocklisted names are always included, together with a configurable
   RPZ action.
-- greylisted names that have particular tags that the resolver operator
+- doubtlisted names that have particular tags that the resolver operator
   chooses are included, together with a configurable RPZ action.
-- the same greylisted name that appear in N distinct intelligence feeds
+- the same doubtlisted name that appear in N distinct intelligence feeds
   is included, where N is configureable, as is the RPZ action.
-- a greylisted name that has M or more tags is included, where both
+- a doubtlisted name that has M or more tags is included, where both
   M and the action are configurable.

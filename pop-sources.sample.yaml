@@ -1,11 +1,11 @@
 # manually maintained
 
 sources:
-   active:	[ tapir, rpz2, black_as_sin, white_and_shiny, localwhitelist ]
+   active:	[ tapir, rpz2, sinful, shiny, localallowlist ]
    tapir:
       name:		dns-tapir	# must have EXACTLY this name!
       description:	DNS TAPIR main intelligence feed
-      type:		greylist
+      type:		doubtlist
       source:		mqtt
       bootstrap:	[ 77.72.231.135:5454, 77.72.230.61 ] # www.axfr.net+nsb
       bootstrapurl:	https://%s/api/v1
@@ -13,7 +13,7 @@ sources:
    rpztfc:
       name:		rpz.threat-feed.com
       description:	Commercial RPZ feed from threat-feed.com
-      type:		greylist
+      type:		doubtlist
       source:		xfr
       zone:		rpz.threat-feed.com
       upstream:		nsa.johani.org:53
@@ -21,54 +21,52 @@ sources:
    rpz2:
       name:		rpz.axfr.net
       description:	Test RPZ feed from axfr.net
-      type:		greylist
+      type:		doubtlist
       source:		xfr
       zone:		rpz.axfr.net
       upstream:		nsa.johani.org:53
       format:		rpz
-   black_as_sin:
+   sinful:
       name:		bas
-      description:	"Locally maintained blacklisted domain names"
-      type:		blacklist
+      description:	"Locally maintained denylisted domain names"
+      type:		denylist
       source:		file
 #      format:		dawg
-#      filename:	/var/tmp/dnstapir/black-as-sin.dawg
+#      filename:	/var/tmp/dnstapir/sinful.dawg
       format:		domains
-      filename:		/var/tmp/dnstapir/black-as-sin.txt
-   white_and_shiny:
+      filename:		/var/tmp/dnstapir/sinful.txt
+   shiny:
       name:		was
-      description:	"Locally maintained whitelisted domain names"
-      type:		whitelist
+      description:	"Locally maintained allowlisted domain names"
+      type:		allowlist
       source:		file
-#      format:		dawg
-#      filename:	/var/tmp/dnstapir/black-as-sin.dawg
       format:		domains
-      filename:		/var/tmp/dnstapir/white-and-shiny.txt
-   localwhitelist:
-      name:		local-whitelist
-      description:	"Locally maintained whitelisted domain names"
-      type:		whitelist
+      filename:		/var/tmp/dnstapir/shiny.txt
+   localallowlist:
+      name:		local-allowlist
+      description:	"Locally maintained allowlisted domain names"
+      type:		allowlist
       source:		file	
       format:		dawg		# domains | dawg
       filename:		/var/tmp/dnstapir/well-known-domains.dawg
    wellknowndomains:
       name:		wkdlist
-      description:	"External list of 10M whitelisted domain names"
-      type:		whitelist
+      description:	"External list of 10M allowlisted domain names"
+      type:		allowlist
       source:		http	
       format:		csv		# domains | dawg | csv
       url:		https://www.domcop.com/files/top
       outfile:		/var/tmp/dnstapir/well-known-domains.new.dawg
    inactive_source:
       name:	
-      type:		greylist
+      type:		doubtlist
       format:		rpz
       zone:		rpz.zone
       source:		xfr
       upstream:		10.1.2.3:53
       tsig:		...
-   black_1:
-      type:		blacklist
+   deny_1:
+      type:		denylist
       format:		rpz
       zone:		rpz.zone
       source:		xfr

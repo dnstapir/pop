@@ -9,7 +9,7 @@ outputs:
       active:		false
       name:		dns-tapir-out
       description:	"local mqtt reflector"
-      type:		greylist
+      type:		doubtlist
       source:		mqtt
       format:		tapir-mqtt-1
 
@@ -17,7 +17,7 @@ outputs:
       active:		false
       name:		dns-tapir-bootstrapper
       description:	"Updated bootstrap feed for the DNS TAPIR MQTT stream"
-      type:		greylist
+      type:		doubtlist
       source:		http
       url:		http://127.0.0.1:5678/tapir/v1/bootstrap
       

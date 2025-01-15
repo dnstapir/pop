@@ -3,7 +3,7 @@ module tapir-pop
 go 1.22.0
 
 require (
-	github.com/dnstapir/tapir v0.0.0-20241112185916-6aeac4bb8fcf
+	github.com/dnstapir/tapir v0.0.0-20250114144620-18cc0cdb5c33
 	github.com/go-playground/validator/v10 v10.24.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1

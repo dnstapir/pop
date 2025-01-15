@@ -265,37 +265,37 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("API: received /bootstrap request (cmd: %s) from %s.\n", bp.Command, r.RemoteAddr)
 
 		switch bp.Command {
-		case "greylist-status":
+		case "doubtlist-status":
 			me := conf.PopData.MqttEngine
 			stats := me.Stats()
 			// resp.MsgCounters = stats.MsgCounters
 			// resp.MsgTimeStamps = stats.MsgTimeStamps
 			resp.TopicData = stats
-			// log.Printf("API: greylist-status: msgs: %d last msg: %v", stats.MsgCounters[bp.ListName], stats.MsgTimeStamps[bp.ListName])
-			log.Printf("API: greylist-status: %v", stats)
+			// log.Printf("API: doubtlist-status: msgs: %d last msg: %v", stats.MsgCounters[bp.ListName], stats.MsgTimeStamps[bp.ListName])
+			log.Printf("API: doubtlist-status: %v", stats)
 
-		case "export-greylist":
+		case "export-doubtlist":
 			td := conf.PopData
 			td.mu.RLock()
 			defer td.mu.RUnlock()
 
-			greylist, ok := td.Lists["greylist"][bp.ListName]
+			doubtlist, ok := td.Lists["doubtlist"][bp.ListName]
 			if !ok {
 				resp.Error = true
-				resp.ErrorMsg = fmt.Sprintf("Greylist '%s' not found", bp.ListName)
+				resp.ErrorMsg = fmt.Sprintf("Doubtlist '%s' not found", bp.ListName)
 				return
 			}
-			log.Printf("Found %s greylist containing %d names", bp.ListName, len(greylist.Names))
+			log.Printf("Found %s doubtlist containing %d names", bp.ListName, len(doubtlist.Names))
 
 			switch bp.Encoding {
 			case "gob":
 				w.Header().Set("Content-Type", "application/octet-stream")
-				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=greylist-%s.gob", bp.ListName))
+				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=doubtlist-%s.gob", bp.ListName))
 
 				encoder := gob.NewEncoder(w)
-				err := encoder.Encode(greylist)
+				err := encoder.Encode(doubtlist)
 				if err != nil {
-					log.Printf("Error encoding greylist: %v", err)
+					log.Printf("Error encoding doubtlist: %v", err)
 					resp.Error = true
 					resp.ErrorMsg = err.Error()
 					return
@@ -303,11 +303,11 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 				//			case "protobuf":
 				//				w.Header().Set("Content-Type", "application/octet-stream")
-				//				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=greylist-%s.protobuf", bp.ListName))
+				//				w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=doubtlist-%s.protobuf", bp.ListName))
 				//
-				//				data, err := proto.Marshal(greylist)
+				//				data, err := proto.Marshal(doubtlist)
 				//				if err != nil {
-				//					log.Printf("Error encoding greylist to protobuf: %v", err)
+				//					log.Printf("Error encoding doubtlist to protobuf: %v", err)
 				//					resp.Error = true
 				//					resp.ErrorMsg = err.Error()
 				//					return
@@ -323,13 +323,13 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 			// case "flatbuffer":
 			// 	w.Header().Set("Content-Type", "application/octet-stream")
-			// 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=greylist-%s.flatbuffer", bp.ListName))
+			// 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=doubtlist-%s.flatbuffer", bp.ListName))
 
 			// 	builder := flatbuffers.NewBuilder(0)
-			// 	names := make([]flatbuffers.UOffsetT, len(greylist.Names))
+			// 	names := make([]flatbuffers.UOffsetT, len(doubtlist.Names))
 
 			// 	i := 0
-			// 	for name := range greylist.Names {
+			// 	for name := range doubtlist.Names {
 			// 		nameOffset := builder.CreateString(name)
 			// 		tapir.NameStart(builder)
 			// 		tapir.NameAddName(builder, nameOffset)
@@ -337,17 +337,17 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			// 		i++
 			// 	}
 
-			// 	tapir.GreylistStartNamesVector(builder, len(names))
+			// 	tapir.DoubtlistStartNamesVector(builder, len(names))
 			// 	for j := len(names) - 1; j >= 0; j-- {
 			// 		builder.PrependUOffsetT(names[j])
 			// 	}
 			// 	namesVector := builder.EndVector(len(names))
 
-			// 	tapir.GreylistStart(builder)
-			// 	tapir.GreylistAddNames(builder, namesVector)
-			// 	greylistOffset := tapir.GreylistEnd(builder)
+			// 	tapir.DoubtlistStart(builder)
+			// 	tapir.DoubtlistAddNames(builder, namesVector)
+			// 	doubtlistOffset := tapir.DoubtlistEnd(builder)
 
-			// 	builder.Finish(greylistOffset)
+			// 	builder.Finish(doubtlistOffset)
 			// 	buf := builder.FinishedBytes()
 
 			// 	_, err := w.Write(buf)
@@ -433,7 +433,7 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		case "reaper-stats":
 			log.Printf("TAPIR-POP debug reaper stats")
 			resp.ReaperStats = make(map[string]map[time.Time][]string)
-			for SrcName, list := range td.Lists["greylist"] {
+			for SrcName, list := range td.Lists["doubtlist"] {
 				resp.ReaperStats[SrcName] = make(map[time.Time][]string)
 				for ts, names := range list.ReaperData {
 					for name := range names {
@@ -442,8 +442,8 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-		case "colourlists":
-			log.Printf("TAPIR-POP debug white/black/grey lists")
+		case "filterlists":
+			log.Printf("TAPIR-POP debug allow/deny/doubt lists")
 			resp.Lists = map[string]map[string]*tapir.WBGlist{}
 			for t, l := range td.Lists {
 				resp.Lists[t] = map[string]*tapir.WBGlist{}
@@ -469,8 +469,8 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				resp.Error = true
 				resp.ErrorMsg = err.Error()
 			}
-			resp.BlacklistedNames = td.BlacklistedNames
-			resp.GreylistedNames = td.GreylistedNames
+			resp.DenylistedNames = td.DenylistedNames
+			resp.DoubtlistedNames = td.DoubtlistedNames
 			for _, rpzn := range td.Rpz.Axfr.Data {
 				resp.RpzOutput = append(resp.RpzOutput, *rpzn)
 			}

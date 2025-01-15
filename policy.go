@@ -21,7 +21,7 @@ type PopOutput struct {
 	Active      bool
 	Name        string
 	Description string
-	Type        string // listtype, usually "greylist"
+	Type        string // listtype, usually "doubtlist"
 	Format      string // i.e. rpz, etc
 	Downstream  string
 }
@@ -103,54 +103,54 @@ func (pd *PopData) ParseOutputs() error {
 	return nil
 }
 
-// Note: we onlygethere when we know that this name is only greylisted
-// so no need tocheckfor white- or blacklisting
-func (pd *PopData) ComputeRpzGreylistAction(name string) tapir.Action {
+// Note: we onlygethere when we know that this name is only doubtlisted
+// so no need tocheckfor allow- or denylisting
+func (pd *PopData) ComputeRpzDoubtlistAction(name string) tapir.Action {
 
-	var greyHits = map[string]*tapir.TapirName{}
-	for listname, list := range pd.Lists["greylist"] {
+	var doubtHits = map[string]*tapir.TapirName{}
+	for listname, list := range pd.Lists["doubtlist"] {
 		switch list.Format {
 		case "map":
 			if v, exists := list.Names[name]; exists {
-				// pd.Logger.Printf("ComputeRpzGreylistAction: found %s in greylist %s (%d names)",
+				// pd.Logger.Printf("ComputeRpzDoubtlistAction: found %s in doubtlist %s (%d names)",
 				// 	name, listname, len(list.Names))
-				greyHits[listname] = &v
+				doubtHits[listname] = &v
 			}
 			//		case "trie":
 			//			if list.Trie.Search(name) != nil {
-			//				greyHits = append(greyHits, v)
+			//				doubtHits = append(doubtHits, v)
 			//			}
 		default:
-			POPExiter("Unknown greylist format %s", list.Format)
+			POPExiter("Unknown doubtlist format %s", list.Format)
 		}
 	}
-	if len(greyHits) >= pd.Policy.Greylist.NumSources {
-		pd.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d or more sources, action is %s",
-			name, pd.Policy.Greylist.NumSources, tapir.ActionToString[pd.Policy.Greylist.NumSourcesAction])
-		return pd.Policy.Greylist.NumSourcesAction
+	if len(doubtHits) >= pd.Policy.Doubtlist.NumSources {
+		pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s is in %d or more sources, action is %s",
+			name, pd.Policy.Doubtlist.NumSources, tapir.ActionToString[pd.Policy.Doubtlist.NumSourcesAction])
+		return pd.Policy.Doubtlist.NumSourcesAction
 	}
-	pd.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s is in %d sources, not enough for action", name, len(greyHits))
+	pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s is in %d sources, not enough for action", name, len(doubtHits))
 
-	if _, exists := greyHits["dns-tapir"]; exists {
-		numtapirtags := greyHits["dns-tapir"].TagMask.NumTags()
-		if numtapirtags >= pd.Policy.Greylist.NumTapirTags {
-			pd.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s has more than %d tapir tags, action is %s",
-				name, pd.Policy.Greylist.NumTapirTags, tapir.ActionToString[pd.Policy.Greylist.NumTapirTagsAction])
-			return pd.Policy.Greylist.NumTapirTagsAction
+	if _, exists := doubtHits["dns-tapir"]; exists {
+		numtapirtags := doubtHits["dns-tapir"].TagMask.NumTags()
+		if numtapirtags >= pd.Policy.Doubtlist.NumTapirTags {
+			pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s has more than %d tapir tags, action is %s",
+				name, pd.Policy.Doubtlist.NumTapirTags, tapir.ActionToString[pd.Policy.Doubtlist.NumTapirTagsAction])
+			return pd.Policy.Doubtlist.NumTapirTagsAction
 		}
-		pd.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s has %d tapir tags, not enough for action", name, numtapirtags)
+		pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s has %d tapir tags, not enough for action", name, numtapirtags)
 	}
-	pd.Policy.Logger.Printf("ComputeRpzGreylistAction: name %s is present in %d greylists, but does not trigger any action",
-		name, len(greyHits))
-	return pd.Policy.WhitelistAction
+	pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s is present in %d doubtlists, but does not trigger any action",
+		name, len(doubtHits))
+	return pd.Policy.AllowlistAction
 }
 
-// Decision to block a greylisted name:
+// Decision to block a doubtlisted name:
 // 1. More than N tags present
 // 2. Name is present in more than M sources
 // 3. Name
 
-func ApplyGreyPolicy(name string, v *tapir.TapirName) string {
+func ApplyDoubtPolicy(name string, v *tapir.TapirName) string {
 	var rpzaction string
 	if v.HasAction(tapir.NXDOMAIN) {
 		rpzaction = "."
@@ -167,21 +167,21 @@ func ApplyGreyPolicy(name string, v *tapir.TapirName) string {
 }
 
 func (pd *PopData) ComputeRpzAction(name string) tapir.Action {
-	if pd.Whitelisted(name) {
+	if pd.Allowlisted(name) {
 		if pd.Debug {
-			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is whitelisted, action is %s", name, tapir.ActionToString[pd.Policy.WhitelistAction])
+			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is doubtlisted, action is %s", name, tapir.ActionToString[pd.Policy.AllowlistAction])
 		}
-		return pd.Policy.WhitelistAction
-	} else if pd.Blacklisted(name) {
+		return pd.Policy.AllowlistAction
+	} else if pd.Denylisted(name) {
 		if pd.Debug {
-			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is blacklisted, action is %s", name, tapir.ActionToString[pd.Policy.BlacklistAction])
+			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is denylisted, action is %s", name, tapir.ActionToString[pd.Policy.DenylistAction])
 		}
-		return pd.Policy.BlacklistAction
-	} else if pd.Greylisted(name) {
+		return pd.Policy.DenylistAction
+	} else if pd.Doubtlisted(name) {
 		if pd.Debug {
-			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is greylisted, needs further evaluation to determine action", name)
+			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is doubtlisted, needs further evaluation to determine action", name)
 		}
-		return pd.ComputeRpzGreylistAction(name) // This is not complete, only a placeholder for now.
+		return pd.ComputeRpzDoubtlistAction(name) // This is not complete, only a placeholder for now.
 	}
-	return tapir.WHITELIST
+	return tapir.ALLOWLIST
 }
