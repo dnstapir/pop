@@ -1,0 +1,69 @@
+Name:           tapir-pop
+Version:        @@VERSION@@
+Release:        1%{?dist}
+Group:          dnstapir/edge
+Summary:        DNSTAPIR EDGE Policy Processor
+License:        BSD
+URL:            https://www.github.com/dnstapir/pop
+#BuildRequires:  make # Will break builds on deb systems because rpmbuild has no way of knowing what is installed there
+Source0:        %{name}
+Source1:        tapir-pop.service
+Source2:        tapir-pop.sysusers
+
+%description
+DNSTAPIR EDGE Policy Processor
+
+%{!?_unitdir: %define _unitdir /usr/lib/systemd/system/}
+%{!?_sysusersdir: %define _sysusersdir /usr/lib/sysusers.d/}
+%{!?_localstatedir: %define _localstatedir /var/}
+
+%install
+mkdir -p %{buildroot}%{_bindir}
+mkdir -p %{buildroot}%{_unitdir}
+mkdir -p %{buildroot}%{_sysconfdir}/dnstapir/
+mkdir -p %{buildroot}%{_localstatedir}/log/dnstapir/ 
+
+install -p -m 0755 %{SOURCE0} %{buildroot}%{_bindir}/%{name}
+install -m 0644 %{SOURCE1} %{buildroot}%{_unitdir}
+install -m 0644 -D %{SOURCE2} %{buildroot}%{_sysusersdir}/tapir-pop.conf
+
+touch %{buildroot}%{_sysconfdir}/dnstapir/rpz-serial.yaml 
+touch %{buildroot}%{_localstatedir}/log/dnstapir/tapir-pop.log 
+touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-dnsengine.log 
+touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-mqtt.log 
+touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-policy.log 
+
+%files
+%attr(0660,tapir-pop,dnstapir) %dir %{_localstatedir}/log/dnstapir/ 
+
+%attr(0755,tapir-pop,dnstapir) %{_bindir}/%{name}
+%attr(0664,tapir-pop,dnstapir) %{_sysusersdir}/tapir-pop.conf
+%attr(0644,tapir-pop,dnstapir) %{_unitdir}/tapir-pop.service
+
+%attr(0660,tapir-pop,dnstapir) %{_sysconfdir}/dnstapir/rpz-serial.yaml
+%attr(0660,tapir-pop,dnstapir) %{_localstatedir}/log/dnstapir/tapir-pop.log 
+%attr(0660,tapir-pop,dnstapir) %{_localstatedir}/log/dnstapir/pop-dnsengine.log 
+%attr(0660,tapir-pop,dnstapir) %{_localstatedir}/log/dnstapir/pop-mqtt.log 
+%attr(0660,tapir-pop,dnstapir) %{_localstatedir}/log/dnstapir/pop-policy.log 
+
+%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/tapir-pop.yaml
+%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-sources.yaml
+%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-policy.yaml
+%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-outputs.yaml
+%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/certs/ca.crt
+%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/certs/tls.crt
+%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/certs/validation-keys.json
+%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/certs/tls.key
+%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/certs/datakey-priv.json
+
+%pre
+
+%post
+
+%preun
+
+%postun
+
+%check
+
+%changelog

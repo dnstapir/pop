@@ -1,0 +1,51 @@
+name: Release Artifacts
+on:
+  release:
+    types: [published]
+
+jobs:
+  artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get Code
+        uses: actions/checkout@v2
+      - name: Get Rpmbuild
+        run: sudo apt install rpm -y
+      - name: Generate Artifacts
+        run: make rpm
+      - name: Get Artifacts
+        id: get_artifacts
+        run: |
+          echo "srcpath=$(ls ./dist/src/*.tar.gz)" >> $GITHUB_OUTPUT
+          echo "srcfilename=$(basename ./dist/src/*.tar.gz)" >> $GITHUB_OUTPUT
+          echo "binpath=$(ls ./dist/bin/tapir-pop)" >> $GITHUB_OUTPUT
+          echo "binfilename=$(basename ./dist/bin/tapir-pop)" >> $GITHUB_OUTPUT
+          echo "rpmpath=$(ls ./dist/rpm/RPMS/x86_64/*rpm)" >> $GITHUB_OUTPUT
+          echo "rpmfilename=$(basename ./dist/rpm/RPMS/x86_64/*rpm)" >> $GITHUB_OUTPUT
+      - name: Upload Tarball
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ${{ steps.get_artifacts.outputs.srcpath }}
+          asset_name: ${{ steps.get_artifacts.outputs.srcfilename }}
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Upload Binary
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ${{ steps.get_artifacts.outputs.binpath }}
+          asset_name: ${{ steps.get_artifacts.outputs.binfilename }}
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Upload Rpm
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: ${{ steps.get_artifacts.outputs.rpmpath }}
+          asset_name: ${{ steps.get_artifacts.outputs.rpmfilename }}
+          asset_content_type: application/octet-stream
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

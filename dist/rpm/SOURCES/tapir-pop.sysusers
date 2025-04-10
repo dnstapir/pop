@@ -1,0 +1,2 @@
+u tapir-pop - "DNSTAPIR EDGE POP" /etc/dnstapir/ /sbin/nologin
+g dnstapir -
