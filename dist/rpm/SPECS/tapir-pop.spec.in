@@ -34,7 +34,7 @@ touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-mqtt.log
 touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-policy.log 
 
 %files
-%attr(0660,tapir-pop,dnstapir) %dir %{_localstatedir}/log/dnstapir/ 
+%attr(0770,tapir-pop,dnstapir) %dir %{_localstatedir}/log/dnstapir/ 
 
 %attr(0755,tapir-pop,dnstapir) %{_bindir}/%{name}
 #%attr(0664,tapir-pop,dnstapir) %{_sysusersdir}/tapir-pop.conf # TODO use if fedora 42+ is supported
@@ -53,7 +53,7 @@ touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-policy.log
 
 %pre
 /usr/bin/getent group dnstapir || /usr/sbin/groupadd -r dnstapir
-/usr/bin/getent passwd tapir-pop || /usr/sbin/useradd -r -d /etc/dnstapir -s /sbin/nologin tapir-pop
+/usr/bin/getent passwd tapir-pop || /usr/sbin/useradd -r -d /etc/dnstapir -G dnstapir -s /sbin/nologin tapir-pop
 
 %post
 
