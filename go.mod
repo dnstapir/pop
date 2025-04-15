@@ -1,6 +1,7 @@
 module tapir-pop
 
 go 1.22.0
+toolchain go1.24.1
 
 require (
 	github.com/dnstapir/tapir v0.0.0-20250114144620-18cc0cdb5c33
@@ -49,7 +50,7 @@ require (
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
-	golang.org/x/crypto v0.33.0 // indirect
+	golang.org/x/crypto v0.35.0 // indirect
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 	golang.org/x/mod v0.23.0 // indirect
 	golang.org/x/net v0.35.0 // indirect
