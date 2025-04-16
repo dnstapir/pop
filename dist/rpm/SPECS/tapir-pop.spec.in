@@ -27,7 +27,7 @@ install -p -m 0755 %{SOURCE0} %{buildroot}%{_bindir}/%{name}
 install -m 0644 %{SOURCE1} %{buildroot}%{_unitdir}
 #install -m 0644 -D %{SOURCE2} %{buildroot}%{_sysusersdir}/tapir-pop.conf # TODO use if fedora 42+ is supported
 
-touch %{buildroot}%{_sysconfdir}/dnstapir/rpz-serial.yaml 
+touch %{buildroot}%{_sysconfdir}/dnstapir/pop/rpz-serial.yaml
 touch %{buildroot}%{_localstatedir}/log/dnstapir/tapir-pop.log 
 touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-dnsengine.log 
 touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-mqtt.log 
@@ -40,7 +40,7 @@ touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-policy.log
 #%attr(0664,tapir-pop,dnstapir) %{_sysusersdir}/tapir-pop.conf # TODO use if fedora 42+ is supported
 %attr(0644,tapir-pop,dnstapir) %{_unitdir}/tapir-pop.service
 
-%attr(0660,tapir-pop,dnstapir) %{_sysconfdir}/dnstapir/rpz-serial.yaml
+%attr(0660,tapir-pop,dnstapir) %{_sysconfdir}/dnstapir/pop/rpz-serial.yaml
 %attr(0660,tapir-pop,dnstapir) %{_localstatedir}/log/dnstapir/tapir-pop.log 
 %attr(0660,tapir-pop,dnstapir) %{_localstatedir}/log/dnstapir/pop-dnsengine.log 
 %attr(0660,tapir-pop,dnstapir) %{_localstatedir}/log/dnstapir/pop-mqtt.log 
