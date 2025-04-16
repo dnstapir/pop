@@ -4,7 +4,6 @@
 package main
 
 import (
-    "crypto/ecdsa"
 	"fmt"
 	"log"
 	"os"
@@ -200,20 +199,16 @@ func (pd *PopData) ParseSourcesNG() error {
 				if pd.Debug {
 					pd.Logger.Printf("ParseSourcesNG: Fetching MQTT validator key for topic %s", src.Topic)
 				}
-				valkey, err := tapir.FetchMqttValidatorKey(src.Topic, src.ValidatorKey)
-				if err != nil {
-					pd.Logger.Printf("ParseSources: Error fetching MQTT validator key for topic %s: %v", src.Topic, err)
-				}
 
 				pd.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
-				topicdata, err := pd.MqttEngine.SubToTopic(src.Topic, valkey, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
+				topicdata, err := pd.MqttEngine.SubToTopic(src.Topic, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
 				if err != nil {
 					POPExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
 				}
 				pd.Logger.Printf("ParseSourcesNG: Topic data for topic %s: %+v", src.Topic, topicdata)
 
                 mqttDetails := tapir.MqttDetails{
-                    ValidatorKeys: map[string]*ecdsa.PublicKey{src.Topic: valkey},
+                    ValidatorKeys: map[string]string{src.Topic: ""}, // value not used
                     Bootstrap:     src.Bootstrap,
                     BootstrapUrl:  src.BootstrapUrl,
                     BootstrapKey:  src.BootstrapKey,

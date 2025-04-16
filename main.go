@@ -124,6 +124,11 @@ func mainloop(conf *Config, configfile *string, pd *PopData) {
 var Gconfig Config
 var mqttclientid string
 
+const DEFAULT_TAPIR_POP_CFG_FILE = "/etc/dnstapir/tapir-pop.yaml"
+const DEFAULT_POP_SOURCES_CFG_FILE = "/etc/dnstapir/pop-sources.yaml"
+const DEFAULT_POP_OUTPUTS_CFG_FILE = "/etc/dnstapir/pop-outputs.yaml"
+const DEFAULT_POP_POLICY_CFG_FILE = "/etc/dnstapir/pop-policy.yaml"
+
 func main() {
 	// var conf Config
 	mqttclientid = "tapir-pop-" + uuid.New().String()
@@ -139,7 +144,7 @@ func main() {
 	if cfgFile != "" {
 		viper.SetConfigFile(cfgFile)
 	} else {
-		viper.SetConfigFile(tapir.DefaultPopCfgFile)
+		viper.SetConfigFile(DEFAULT_TAPIR_POP_CFG_FILE)
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
@@ -149,28 +154,28 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.DefaultPopCfgFile, err)
+		POPExiter("Could not load config %s: Error: %v", DEFAULT_TAPIR_POP_CFG_FILE, err)
 	}
-	viper.SetConfigFile(tapir.PopSourcesCfgFile)
+	viper.SetConfigFile(DEFAULT_POP_SOURCES_CFG_FILE)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.PopSourcesCfgFile, err)
+		POPExiter("Could not load config %s: Error: %v", DEFAULT_POP_SOURCES_CFG_FILE, err)
 	}
-	viper.SetConfigFile(tapir.PopOutputsCfgFile)
+	viper.SetConfigFile(DEFAULT_POP_OUTPUTS_CFG_FILE)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.PopOutputsCfgFile, err)
+		POPExiter("Could not load config %s: Error: %v", DEFAULT_POP_OUTPUTS_CFG_FILE, err)
 	}
-	viper.SetConfigFile(tapir.PopPolicyCfgFile)
+	viper.SetConfigFile(DEFAULT_POP_POLICY_CFG_FILE)
 	if err := viper.MergeInConfig(); err == nil {
 		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
 		cfgFileUsed = viper.ConfigFileUsed()
 	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.PopPolicyCfgFile, err)
+		POPExiter("Could not load config %s: Error: %v", DEFAULT_POP_POLICY_CFG_FILE, err)
 	}
 
 	SetupLogging(&Gconfig)

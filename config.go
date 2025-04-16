@@ -40,7 +40,6 @@ type Config struct {
 type ServicesConf struct {
 	Rpz struct {
 		ZoneName    string `validate:"required"`
-		Primary     string `validate:"required"` // XXX: must be an address that DnsEngine listens to
 		SerialCache string `validate:"required"`
 	}
 

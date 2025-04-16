@@ -7,7 +7,6 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"path/filepath"
 
 	"github.com/dnstapir/tapir"
 	"github.com/spf13/viper"
@@ -33,18 +32,9 @@ func (pd *PopData) ConfigUpdater(conf *Config, stopch chan struct{}) {
 	if configTopic == "" {
 		POPExiter("ConfigUpdater: MQTT config topic not set")
 	}
-	keyfile := viper.GetString("tapir.config.validatorkey")
-	if keyfile == "" {
-		POPExiter("ConfigUpdater: MQTT validator key not set for topic %s", configTopic)
-	}
-	keyfile = filepath.Clean(keyfile)
-	validatorkey, err := tapir.FetchMqttValidatorKey(configTopic, keyfile)
-	if err != nil {
-		POPExiter("ConfigUpdater: Error fetching MQTT validator key for topic %s: %v", configTopic, err)
-	}
 
 	pd.Logger.Printf("ConfigUpdater: Adding sub topic '%s' to MQTT Engine", configTopic)
-	msg, err := me.SubToTopic(configTopic, validatorkey, ConfigChan, "struct", true) // XXX: Brr. kludge.
+	msg, err := me.SubToTopic(configTopic, ConfigChan, "struct", true) // XXX: Brr. kludge.
 	if err != nil {
 		POPExiter("ConfigUpdater: Error adding topic %s to MQTT Engine: %v", configTopic, err)
 	}
@@ -85,19 +75,17 @@ func (pd *PopData) ProcessTapirGlobalConfig(gconfig tapir.GlobalConfig) {
 
         for topic := range wbgl.MqttDetails.ValidatorKeys {
             pd.MqttEngine.RemoveTopic(topic)
-            delete(wbgl.MqttDetails.ValidatorKeys, topic)
             break // Only one topic
         }
 
-        valkey := GetValidationKeyByKeyName(newTopic.PubKeyName)
 		pd.mu.Lock()
-        wbgl.MqttDetails.ValidatorKeys[newTopic.Topic] = valkey
+        wbgl.MqttDetails.ValidatorKeys[newTopic.Topic] = "" // Value is not used ;)
         wbgl.MqttDetails.Bootstrap = bootstrapServers
         wbgl.MqttDetails.BootstrapUrl = bootstrapUrl
         wbgl.MqttDetails.BootstrapKey = bootstrapKey
 		pd.mu.Unlock()
 
-        _, err := pd.MqttEngine.SubToTopic(newTopic.Topic, valkey, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
+        _, err := pd.MqttEngine.SubToTopic(newTopic.Topic, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
         if err != nil {
             POPExiter("ProcessTapirGlobalConfig: Error adding topic %s: %v", newTopic, err)
         }
