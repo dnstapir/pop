@@ -124,6 +124,7 @@ func mainloop(conf *Config, configfile *string, pd *PopData) {
 var Gconfig Config
 var mqttclientid string
 
+
 func main() {
 	// var conf Config
 	mqttclientid = "tapir-pop-" + uuid.New().String()
