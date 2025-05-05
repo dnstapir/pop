@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	_ "github.com/mattn/go-sqlite3"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
 
