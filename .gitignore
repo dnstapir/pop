@@ -24,3 +24,10 @@ go.work
 tem
 tapir-pop
 version.go
+
+# Ignore rpm build directory and related stuff
+*.tar.gz
+*.src.rpm
+rpm/
+!rpm/SOURCES/tapir-pop.service
+!rpm/SPECS/tapir-pop.spec
