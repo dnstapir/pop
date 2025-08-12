@@ -97,6 +97,7 @@ type SourceConf struct {
 	Filename     string
 	Upstream     string
 	Zone         string
+    BackupFile   string
 }
 
 type PolicyConf struct {

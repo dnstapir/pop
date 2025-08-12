@@ -5,6 +5,7 @@
 package main
 
 import (
+    "encoding/gob"
 	"fmt"
 	"log"
 
@@ -44,6 +45,25 @@ func (pd *PopData) SaveRpzSerial() error {
 		log.Printf("Saved current serial %d to file %s", pd.Rpz.CurrentSerial, serialFile)
 	}
 	return err
+}
+
+func (pd *PopData) BackupListsState() {
+    for _, l := range pd.Lists["doubtlist"] {
+        func() {
+            if l.Datasource != "mqtt" || l.BackupFile == "" {
+                return
+            }
+
+            file, err := os.Create(l.BackupFile)
+            defer file.Close()
+            if err != nil {
+                pd.Logger.Printf("Skipped creating backup file '%s' due to error: %s", l.BackupFile, err)
+                return
+            }
+            encoder := gob.NewEncoder(file)
+            encoder.Encode(l.Names)
+        }()
+    }
 }
 
 func mainloop(conf *Config, configfile *string, pd *PopData) {
@@ -92,6 +112,9 @@ func mainloop(conf *Config, configfile *string, pd *PopData) {
 				if err != nil {
 					log.Printf("Error saving RPZ serial: %v", err)
 				}
+
+				pd.BackupListsState()
+
 				// do whatever we need to do to wrap up nicely
 				wg.Done()
 			case <-hupper:

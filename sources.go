@@ -4,6 +4,7 @@
 package main
 
 import (
+    "encoding/gob"
 	"fmt"
 	"log"
 	"os"
@@ -191,6 +192,7 @@ func (pd *PopData) ParseSourcesNG() error {
 				Filename:    src.Filename,
 				RpzUpstream: src.Upstream,
 				RpzZoneName: dns.Fqdn(src.Zone),
+                BackupFile:  src.BackupFile,
 			}
 
 			pd.Logger.Printf("ParseSourcesNG: thread %d working on source \"%s\" (%s)", thread, name, src.Source)
@@ -216,6 +218,7 @@ func (pd *PopData) ParseSourcesNG() error {
                 newsource.MqttDetails = &mqttDetails
                 newsource.Immutable = src.Immutable
 
+
 				newsource.Format = "map" // for now
 				if len(src.Bootstrap) > 0 {
 					pd.Logger.Printf("ParseSourcesNG: The %s MQTT source has %d bootstrap servers: %v", src.Name, len(src.Bootstrap), src.Bootstrap)
@@ -226,6 +229,15 @@ func (pd *PopData) ParseSourcesNG() error {
 						newsource = *tmp
 					}
 				}
+
+                backup, ok := pd.restoreFromBackup(src.BackupFile)
+                if ok {
+                    newsource.Names = backup
+				    pd.Logger.Printf("Backup loaded for [%s]", newsource.Name)
+                } else {
+				    pd.Logger.Printf("Will not load backup for [%s]", newsource.Name)
+                }
+
 				pd.mu.Lock()
 				pd.Lists["doubtlist"][newsource.Name] = &newsource
 				pd.Logger.Printf("Created list [doubtlist][%s]", newsource.Name)
@@ -449,4 +461,22 @@ func (pd *PopData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 		}
 		return true
 	}
+}
+
+func (pd *PopData) restoreFromBackup(filename string) (map[string]tapir.TapirName, bool) {
+    newMap := make(map[string]tapir.TapirName)
+
+    file, err := os.Open(filename)
+    defer file.Close()
+    if err != nil {
+        pd.Logger.Printf("Could not open '%s' for reading backup, err: '%s'", filename, err)
+        return nil, false
+    }
+    defer file.Close()
+
+    decoder := gob.NewDecoder(file)
+
+    decoder.Decode(&newMap)
+
+    return newMap, true
 }
