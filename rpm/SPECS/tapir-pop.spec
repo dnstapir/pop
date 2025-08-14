@@ -14,6 +14,11 @@ BuildRequires: golang
 %description
 DNSTAPIR EDGE Policy Processor
 
+# Disable building of debug packages for RHEL (we include symbols per default)
+%if 0%{?rhel} >= 9
+%global debug_package %{nil}
+%endif
+
 %{!?_unitdir: %define _unitdir /usr/lib/systemd/system/}
 %{!?_sysusersdir: %define _sysusersdir /usr/lib/sysusers.d/}
 %{!?_localstatedir: %define _localstatedir /var/}
