@@ -59,10 +59,10 @@ touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-policy.log
 %attr(0660,tapir-pop,dnstapir) %{_localstatedir}/log/dnstapir/pop-mqtt.log 
 %attr(0660,tapir-pop,dnstapir) %{_localstatedir}/log/dnstapir/pop-policy.log 
 
-%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/tapir-pop.yaml
-%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-sources.yaml
-%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-policy.yaml
-%attr(0660,tapir-pop,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-outputs.yaml
+%attr(0660,-,dnstapir) %ghost %{_sysconfdir}/dnstapir/tapir-pop.yaml
+%attr(0660,-,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-sources.yaml
+%attr(0660,-,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-policy.yaml
+%attr(0660,-,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-outputs.yaml
 
 %pre
 /usr/bin/getent group dnstapir || /usr/sbin/groupadd -r dnstapir
