@@ -42,6 +42,9 @@ clean:
 	@rm -f *.tar.gz
 	@rm -f rpm/SOURCES/*.tar.gz
 	@rm -rf rpm/{BUILD,BUILDROOT,SRPMS,RPMS}
+	@rm -rf deb/usr
+	@rm -rf deb/etc
+	@rm -rf deb/var
 
 install:
 	mkdir -p /usr/local/libexec
@@ -57,5 +60,14 @@ srpm: tarball
 	cp $(PROG)-$(VERSION).tar.gz rpm/SOURCES/
 	rpmbuild -bs --define "%_topdir ./rpm" --undefine=dist $(SPECFILE)
 	test -z "$(outdir)" || cp rpm/SRPMS/*.src.rpm "$(outdir)"
+
+deb: build
+	mkdir -p deb/usr/bin
+	mkdir -p deb/etc/dnstapir/pop
+	mkdir -p deb/var/log/dnstapir
+	mkdir -p deb/usr/lib/systemd/system
+	cp $(PROG) deb/usr/bin
+	cp rpm/SOURCES/dnstapir-pop.service deb/usr/lib/systemd/system
+	dpkg-deb -b deb/ tapir-pop-$(VERSION).deb
 
 .PHONY: build clean generate

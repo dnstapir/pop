@@ -1,0 +1,12 @@
+#!/bin/bash
+
+case "$1" in
+    rm -rf /usr/bin/dnstapir-pop
+    remove)
+        rm -rf /usr/bin/dnstapir-pop
+        ;;
+    purge)
+        rm -rf /var/lib/dnstapir/edm
+        rm -rf /etc/dnstapir/edm
+        ;;
+esac

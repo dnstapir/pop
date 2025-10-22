@@ -1,0 +1,8 @@
+Package: dnstapir-pop
+Architecture: any
+Version: 0.3
+Section: misc
+Maintainer: Leon Fernandez <leon.fernandez@internetstiftelsen.se>
+Priority: optional
+Standards-Version: 4.7.0
+Description: DNS TAPIR Edge Policy Processor
