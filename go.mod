@@ -1,4 +1,4 @@
-module tapir-pop
+module dnstapir-pop
 
 go 1.23.0
 

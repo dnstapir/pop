@@ -22,6 +22,7 @@
 # Go workspace file
 go.work
 tem
+dnstapir-pop
 tapir-pop
 version.go
 
@@ -29,5 +30,5 @@ version.go
 *.tar.gz
 *.src.rpm
 rpm/
-!rpm/SOURCES/tapir-pop.service
-!rpm/SPECS/tapir-pop.spec
+!rpm/SOURCES/dnstapir-pop.service
+!rpm/SPECS/dnstapir-pop.spec

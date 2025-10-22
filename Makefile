@@ -1,4 +1,4 @@
-PROG:=tapir-pop
+PROG:=dnstapir-pop
 VERSION:=`cat ./VERSION`
 COMMIT:=`git describe --dirty=+WiP --always`
 APPDATE=`date +"%Y-%m-%d-%H:%M"`
@@ -9,7 +9,7 @@ GOOS ?= $(shell uname -s | tr A-Z a-z)
 GO:=GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go
 # GO:=GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=1 go
 
-SPECFILE:=rpm/SPECS/tapir-pop.spec
+SPECFILE:=rpm/SPECS/dnstapir-pop.spec
 
 default: ${PROG}
 
