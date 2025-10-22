@@ -32,3 +32,10 @@ version.go
 rpm/
 !rpm/SOURCES/dnstapir-pop.service
 !rpm/SPECS/dnstapir-pop.spec
+
+# Ignore deb build directory and related stuff
+*.deb
+deb/
+!deb/DEBIAN/control
+!deb/DEBIAN/postinst
+!deb/DEBIAN/postrm
