@@ -1,11 +1,11 @@
-module tapir-pop
+module dnstapir-pop
 
 go 1.23.0
 
 toolchain go1.23.6
 
 require (
-	github.com/dnstapir/tapir v0.0.0-20250916134600-6f3506c45053
+	github.com/dnstapir/tapir v0.0.0-20251022094937-4e072a3e8241
 	github.com/go-playground/validator/v10 v10.27.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
