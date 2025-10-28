@@ -5,28 +5,28 @@ getent group dnstapir || addgroup dnstapir
 getent passwd dnstapir-pop || adduser --ingroup dnstapir --system dnstapir-pop
 
 if [ -z "$2" ]; then
-    
     chgrp dnstapir /etc/dnstapir
+
     chown dnstapir-pop:dnstapir /etc/dnstapir/pop
+    touch /etc/dnstapir/pop/rpz-serial.yaml
+    chown dnstapir-pop:dnstapir /etc/dnstapir/pop/rpz-serial.yaml
+
+    chown dnstapir-pop:dnstapir /var/log/dnstapir
+    chmod 770 /var/log/dnstapir
     
     touch /var/log/dnstapir/dnstapir-pop.log
     chown dnstapir-pop:dnstapir /var/log/dnstapir/dnstapir-pop.log
+    chmod 640 /var/log/dnstapir/dnstapir-pop.log
 
     touch /var/log/dnstapir/pop-dnsengine.log
     chown dnstapir-pop:dnstapir /var/log/dnstapir/pop-dnsengine.log
+    chmod 640 /var/log/dnstapir/pop-dnsengine.log
 
     touch /var/log/dnstapir/pop-mqtt.log
     chown dnstapir-pop:dnstapir /var/log/dnstapir/pop-mqtt.log
+    chmod 640 /var/log/dnstapir/pop-mqtt.log
 
     touch /var/log/dnstapir/pop-policy.log
     chown dnstapir-pop:dnstapir /var/log/dnstapir/pop-policy.log
-
-    chmod 770 /var/log/dnstapir
-    chmod 660 /var/log/dnstapir/dnstapir-pop.log
-    chmod 660 /var/log/dnstapir/pop-dnsengine.log
-    chmod 660 /var/log/dnstapir/pop-mqtt.log
-    chmod 660 /var/log/dnstapir/pop-policy.log
-    
-    touch /etc/dnstapir/pop/rpz-serial.yaml
-    chown dnstapir-pop:dnstapir /etc/dnstapir/pop/rpz-serial.yaml
+    chmod 640 /var/log/dnstapir/pop-policy.log
 fi

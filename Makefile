@@ -64,10 +64,8 @@ srpm: tarball
 
 deb: build
 	mkdir -p deb/usr/bin
-	mkdir -p deb/etc/dnstapir/pop
-	mkdir -p deb/var/log/dnstapir
-	mkdir -p deb/usr/lib/systemd/system
 	cp $(PROG) deb/usr/bin
+	mkdir -p deb/usr/lib/systemd/system
 	cp rpm/SOURCES/dnstapir-pop.service deb/usr/lib/systemd/system
 	dpkg-deb -b deb/ $(PROG)-$(VERSION).deb
 
