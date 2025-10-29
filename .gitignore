@@ -35,7 +35,4 @@ rpm/
 
 # Ignore deb build directory and related stuff
 *.deb
-deb/
-!deb/DEBIAN/control
-!deb/DEBIAN/postinst
-!deb/DEBIAN/postrm
+deb/usr
