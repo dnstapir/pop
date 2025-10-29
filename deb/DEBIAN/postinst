@@ -5,12 +5,13 @@ getent group dnstapir || addgroup dnstapir
 getent passwd dnstapir-pop || adduser --ingroup dnstapir --system dnstapir-pop
 
 if [ -z "$2" ]; then
+    mkdir -p /etc/dnstapir/pop
     chgrp dnstapir /etc/dnstapir
-
     chown dnstapir-pop:dnstapir /etc/dnstapir/pop
     touch /etc/dnstapir/pop/rpz-serial.yaml
     chown dnstapir-pop:dnstapir /etc/dnstapir/pop/rpz-serial.yaml
 
+    mkdir -p /var/log/dnstapir
     chown dnstapir-pop:dnstapir /var/log/dnstapir
     chmod 770 /var/log/dnstapir
     
