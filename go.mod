@@ -5,7 +5,7 @@ go 1.23.0
 toolchain go1.23.6
 
 require (
-	github.com/dnstapir/tapir v0.0.0-20251028210234-61497665233d
+	github.com/dnstapir/tapir v0.0.0-20251029102003-58142cabe113
 	github.com/go-playground/validator/v10 v10.27.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1

@@ -9,6 +9,10 @@ github.com/dnstapir/tapir v0.0.0-20251022094937-4e072a3e8241 h1:PFOjSs4F6JPcJ5tf
 github.com/dnstapir/tapir v0.0.0-20251022094937-4e072a3e8241/go.mod h1:A6BFxLXbsLJNj80yFy/OWVb7RmLyFIvXDgvFtRSN3ho=
 github.com/dnstapir/tapir v0.0.0-20251028210234-61497665233d h1:6NE995IEk/pncTISngJGqkqxXWUwMpaWknIgh69O1bs=
 github.com/dnstapir/tapir v0.0.0-20251028210234-61497665233d/go.mod h1:A6BFxLXbsLJNj80yFy/OWVb7RmLyFIvXDgvFtRSN3ho=
+github.com/dnstapir/tapir v0.0.0-20251029090753-1649e63084ae h1:lSEtaeteZt5bQWdFvhOIwtKoIQHu5MstAQaZS63cRVc=
+github.com/dnstapir/tapir v0.0.0-20251029090753-1649e63084ae/go.mod h1:A6BFxLXbsLJNj80yFy/OWVb7RmLyFIvXDgvFtRSN3ho=
+github.com/dnstapir/tapir v0.0.0-20251029102003-58142cabe113 h1:yIaIHM9Jn66Zh9Gbi85QGrmRChj+KPCM/mAnZIZFuuo=
+github.com/dnstapir/tapir v0.0.0-20251029102003-58142cabe113/go.mod h1:A6BFxLXbsLJNj80yFy/OWVb7RmLyFIvXDgvFtRSN3ho=
 github.com/eclipse/paho.golang v0.21.0 h1:cxxEReu+iFbA5RrHfRGxJOh8tXZKDywuehneoeBeyn8=
 github.com/eclipse/paho.golang v0.21.0/go.mod h1:GHF6vy7SvDbDHBguaUpfuBkEB5G6j0zKxMG4gbh6QRQ=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
