@@ -10,6 +10,8 @@ if [ -z "$2" ]; then
     chown dnstapir-pop:dnstapir /etc/dnstapir/pop
     touch /etc/dnstapir/pop/rpz-serial.yaml
     chown dnstapir-pop:dnstapir /etc/dnstapir/pop/rpz-serial.yaml
+    chmod 770 /etc/dnstapir/pop
+    chmod 770 /etc/dnstapir
 
     mkdir -p /var/log/dnstapir
     chown dnstapir-pop:dnstapir /var/log/dnstapir
