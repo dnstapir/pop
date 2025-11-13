@@ -22,6 +22,11 @@ import (
 	"github.com/dnstapir/tapir"
 )
 
+/* Rewritten if building with make */
+var name    = "BAD-BUILD"
+var version = "BAD-BUILD"
+var commit  = "BAD-BUILD"
+
 var POPExiter = func(args ...interface{}) {
 	log.Printf("POPExiter: [placeholderfunction w/o real cleanup]")
 	log.Printf("POPExiter: Exit message: %s", fmt.Sprintf(args[0].(string), args[1:]...))
@@ -125,6 +130,7 @@ var mqttclientid string
 
 
 func main() {
+	fmt.Printf("%s (TAPIR Edge Manager) version %s (%s) starting.\n", name, version, commit)
 	// var conf Config
 	mqttclientid = "tapir-pop-" + uuid.New().String()
 	flag.BoolVarP(&tapir.GlobalCF.Debug, "debug", "d", false, "Debug mode")
@@ -184,8 +190,6 @@ func main() {
 	if err != nil {
 		POPExiter("Error unmarshalling config into struct: %v", err)
 	}
-
-	fmt.Printf("%s (TAPIR Edge Manager) version %s (%s) starting.\n", appName, appVersion, appDate)
 
 	var stopch = make(chan struct{}, 10)
 
