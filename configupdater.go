@@ -34,11 +34,11 @@ func (pd *PopData) ConfigUpdater(conf *Config, stopch chan struct{}) {
 	}
 
 	pd.Logger.Printf("ConfigUpdater: Adding sub topic '%s' to MQTT Engine", configTopic)
-	msg, err := me.SubToTopic(configTopic, ConfigChan, "struct", true) // XXX: Brr. kludge.
+	err := me.SubToTopic(configTopic, ConfigChan, "struct", true) // XXX: Brr. kludge.
 	if err != nil {
 		POPExiter("ConfigUpdater: Error adding topic %s to MQTT Engine: %v", configTopic, err)
 	}
-	pd.Logger.Printf("ConfigUpdater: Topic status for MQTT engine %s: %+v", me.Creator, msg)
+	pd.Logger.Printf("ConfigUpdater: Topic status for MQTT engine %s", me.Creator)
 
 	log.Printf("ConfigUpdater: Starting")
 
@@ -85,7 +85,7 @@ func (pd *PopData) ProcessTapirGlobalConfig(gconfig tapir.GlobalConfig) {
         wbgl.MqttDetails.BootstrapKey = bootstrapKey
 		pd.mu.Unlock()
 
-        _, err := pd.MqttEngine.SubToTopic(newTopic.Topic, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
+        err := pd.MqttEngine.SubToTopic(newTopic.Topic, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
         if err != nil {
             POPExiter("ProcessTapirGlobalConfig: Error adding topic %s: %v", newTopic, err)
         }
