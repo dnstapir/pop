@@ -7,6 +7,8 @@ github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0 h1:8UrgZ3GkP4i/CLijOJx79Yu+etly
 github.com/decred/dcrd/dcrec/secp256k1/v4 v4.2.0/go.mod h1:v57UDF4pDQJcEfFUCRop3lJL149eHGSe9Jvczhzjo/0=
 github.com/dnstapir/tapir v0.0.0-20251029102003-58142cabe113 h1:yIaIHM9Jn66Zh9Gbi85QGrmRChj+KPCM/mAnZIZFuuo=
 github.com/dnstapir/tapir v0.0.0-20251029102003-58142cabe113/go.mod h1:A6BFxLXbsLJNj80yFy/OWVb7RmLyFIvXDgvFtRSN3ho=
+github.com/dnstapir/tapir v0.0.0-20251117100352-b3b797ea3b38 h1:DFTTkhPulasYf240UEqGFRQDN+3h1igaC+f71cRIjuI=
+github.com/dnstapir/tapir v0.0.0-20251117100352-b3b797ea3b38/go.mod h1:A6BFxLXbsLJNj80yFy/OWVb7RmLyFIvXDgvFtRSN3ho=
 github.com/eclipse/paho.golang v0.21.0 h1:cxxEReu+iFbA5RrHfRGxJOh8tXZKDywuehneoeBeyn8=
 github.com/eclipse/paho.golang v0.21.0/go.mod h1:GHF6vy7SvDbDHBguaUpfuBkEB5G6j0zKxMG4gbh6QRQ=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
