@@ -3,7 +3,7 @@ module dnstapir-pop
 go 1.24.0
 
 require (
-	github.com/dnstapir/tapir v0.0.0-20251029102003-58142cabe113
+	github.com/dnstapir/tapir v0.0.0-20251117100352-b3b797ea3b38
 	github.com/go-playground/validator/v10 v10.28.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1

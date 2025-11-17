@@ -201,11 +201,11 @@ func (pd *PopData) ParseSourcesNG() error {
 				}
 
 				pd.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
-				topicdata, err := pd.MqttEngine.SubToTopic(src.Topic, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
+				err := pd.MqttEngine.SubToTopic(src.Topic, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
 				if err != nil {
 					POPExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
 				}
-				pd.Logger.Printf("ParseSourcesNG: Topic data for topic %s: %+v", src.Topic, topicdata)
+				pd.Logger.Printf("ParseSourcesNG: Topic data for topic %s", src.Topic)
 
                 mqttDetails := tapir.MqttDetails{
                     Topics:        []string{src.Topic},

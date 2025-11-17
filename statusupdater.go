@@ -74,11 +74,11 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 	}
 
 	pd.Logger.Printf("StatusUpdater: Adding pub topic '%s' to MQTT Engine", statusTopic)
-	msg, err := me.PubToTopic(statusTopic, signkey, "struct", true) // XXX: Brr. kludge.
+	err = me.PubToTopic(statusTopic, signkey, "struct", true) // XXX: Brr. kludge.
 	if err != nil {
 		POPExiter("Error adding topic %s to MQTT Engine: %v", statusTopic, err)
 	}
-	pd.Logger.Printf("StatusUpdater: Topic status for MQTT engine %s: %+v", me.Creator, msg)
+	pd.Logger.Printf("StatusUpdater: Topic status for MQTT engine %s: %+v", me.Creator)
 
 	_, outbox, _, err := me.StartEngine()
 	if err != nil {

@@ -245,7 +245,10 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		defer func() {
 			w.Header().Set("Content-Type", "application/json")
+			me := conf.PopData.MqttEngine
+            me.DataMu.Lock() /* Lock because resp.TopicData needs to be accessed safely */
 			err := json.NewEncoder(w).Encode(resp)
+            me.DataMu.Unlock()
 			if err != nil {
 				log.Printf("Error from json encoder: %v", err)
 				log.Printf("resp: %v", resp)
@@ -267,7 +270,9 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		switch bp.Command {
 		case "doubtlist-status":
 			me := conf.PopData.MqttEngine
+            me.DataMu.Lock()
 			stats := me.Stats()
+            me.DataMu.Unlock()
 			// resp.MsgCounters = stats.MsgCounters
 			// resp.MsgTimeStamps = stats.MsgTimeStamps
 			resp.TopicData = stats
