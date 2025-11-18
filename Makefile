@@ -1,7 +1,7 @@
 #######################################
 # VERSION SOURCE OF TRUTH FOR PROJECT #
 #######################################
-VERSION:=0.3.0
+VERSION:=0.0.0
 
 PROG:=dnstapir-pop
 OUT:=$$(pwd)/out
