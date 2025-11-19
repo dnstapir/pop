@@ -1,31 +1,31 @@
-# tapir-pop: DNS TAPIR Policy Processor
+# dnstapir-pop: DNS TAPIR Policy Processor
 
-The *DNS TAPIR Policy Processor*, TAPIR-POP, is the component that processes the intelligence data from the TAPIR-CORE
+The *DNS TAPIR Policy Processor*, dnstapir-pop, is the component that processes the intelligence data from the DNS TAPIR Core
 (and possibly other sources) and applies local policy to reach a filtering decision. 
 
 It is the connection between the core and the
 edge platform. It manages local configurations and gets updates from
 the core with alerts and config changes.
 
-TAPIR-POP is responsible for the task of integrating all intelligence sources
+dnstapir-pop is responsible for the task of integrating all intelligence sources
 into a single Response Policy Zone (RPZ) that is as compact as possible.
 The RPZ file is used by the DNS resolver to implement blocklists and other
 policy-related functions.
 
 ## A unified single RPZ zone instead of multiple sources
 
-TAPIR-POP presents a single output with all conflicts resolved,
+dnstapir-pop presents a single output with all conflicts resolved,
 rather than feeding the resolver multiple sources of data from
 which to look for policy guidance, where sources can even be conflicting
 (eg. a domainname may be flagged by one source but allowlisted by another).
 
 The result is smaller, as no allowlisting information is needed for the resolver.
 
-## TAPIR-POP supports a local policy configuration
+## dnstapir-pop supports a local policy configuration
 
-TAPIR-POP is able to apply further policy to the intelligence data,
+dnstapir-pop is able to apply further policy to the intelligence data,
 based on a local policy configuration. To enable the resolver operator to
-design a suitable threat policy TAPIR-POP uses a number of concepts:
+design a suitable threat policy dnstapir-pop uses a number of concepts:
 
 - __lists__: there are three types of lists of domain names:
 
@@ -54,13 +54,13 @@ design a suitable threat policy TAPIR-POP uses a number of concepts:
   - __CSV Files__: Text files on local disk, either with just domain names, or in
     CSV format are supported.
   - __HTTPS__: To bootstrap an intelligence feed that only distributes deltas
-    (like DNS TAPIR, over MQTT), TAPIR-POP can bootstrap the current state of the
+    (like DNS TAPIR, over MQTT), dnstapir-pop can bootstrap the current state of the
     complete feed via HTTPS.
 
-- __outputs__: TAPIR-POP outputs RPZ zones to one or several recipients. Both AXFR and IXFR
+- __outputs__: dnstapir-pop outputs RPZ zones to one or several recipients. Both AXFR and IXFR
   is supported.
 
-## Overview of the TAPIR-POP policy
+## Overview of the dnstapir-pop policy
 
 The resulting policy has the following structure (in order of precedence):
 
