@@ -31,8 +31,11 @@ version.go
 *.src.rpm
 rpm/
 !rpm/SOURCES/dnstapir-pop.service
-!rpm/SPECS/dnstapir-pop.spec
+!rpm/SPECS/dnstapir-pop.spec.in
 
 # Ignore deb build directory and related stuff
 *.deb
 deb/usr
+
+# Ignore output dir
+out

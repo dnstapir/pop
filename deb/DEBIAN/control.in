@@ -1,6 +1,6 @@
 Package: dnstapir-pop
 Architecture: all
-Version: 0.3
+Version: @@VERSION@@
 Section: misc
 Maintainer: Leon Fernandez <leon.fernandez@internetstiftelsen.se>
 Priority: optional

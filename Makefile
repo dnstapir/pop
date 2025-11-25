@@ -1,25 +1,38 @@
+#######################################
+# VERSION SOURCE OF TRUTH FOR PROJECT #
+#######################################
+VERSION:=0.0.0
+
 PROG:=dnstapir-pop
-VERSION:=`cat ./VERSION`
-COMMIT:=`git describe --dirty=+WiP --always`
-APPDATE=`date +"%Y-%m-%d-%H:%M"`
-GOFLAGS:=-v -ldflags "-X app.version=$(VERSION)-$(COMMIT)"
-
+OUT:=$$(pwd)/out
+COMMIT:=$$(cat COMMIT 2> /dev/null || git describe --dirty=+WiP --always 2> /dev/null)
+GOFLAGS:=-v -ldflags "-X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.name=$(PROG)'"
 GOOS ?= $(shell uname -s | tr A-Z a-z)
-
 GO:=GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go
-# GO:=GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=1 go
+INSTALL:=install -b -c -s -p -m 0755
 
-SPECFILE:=rpm/SPECS/dnstapir-pop.spec
+# For version snapshots of packages
+RPM_VERSION:=$(VERSION)
+DEB_VERSION:=$(VERSION)
+ifeq ($(VERSION), 0.0.0)
+  RPM_VERSION=$(VERSION)^$$(date +%Y%m%d).$(COMMIT)
+  DEB_VERSION=$(VERSION)+local$$(date +%Y%m%d).$(COMMIT)
+endif
 
-default: ${PROG}
+all: default
 
-${PROG}: build
+default: $(PROG)
 
-version.go:
-	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
+$(PROG): build
 
-build: version.go # ../tapir/tapir.pb.go
-	$(GO) build $(GOFLAGS) -o ${PROG}
+build: outdir
+	$(GO) build $(GOFLAGS) -o $(OUT)/$(PROG)
+
+outdir:
+	@mkdir -p $(OUT)
+
+install:
+	test -z "$(DESTDIR)" && $(INSTALL) $(OUT)/$(PROG) /usr/bin/ || $(INSTALL) $(OUT)/$(PROG) $(DESTDIR)$(prefix)
 
 lint:
 	go fmt ./...
@@ -28,45 +41,30 @@ lint:
 	gosec ./...
 	golangci-lint run
 
-linux:	
-	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
-	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -o ${PROG}.linux
-
-netbsd:	
-	/bin/sh make-version.sh $(VERSION)-$(COMMIT) $(APPDATE) $(PROG)
-	GOOS=netbsd GOARCH=amd64 go build $(GOFLAGS) -o ${PROG}.netbsd
-
-clean: SHELL:=/bin/bash
 clean:
-	@rm -f $(PROG) *~ version.go
-	@rm -f *.tar.gz
-	@rm -f rpm/SOURCES/*.tar.gz
-	@rm -rf rpm/{BUILD,BUILDROOT,SRPMS,RPMS}
-	@rm -rf deb/usr
-	@rm -rf deb/etc
-	@rm -rf deb/var
-	@rm *.deb
+	@rm -rf $(OUT)
 
-install:
-	mkdir -p /usr/local/libexec
-	install -b -c -s ${PROG} /usr/local/libexec/
+tarball: outdir
+	@echo "$(COMMIT)" > $(OUT)/COMMIT
+	@test -z "$$(git status --porcelain)" && git archive --format=tar.gz --prefix=$(PROG)/ -o $(OUT)/$(PROG).tar.gz --add-file $(OUT)/COMMIT HEAD || echo "won't make tarball from dirty history"
 
-tarball: version.go
-	git archive --format=tar.gz --prefix=$(PROG)/ -o $(PROG)-$(VERSION).tar.gz HEAD
-
-srpm: SHELL:=/bin/bash
 srpm: tarball
-	test $$(rpmspec -q --qf '%{version}' $(SPECFILE) 2>/dev/null || grep '^Version:' $(SPECFILE) | awk '{print $$2}') == $(VERSION)
-	mkdir -p rpm/{BUILD,RPMS,SRPMS}
-	cp $(PROG)-$(VERSION).tar.gz rpm/SOURCES/
-	rpmbuild -bs --define "%_topdir ./rpm" --undefine=dist $(SPECFILE)
-	test -z "$(outdir)" || cp rpm/SRPMS/*.src.rpm "$(outdir)"
+	cp -r rpm $(OUT)
+	sed -e "s/@@VERSION@@/$(RPM_VERSION)/g" $(OUT)/rpm/SPECS/dnstapir-pop.spec.in > $(OUT)/rpm/SPECS/dnstapir-pop.spec
+	cp $(OUT)/$(PROG).tar.gz $(OUT)/rpm/SOURCES/
+	rpmbuild -bs --define "%_topdir $(OUT)/rpm" --undefine=dist $(OUT)/rpm/SPECS/dnstapir-pop.spec
+	cp $(OUT)/rpm/SRPMS/$(PROG)-$(RPM_VERSION)-*.src.rpm $(OUT)
+	test -z "$(outdir)" || cp $(OUT)/$(PROG)-$(RPM_VERSION)-*.src.rpm "$(outdir)"
+
+rpm: srpm
+	rpmbuild --recompile --define "%_topdir $(OUT)/rpm" --undefine=dist $(OUT)/$(PROG)-$(RPM_VERSION)-*.src.rpm
 
 deb: build
-	mkdir -p deb/usr/bin
-	cp $(PROG) deb/usr/bin
-	mkdir -p deb/usr/lib/systemd/system
-	cp rpm/SOURCES/dnstapir-pop.service deb/usr/lib/systemd/system
-	dpkg-deb -b deb/ $(PROG)-$(VERSION).deb
+	cp -r deb $(OUT)
+	mkdir -p $(OUT)/deb/usr/bin
+	mkdir -p $(OUT)/deb/usr/lib/systemd/system
+	cp $(OUT)/$(PROG) $(OUT)/deb/usr/bin
+	sed -e "s/@@VERSION@@/$(DEB_VERSION)/g" $(OUT)/deb/DEBIAN/control.in > $(OUT)/deb/DEBIAN/control
+	dpkg-deb -b $(OUT)/deb/ $(OUT)/$(PROG)-$(DEB_VERSION).deb
 
 .PHONY: build clean generate
