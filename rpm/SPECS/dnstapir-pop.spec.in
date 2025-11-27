@@ -10,6 +10,7 @@ License:       BSD
 URL:           https://www.github.com/dnstapir/pop
 Source0:       %{name}.tar.gz
 Source1:       dnstapir-pop.service
+Source2:       dnstapir-pop.sysusers.conf
 BuildRequires: git
 BuildRequires: golang
 
@@ -41,6 +42,9 @@ touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-dnsengine.log
 touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-mqtt.log
 touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-policy.log
 
+# Users and Groups
+install -m 0644 -D %{SOURCE2} %{buildroot}%{_sysusersdir}/dnstapir-pop.conf
+
 %files
 %license LICENSE
 
@@ -61,9 +65,9 @@ touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-policy.log
 %attr(0660,-,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-policy.yaml
 %attr(0660,-,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-outputs.yaml
 
+%{_sysusersdir}/dnstapir-pop.conf
+
 %pre
-/usr/bin/getent group dnstapir || /usr/sbin/groupadd -r dnstapir
-/usr/bin/getent passwd dnstapir-pop || /usr/sbin/useradd -r -d /etc/dnstapir -G dnstapir -s /sbin/nologin dnstapir-pop
 
 %post
 
