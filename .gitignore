@@ -26,16 +26,10 @@ dnstapir-pop
 tapir-pop
 version.go
 
-# Ignore rpm build directory and related stuff
+# Ignore stray build artefacts
 *.tar.gz
-*.src.rpm
-rpm/
-!rpm/SOURCES/dnstapir-pop.service
-!rpm/SPECS/dnstapir-pop.spec.in
-
-# Ignore deb build directory and related stuff
+*.rpm
 *.deb
-deb/usr
 
 # Ignore output dir
 out
