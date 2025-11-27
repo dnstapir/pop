@@ -1,0 +1,13 @@
+[Unit]
+Description=DNS TAPIR EDGE Policy Processor
+Wants=unbound.service
+Before=unbound.service
+
+[Service]
+Type=simple
+User=dnstapir-pop
+Group=dnstapir
+ExecStart=/usr/bin/dnstapir-pop
+
+[Install]
+WantedBy=multi-user.target
