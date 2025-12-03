@@ -57,8 +57,8 @@ srpm: tarball
 	test -z "$(outdir)" || cp $(OUT)/$(PROG)-$(RPM_VERSION)-*.src.rpm "$(outdir)"
 
 rpm: srpm
-	rpmbuild --rebuild --define "%_topdir $(OUT)/rpm" --undefine=dist $(OUT)/$(PROG)-$(RPM_VERSION)-*.rpm
-	cp $(OUT)/rpm/RPMS/**/$(PROG)-$(RPM_VERSION)-*.rpm $(OUT)
+	rpmbuild --rebuild --define "%_topdir $(OUT)/rpm" --undefine=dist $(OUT)/$(PROG)-$(RPM_VERSION)-*.src.rpm
+	cp $(OUT)/rpm/RPMS/*/$(PROG)-$(RPM_VERSION)-*.rpm $(OUT)
 	test -z "$(outdir)" || cp $(OUT)/$(PROG)-$(RPM_VERSION)-*.rpm "$(outdir)"
 
 deb: build
