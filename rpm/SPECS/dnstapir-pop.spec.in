@@ -21,6 +21,11 @@ Source2:       dnstapir-pop.sysusers.conf
 BuildRequires: git
 BuildRequires: golang
 
+%if %{with sysusers_compat} && 0%{?suse_version}
+Provides: user(dnstapir-pop)
+Provides: group(dnstapir)
+%endif
+
 %description
 DNS TAPIR EDGE Policy Processor
 
