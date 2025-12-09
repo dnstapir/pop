@@ -1,6 +1,13 @@
 # Disable building of debug packages
 %global debug_package %{nil}
 
+# Handle backwards compat for sysuser creation
+%if (0%{?fedora} && 0%{?fedora} < 42) || (0%{?rhel} && 0%{?rhel} <= 10) || (0%{?suse_version} && 0%{?suse_version} < 1660)
+%bcond_without sysusers_compat
+%else
+%bcond_with sysusers_compat
+%endif
+
 Name:          dnstapir-pop
 Version:       @@VERSION@@
 Release:       1%{?dist}
@@ -10,15 +17,21 @@ License:       BSD
 URL:           https://www.github.com/dnstapir/pop
 Source0:       %{name}.tar.gz
 Source1:       dnstapir-pop.service
+Source2:       dnstapir-pop.sysusers.conf
 BuildRequires: git
 BuildRequires: golang
+
+%if %{with sysusers_compat} && 0%{?suse_version}
+Provides: user(dnstapir-pop)
+Provides: group(dnstapir)
+%endif
 
 %description
 DNS TAPIR EDGE Policy Processor
 
-%{!?_unitdir: %define _unitdir /usr/lib/systemd/system/}
-%{!?_sysusersdir: %define _sysusersdir /usr/lib/sysusers.d/}
-%{!?_localstatedir: %define _localstatedir /var/}
+%{!?_unitdir: %define _unitdir /usr/lib/systemd/system}
+%{!?_sysusersdir: %define _sysusersdir /usr/lib/sysusers.d}
+%{!?_localstatedir: %define _localstatedir /var}
 
 %prep
 %setup -n %{name}
@@ -30,7 +43,7 @@ make
 mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_unitdir}
 mkdir -p %{buildroot}%{_sysconfdir}/dnstapir/pop
-mkdir -p %{buildroot}%{_localstatedir}/log/dnstapir/
+mkdir -p %{buildroot}%{_localstatedir}/log/dnstapir
 
 DESTDIR=%{buildroot}%{_bindir} make install
 install -m 0644 %{SOURCE1} %{buildroot}%{_unitdir}
@@ -41,11 +54,14 @@ touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-dnsengine.log
 touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-mqtt.log
 touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-policy.log
 
+# Users and Groups
+install -m 0644 -D %{SOURCE2} %{buildroot}%{_sysusersdir}/dnstapir-pop.conf
+
 %files
 %license LICENSE
 
 %attr(0770,dnstapir-pop,dnstapir) %dir %{_sysconfdir}/dnstapir/pop
-%attr(0770,dnstapir-pop,dnstapir) %dir %{_localstatedir}/log/dnstapir/
+%attr(0770,dnstapir-pop,dnstapir) %dir %{_localstatedir}/log/dnstapir
 
 %attr(0755,dnstapir-pop,dnstapir) %{_bindir}/%{name}
 %attr(0644,dnstapir-pop,dnstapir) %{_unitdir}/dnstapir-pop.service
@@ -61,10 +77,13 @@ touch %{buildroot}%{_localstatedir}/log/dnstapir/pop-policy.log
 %attr(0660,-,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-policy.yaml
 %attr(0660,-,dnstapir) %ghost %{_sysconfdir}/dnstapir/pop-outputs.yaml
 
+%attr(0644,root,root) %{_sysusersdir}/dnstapir-pop.conf
+
+%if %{with sysusers_compat}
 %pre
 /usr/bin/getent group dnstapir || /usr/sbin/groupadd -r dnstapir
 /usr/bin/getent passwd dnstapir-pop || /usr/sbin/useradd -r -d /etc/dnstapir -G dnstapir -s /sbin/nologin dnstapir-pop
-
+%endif
 %post
 
 %preun
