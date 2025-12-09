@@ -29,9 +29,9 @@ Provides: group(dnstapir)
 %description
 DNS TAPIR EDGE Policy Processor
 
-%{!?_unitdir: %define _unitdir /usr/lib/systemd/system/}
-%{!?_sysusersdir: %define _sysusersdir /usr/lib/sysusers.d/}
-%{!?_localstatedir: %define _localstatedir /var/}
+%{!?_unitdir: %define _unitdir /usr/lib/systemd/system}
+%{!?_sysusersdir: %define _sysusersdir /usr/lib/sysusers.d}
+%{!?_localstatedir: %define _localstatedir /var}
 
 %prep
 %setup -n %{name}
@@ -43,7 +43,7 @@ make
 mkdir -p %{buildroot}%{_bindir}
 mkdir -p %{buildroot}%{_unitdir}
 mkdir -p %{buildroot}%{_sysconfdir}/dnstapir/pop
-mkdir -p %{buildroot}%{_localstatedir}/log/dnstapir/
+mkdir -p %{buildroot}%{_localstatedir}/log/dnstapir
 
 DESTDIR=%{buildroot}%{_bindir} make install
 install -m 0644 %{SOURCE1} %{buildroot}%{_unitdir}
@@ -61,7 +61,7 @@ install -m 0644 -D %{SOURCE2} %{buildroot}%{_sysusersdir}/dnstapir-pop.conf
 %license LICENSE
 
 %attr(0770,dnstapir-pop,dnstapir) %dir %{_sysconfdir}/dnstapir/pop
-%attr(0770,dnstapir-pop,dnstapir) %dir %{_localstatedir}/log/dnstapir/
+%attr(0770,dnstapir-pop,dnstapir) %dir %{_localstatedir}/log/dnstapir
 
 %attr(0755,dnstapir-pop,dnstapir) %{_bindir}/%{name}
 %attr(0644,dnstapir-pop,dnstapir) %{_unitdir}/dnstapir-pop.service
