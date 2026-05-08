@@ -2,12 +2,15 @@
  * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
-package main
+package pop
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"net"
 	"strings"
+	"sync"
 
 	"github.com/miekg/dns"
 	"github.com/spf13/viper"
@@ -18,7 +21,7 @@ import (
 // var RpzZones = make(map[string]*tapir.ZoneData, 5)
 
 // func DnsEngine(scannerq chan ScanRequest, updateq chan UpdateRequest) error {
-func DnsEngine(conf *Config) error {
+func DnsEngine(ctx context.Context, conf *Config) error {
 	addresses := viper.GetStringSlice("dnsengine.addresses")
 
 	//      verbose := viper.GetBool("dnsengine.verbose")
@@ -26,24 +29,53 @@ func DnsEngine(conf *Config) error {
 	dns.HandleFunc(".", createHandler(conf))
 
 	conf.Loggers.Dnsengine.Printf("DnsEngine: addresses: %v", addresses)
+	errCh := make(chan error, len(addresses)*2)
+	var wg sync.WaitGroup
+	var servers []*dns.Server
 	for _, addr := range addresses {
-		for _, net := range []string{"udp", "tcp"} {
-			go func(addr, net string) {
-				conf.Loggers.Dnsengine.Printf("DnsEngine: serving on %s (%s)\n", addr, net)
-				server := &dns.Server{Addr: addr, Net: net}
+		for _, proto := range []string{"udp", "tcp"} {
+			server := &dns.Server{Addr: addr, Net: proto}
+			servers = append(servers, server)
+			wg.Add(1)
+			go func(server *dns.Server) {
+				defer wg.Done()
+				conf.Loggers.Dnsengine.Printf("DnsEngine: serving on %s (%s)\n", server.Addr, server.Net)
 
 				// Must bump the buffer size of incoming UDP msgs, as updates
 				// may be much larger then queries
 				server.UDPSize = dns.DefaultMsgSize // 4096
 				if err := server.ListenAndServe(); err != nil {
-					conf.Loggers.Dnsengine.Printf("Failed to setup the %s server: %s\n", net, err.Error())
+					select {
+					case errCh <- fmt.Errorf("failed to setup the %s server on %s: %w", server.Net, server.Addr, err):
+					case <-ctx.Done():
+					}
 				} else {
-					conf.Loggers.Dnsengine.Printf("DnsEngine: listening on %s/%s\n", addr, net)
+					conf.Loggers.Dnsengine.Printf("DnsEngine: listening on %s/%s\n", server.Addr, server.Net)
 				}
-			}(addr, net)
+			}(server)
 		}
 	}
-	return nil
+	if len(servers) == 0 {
+		return nil
+	}
+
+	shutdownServers := func() {
+		for _, server := range servers {
+			if err := server.Shutdown(); err != nil {
+				conf.Loggers.Dnsengine.Printf("DnsEngine: error shutting down %s/%s: %v", server.Addr, server.Net, err)
+			}
+		}
+		wg.Wait()
+	}
+
+	select {
+	case <-ctx.Done():
+		shutdownServers()
+		return nil
+	case err := <-errCh:
+		shutdownServers()
+		return err
+	}
 }
 
 func createHandler(conf *Config) func(w dns.ResponseWriter, r *dns.Msg) {
@@ -318,7 +350,7 @@ func QueryResponder(w dns.ResponseWriter, r *dns.Msg, zd *tapir.ZoneData, qname 
 
 		owner = zd.Owners[zd.OwnerIndex[qname]]
 	default:
-		POPExiter("Error: QueryResponder: unknown zone type: %d", zd.ZoneType)
+		return fmt.Errorf("unknown zone type: %d", zd.ZoneType)
 	}
 
 	var glue *tapir.RRset

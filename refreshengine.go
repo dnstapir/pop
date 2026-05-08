@@ -1,9 +1,10 @@
 /*
  * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
-package main
+package pop
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -44,7 +45,11 @@ type RefreshCounter struct {
 	Downstreams []string
 }
 
-func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
+// RefreshEngineInactiveError is the stable RpzCmdResponse.ErrorMsg prefix
+// returned when an RPZ command is rejected because the refresh engine is disabled.
+const RefreshEngineInactiveError = "refresh engine inactive"
+
+func (pd *PopData) RefreshEngine(ctx context.Context, conf *Config) error {
 
 	var ObservationsCh = pd.TapirObservations
 
@@ -53,9 +58,11 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 	var refreshCounters = make(map[string]*RefreshCounter, 5)
 	refreshTicker := time.NewTicker(1 * time.Second)
+	defer refreshTicker.Stop()
 
 	reaperStart := time.Now().Truncate(pd.ReaperInterval).Add(pd.ReaperInterval)
 	reaperTicker := time.NewTicker(pd.ReaperInterval)
+	defer reaperTicker.Stop()
 
 	go func() {
 		time.Sleep(time.Until(reaperStart))
@@ -64,9 +71,20 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 	if !viper.GetBool("services.refreshengine.active") {
 		log.Printf("Refresh Engine is NOT active. Zones will only be updated on receipt on Notifies.")
-		for range zonerefch {
-			// ensure that we keep reading to keep the channel open
-			continue
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-zonerefch:
+				// ensure that we keep reading to keep the channel open
+				continue
+			case cmd, ok := <-rpzcmdch:
+				if !ok {
+					rpzcmdch = nil
+					continue
+				}
+				respondRefreshEngineInactive(cmd)
+			}
 		}
 	} else {
 		log.Printf("RefreshEngine: Starting")
@@ -88,6 +106,9 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 	for {
 		select {
+		case <-ctx.Done():
+			log.Printf("RefreshEngine: stopping")
+			return nil
 		case tpkg = <-ObservationsCh:
 			tm := tapir.TapirMsg{}
 			err := json.Unmarshal(tpkg.Payload, &tm)
@@ -101,41 +122,24 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					tm.SrcName, len(tm.Added), len(tm.Removed))
 				_, err := pd.ProcessTapirUpdate(tm)
 				if err != nil {
-					Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+					pd.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 						Status:    tapir.StatusFail,
 						Component: "tapir-observation",
 						Msg:       fmt.Sprintf("ProcessTapirUpdate error: %v", err),
 					}
 					log.Printf("RefreshEngine: Error from ProcessTapirUpdate(): %v", err)
-				}
-				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
-					Status:    tapir.StatusOK,
-					Component: "tapir-observation",
-					Msg:       fmt.Sprintf("ProcessTapirUpdate: MQTT observation message received"),
+				} else {
+					pd.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+						Status:    tapir.StatusOK,
+						Component: "tapir-observation",
+						Msg:       "ProcessTapirUpdate: MQTT observation message received",
+					}
 				}
 				log.Printf("RefreshEngine: Tapir Observation update evaluated.")
 
-				//			case "global-config":
-				//				if !strings.HasSuffix(tpkg.Topic, "config") {
-				//					log.Printf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic)
-				//					Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
-				//						Status:    "fail",
-				//						Component: "mqtt-config",
-				//						Msg:       fmt.Sprintf("RefreshEngine: received global-config message on wrong topic: %s. Ignored", tpkg.Topic),
-				//					}
-				//					continue
-				//				}
-				//				pd.ProcessTapirGlobalConfig(tm)
-				//				log.Printf("RefreshEngine: Tapir Global Config evaluated.")
-				//				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
-				//					Status:    "ok",
-				//					Component: "mqtt-config",
-				//					Msg:       fmt.Sprintf("RefreshEngine: Tapir Global Config evaluated."),
-				//				}
-
 			default:
 				log.Printf("RefreshEngine: Tapir Message: unknown msg type: %s", tm.MsgType)
-				Gconfig.Internal.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+				pd.ComponentStatusCh <- tapir.ComponentStatusUpdate{
 					Status:    tapir.StatusFail,
 					Component: "mqtt-unknown",
 					Msg:       fmt.Sprintf("RefreshEngine: Tapir Message: unknown msg type: %s", tm.MsgType),
@@ -272,11 +276,10 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				rc.CurRefresh--
 				if rc.CurRefresh <= 0 {
 					upstream = rc.Upstream
-					//					if rc.RRKeepFunc == nil {
-					//						panic("RefreshEngine: keepfunc=nil")
-					//					}
 					if rc.RRParseFunc == nil {
-						panic("RefreshEngine: parsefunc=nil")
+						log.Printf("RefreshEngine: zone %s has nil RRParseFunc, removing refresh counter", zone)
+						delete(refreshCounters, zone)
+						continue
 					}
 
 					log.Printf("RefreshEngine: will refresh zone %s due to refresh counter", zone)
@@ -333,12 +336,12 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						}
 						resp.Msg = fmt.Sprintf("Zone %s: bumped serial from %d to %d. Notified downstreams: %v",
 							zone, resp.OldSerial, resp.NewSerial, rc.Downstreams)
-						log.Printf(resp.Msg)
+						log.Print(resp.Msg)
 						resp.Status = true
 					} else {
 						resp.Error = true
 						resp.ErrorMsg = fmt.Sprintf("Request to bump serial for unknown zone '%s'", zone)
-						log.Printf(resp.ErrorMsg)
+						log.Print(resp.ErrorMsg)
 					}
 				}
 				cmd.Result <- resp
@@ -440,6 +443,27 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 	}
 }
 
+func respondRefreshEngineInactive(cmd RpzCmdData) {
+	resp := RpzCmdResponse{
+		Time:     time.Now(),
+		Zone:     cmd.Zone,
+		Domain:   cmd.Domain,
+		Error:    true,
+		ErrorMsg: fmt.Sprintf("%s: command %q rejected", RefreshEngineInactiveError, cmd.Command),
+	}
+	if cmd.Result == nil {
+		log.Printf("RefreshEngine: dropping inactive-engine response for command %q with nil result channel", cmd.Command)
+		return
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("RefreshEngine: dropping inactive-engine response for command %q on closed result channel: %v", cmd.Command, r)
+		}
+	}()
+	cmd.Result <- resp
+}
+
 func (pd *PopData) NotifyDownstreams() error {
 	pd.Logger.Printf("RefreshEngine: Notifying %d downstreams for RPZ zone %s", len(pd.Downstreams), pd.Rpz.ZoneName)
 	for _, d := range pd.Downstreams {
@@ -460,27 +484,27 @@ func (pd *PopData) NotifyDownstreams() error {
 		if err != nil {
 			// well, we tried
 			csu.Msg = fmt.Sprintf("Error from downstream %s on NOTIFY(%s): %v", dest, pd.Rpz.ZoneName, err)
-			Gconfig.Internal.ComponentStatusCh <- csu
+			pd.ComponentStatusCh <- csu
 			pd.Logger.Println(csu.Msg)
 			continue
 		}
 		if r.Opcode != dns.OpcodeNotify {
 			// well, we tried
 			csu.Msg = fmt.Sprintf("Error: not a NOTIFY response from downstream %s on NOTIFY(%s): %s", dest, pd.Rpz.ZoneName, dns.OpcodeToString[r.Opcode])
-			Gconfig.Internal.ComponentStatusCh <- csu
+			pd.ComponentStatusCh <- csu
 			pd.Logger.Println(csu.Msg)
 			continue
 
 		} else {
 			if r.Rcode != dns.RcodeSuccess {
 				csu.Msg = fmt.Sprintf("Downstream %s responded with rcode %s to NOTIFY(%s) about new SOA serial (%d)", dest, dns.RcodeToString[r.Rcode], pd.Rpz.ZoneName, pd.Rpz.Axfr.SOA.Serial)
-				Gconfig.Internal.ComponentStatusCh <- csu
+				pd.ComponentStatusCh <- csu
 				pd.Logger.Println(csu.Msg)
 				continue
 			}
 			csu.Status = tapir.StatusOK
 			csu.Msg = fmt.Sprintf("Downstream %s responded correctly to NOTIFY(%s) about new SOA serial (%d)", dest, pd.Rpz.ZoneName, pd.Rpz.Axfr.SOA.Serial)
-			Gconfig.Internal.ComponentStatusCh <- csu
+			pd.ComponentStatusCh <- csu
 			pd.Logger.Println(csu.Msg)
 		}
 	}

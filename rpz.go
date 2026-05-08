@@ -2,7 +2,7 @@
  * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
-package main
+package pop
 
 import (
 	"github.com/dnstapir/tapir"
@@ -67,7 +67,10 @@ func (pd *PopData) GenerateRpzAxfr() error {
 					// pd.Logger.Printf("Doubtlisted name %s is also allowlisted. Dropped from output.", k)
 				} else {
 					// pd.Logger.Printf("Doubtlisted name %s is not allowlisted. Evalutate inclusion in output.", k)
-					action := pd.ComputeRpzAction(k)
+					action, err := pd.ComputeRpzAction(k)
+					if err != nil {
+						return err
+					}
 					if action == tapir.ALLOWLIST {
 						// pd.Logger.Printf("Doubtlisted name %s is not included in output.", k)
 					} else {
@@ -186,7 +189,10 @@ func (pd *PopData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 		tn.Name = dns.Fqdn(tn.Name)
 		pd.Policy.Logger.Printf("GenerateRpzIxfr: evaluating removed name %s", tn.Name)
 		if cur, exist := pd.Rpz.Axfr.Data[tn.Name]; exist {
-			newAction := pd.ComputeRpzAction(tn.Name)
+			newAction, err := pd.ComputeRpzAction(tn.Name)
+			if err != nil {
+				return RpzIxfr{}, err
+			}
 			oldAction := cur.Action
 			if newAction != oldAction {
 				if pd.Debug {
@@ -232,7 +238,10 @@ func (pd *PopData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 		tn.Name = dns.Fqdn(tn.Name)
 		pd.Policy.Logger.Printf("GenerateRpzIxfr: evaluating added name %s", tn.Name)
 		addtorpz = false
-		newAction := pd.ComputeRpzAction(tn.Name)
+		newAction, err := pd.ComputeRpzAction(tn.Name)
+		if err != nil {
+			return RpzIxfr{}, err
+		}
 		if cur, exist := pd.Rpz.Axfr.Data[tn.Name]; exist {
 			if newAction == tapir.ALLOWLIST {
 				// delete from rpz

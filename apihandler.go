@@ -2,12 +2,14 @@
  * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
-package main
+package pop
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -246,9 +248,9 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			w.Header().Set("Content-Type", "application/json")
 			me := conf.PopData.MqttEngine
-            me.DataMu.Lock() /* Lock because resp.TopicData needs to be accessed safely */
+			me.DataMu.Lock() /* Lock because resp.TopicData needs to be accessed safely */
 			err := json.NewEncoder(w).Encode(resp)
-            me.DataMu.Unlock()
+			me.DataMu.Unlock()
 			if err != nil {
 				log.Printf("Error from json encoder: %v", err)
 				log.Printf("resp: %v", resp)
@@ -270,9 +272,9 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		switch bp.Command {
 		case "doubtlist-status":
 			me := conf.PopData.MqttEngine
-            me.DataMu.Lock()
+			me.DataMu.Lock()
 			stats := me.Stats()
-            me.DataMu.Unlock()
+			me.DataMu.Unlock()
 			// resp.MsgCounters = stats.MsgCounters
 			// resp.MsgTimeStamps = stats.MsgTimeStamps
 			resp.TopicData = stats
@@ -544,7 +546,7 @@ func SetupBootstrapRouter(conf *Config) *mux.Router {
 	return r
 }
 
-func walkRoutes(router *mux.Router, address string) {
+func walkRoutes(router *mux.Router, address string) error {
 	log.Printf("Defined API endpoints for router on: %s\n", address)
 
 	walker := func(route *mux.Route, router *mux.Router, ancestors []*mux.Route) error {
@@ -556,18 +558,20 @@ func walkRoutes(router *mux.Router, address string) {
 		return nil
 	}
 	if err := router.Walk(walker); err != nil {
-		log.Panicf("Logging err: %s\n", err.Error())
+		return fmt.Errorf("walking routes: %w", err)
 	}
-	//	return nil
+	return nil
 }
 
 // In practice APIdispatcher doesn't need a termination signal, as it will
 // just sit inside http.ListenAndServe, but we keep it for symmetry.
-func APIhandler(conf *Config, done <-chan struct{}) {
+func APIhandler(ctx context.Context, conf *Config) error {
 	gob.Register(tapir.WBGlist{}) // Must register the type for gob encoding
 	router := SetupRouter(conf)
 
-	walkRoutes(router, viper.GetString("apiserver.address"))
+	if err := walkRoutes(router, viper.GetString("apiserver.address")); err != nil {
+		return err
+	}
 	log.Println("")
 
 	addresses := viper.GetStringSlice("apiserver.addresses")
@@ -606,47 +610,70 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 	// tls.RequireAnyClientCert, tls.RequestClientCert, tls.NoClientCert
 
 	if err != nil {
-		POPExiter("Error creating API server tls config: %v\n", err)
+		return fmt.Errorf("error creating API server tls config: %w", err)
 	}
 
 	var wg sync.WaitGroup
+	var serveWG sync.WaitGroup
+	serverErrCh := make(chan error, len(addresses)+len(tlsaddresses)+len(bootstrapaddresses)+len(bootstraptlsaddresses))
+	var servers []*http.Server
+
+	startServer := func(label string, server *http.Server, serve func() error) {
+		servers = append(servers, server)
+		wg.Add(1)
+		serveWG.Add(1)
+		go func() {
+			defer serveWG.Done()
+			log.Printf("*** API: Starting %s. Listening on %s", label, server.Addr)
+			wg.Done()
+			if err := serve(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				select {
+				case serverErrCh <- fmt.Errorf("%s on %s: %w", label, server.Addr, err):
+				case <-ctx.Done():
+				}
+			}
+		}()
+	}
+
+	shutdownServers := func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		for _, server := range servers {
+			if err := server.Shutdown(shutdownCtx); err != nil {
+				log.Printf("APIhandler: error shutting down server on %s: %v", server.Addr, err)
+			}
+		}
+		serveWG.Wait()
+	}
+	defer shutdownServers()
 
 	// log.Println("*** API: Starting API dispatcher #1. Listening on", address)
 
 	if len(addresses) > 0 {
 		for idx, address := range addresses {
-			wg.Add(1)
-			go func(wg *sync.WaitGroup) {
-				apiServer := &http.Server{
-					Addr:         address,
-					Handler:      router,
-					ReadTimeout:  10 * time.Second,
-					WriteTimeout: 10 * time.Second,
-				}
-
-				log.Printf("*** API: Starting API dispatcher #%d. Listening on %s", idx+1, address)
-				wg.Done()
-				POPExiter(apiServer.ListenAndServe())
-			}(&wg)
+			apiServer := &http.Server{
+				Addr:         address,
+				Handler:      router,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+			}
+			startServer(fmt.Sprintf("API dispatcher #%d", idx+1), apiServer, apiServer.ListenAndServe)
 		}
 	}
 
 	if len(tlsaddresses) > 0 {
 		if tlspossible {
 			for idx, tlsaddress := range tlsaddresses {
-				wg.Add(1)
-				go func(wg *sync.WaitGroup) {
-					tlsServer := &http.Server{
-						Addr:         tlsaddress,
-						Handler:      router,
-						TLSConfig:    tlsConfig,
-						ReadTimeout:  10 * time.Second,
-						WriteTimeout: 10 * time.Second,
-					}
-					log.Printf("*** API: Starting TLS API dispatcher #%d. Listening on %s", idx+1, tlsaddress)
-					wg.Done()
-					POPExiter(tlsServer.ListenAndServeTLS(certfile, keyfile))
-				}(&wg)
+				tlsServer := &http.Server{
+					Addr:         tlsaddress,
+					Handler:      router,
+					TLSConfig:    tlsConfig,
+					ReadTimeout:  10 * time.Second,
+					WriteTimeout: 10 * time.Second,
+				}
+				startServer(fmt.Sprintf("TLS API dispatcher #%d", idx+1), tlsServer, func() error {
+					return tlsServer.ListenAndServeTLS(certfile, keyfile)
+				})
 			}
 		} else {
 			log.Printf("*** API: APIdispatcher: Error: Cannot provide TLS service without cert and key files.\n")
@@ -655,18 +682,13 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 
 	if len(bootstrapaddresses) > 0 {
 		for idx, address := range bootstrapaddresses {
-			wg.Add(1)
-			go func(wg *sync.WaitGroup) {
-				apiServer := &http.Server{
-					Addr:         address,
-					Handler:      bootstraprouter,
-					ReadTimeout:  10 * time.Second,
-					WriteTimeout: 10 * time.Second,
-				}
-				log.Printf("*** API: Starting Bootstrap API dispatcher #%d. Listening on %s", idx+1, address)
-				wg.Done()
-				POPExiter(apiServer.ListenAndServe())
-			}(&wg)
+			apiServer := &http.Server{
+				Addr:         address,
+				Handler:      bootstraprouter,
+				ReadTimeout:  10 * time.Second,
+				WriteTimeout: 10 * time.Second,
+			}
+			startServer(fmt.Sprintf("Bootstrap API dispatcher #%d", idx+1), apiServer, apiServer.ListenAndServe)
 		}
 	} else {
 		log.Println("*** API: No bootstrap address specified")
@@ -675,20 +697,16 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 	if len(bootstraptlsaddresses) > 0 {
 		if tlspossible {
 			for idx, address := range bootstraptlsaddresses {
-				wg.Add(1)
-				go func(wg *sync.WaitGroup) {
-					bootstrapTlsServer := &http.Server{
-						Addr:         address,
-						Handler:      bootstraprouter,
-						TLSConfig:    tlsConfig,
-						ReadTimeout:  10 * time.Second,
-						WriteTimeout: 10 * time.Second,
-					}
-
-					log.Printf("*** API: Starting Bootstrap TLS API dispatcher #%d. Listening on %s", idx+1, address)
-					wg.Done()
-					POPExiter(bootstrapTlsServer.ListenAndServeTLS(certfile, keyfile))
-				}(&wg)
+				bootstrapTlsServer := &http.Server{
+					Addr:         address,
+					Handler:      bootstraprouter,
+					TLSConfig:    tlsConfig,
+					ReadTimeout:  10 * time.Second,
+					WriteTimeout: 10 * time.Second,
+				}
+				startServer(fmt.Sprintf("Bootstrap TLS API dispatcher #%d", idx+1), bootstrapTlsServer, func() error {
+					return bootstrapTlsServer.ListenAndServeTLS(certfile, keyfile)
+				})
 			}
 		} else {
 			log.Printf("*** API: APIdispatcher: Error: Cannot provide Bootstrap TLS service without cert and key files.\n")
@@ -698,7 +716,18 @@ func APIhandler(conf *Config, done <-chan struct{}) {
 	}
 
 	wg.Wait()
-	log.Println("API dispatcher: unclear how to stop the http server nicely.")
+	if len(servers) == 0 {
+		log.Println("API dispatcher: no API servers configured")
+		return nil
+	}
+
+	select {
+	case <-ctx.Done():
+		log.Println("API dispatcher: stopping")
+		return nil
+	case err := <-serverErrCh:
+		return err
+	}
 }
 
 func BumpSerial(conf *Config, zone string) (string, error) {

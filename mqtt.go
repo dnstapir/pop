@@ -2,7 +2,7 @@
  * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
-package main
+package pop
 
 import (
 	"fmt"
@@ -15,13 +15,13 @@ import (
 
 func (pd *PopData) CreateMqttEngine(clientid string, statusch chan tapir.ComponentStatusUpdate, lg *log.Logger) error {
 	if clientid == "" {
-		POPExiter("Error starting MQTT Engine: clientid not specified in config")
+		return fmt.Errorf("clientid not specified in config")
 	}
 	var err error
 	pd.Logger.Printf("Creating MQTT Engine with clientid %s", clientid)
 	pd.MqttEngine, err = tapir.NewMqttEngine("tapir-pop", clientid, tapir.TapirSub, statusch, lg) // sub, but no pub
 	if err != nil {
-		POPExiter("Error from NewMqttEngine: %v\n", err)
+		return fmt.Errorf("NewMqttEngine: %w", err)
 	}
 	return nil
 }
@@ -30,17 +30,19 @@ func (pd *PopData) StartMqttEngine(meng *tapir.MqttEngine) error {
 	if pd.TapirMqttEngineRunning {
 		return nil
 	}
+	if meng == nil {
+		return fmt.Errorf("MQTT engine is nil")
+	}
 
 	cmnder, outbox, inbox, err := meng.StartEngine()
 	if err != nil {
-		log.Fatalf("Error from StartEngine(): %v", err)
+		return fmt.Errorf("StartEngine: %w", err)
 	}
 	pd.TapirMqttCmdCh = cmnder
 	pd.TapirMqttPubCh = outbox
 	pd.TapirObservations = inbox
 	pd.TapirMqttEngineRunning = true
 
-	meng.SetupInterruptHandler()
 	return nil
 }
 

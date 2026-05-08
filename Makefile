@@ -8,7 +8,8 @@ OUT:=$$(pwd)/out
 COMMIT:=$$(cat COMMIT 2> /dev/null || git describe --dirty=+WiP --always 2> /dev/null)
 GOFLAGS:=-v -ldflags "-X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.name=$(PROG)'"
 GOOS ?= $(shell uname -s | tr A-Z a-z)
-GO:=GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go
+GOCACHE ?= $(OUT)/.gocache
+GO:=GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 GOCACHE=$(GOCACHE) go
 INSTALL:=install -b -c -s -p -m 0755
 
 # For version snapshots of packages
@@ -26,7 +27,7 @@ default: $(PROG)
 $(PROG): build
 
 build: outdir
-	$(GO) build $(GOFLAGS) -o $(OUT)/$(PROG)
+	$(GO) build $(GOFLAGS) -o $(OUT)/$(PROG) ./cmd/pop
 
 outdir:
 	@mkdir -p $(OUT)

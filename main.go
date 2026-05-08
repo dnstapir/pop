@@ -2,45 +2,40 @@
  * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
-package main
+package pop
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
 	"log"
-
 	"os"
-	"os/signal"
-
-	"sync"
-	"syscall"
+	"strings"
 	"time"
 
+	"github.com/dnstapir/tapir"
 	"github.com/google/uuid"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
-
-	"github.com/dnstapir/tapir"
 )
 
-/* Rewritten if building with make */
-var name    = "BAD-BUILD"
-var version = "BAD-BUILD"
-var commit  = "BAD-BUILD"
-
-var POPExiter = func(args ...interface{}) {
-	log.Printf("POPExiter: [placeholderfunction w/o real cleanup]")
-	log.Printf("POPExiter: Exit message: %s", fmt.Sprintf(args[0].(string), args[1:]...))
-	os.Exit(1)
+type RunOptions struct {
+	Name    string
+	Version string
+	Commit  string
+	Args    []string
+	Stdout  io.Writer
+	Stderr  io.Writer
+	Reload  <-chan struct{}
 }
 
 func (pd *PopData) SaveRpzSerial() error {
-	// Save the current value of pd.Downstreams.Serial to a text file
 	serialFile := viper.GetString("services.rpz.serialcache")
 	if serialFile == "" {
-		log.Fatalf("POPExiter:No serial cache file specified")
+		return fmt.Errorf("no serial cache file specified")
 	}
-	// serialData := []byte(fmt.Sprintf("%d", pd.Rpz.CurrentSerial))
-	// err := os.WriteFile(serialFile, serialData, 0644)
+
 	serialYaml := fmt.Sprintf("current_serial: %d\n", pd.Rpz.CurrentSerial)
 	err := os.WriteFile(serialFile, []byte(serialYaml), 0644) // #nosec G306
 	if err != nil {
@@ -51,197 +46,132 @@ func (pd *PopData) SaveRpzSerial() error {
 	return err
 }
 
-func mainloop(conf *Config, configfile *string, pd *PopData) {
-	log.Println("mainloop: enter")
-	exit := make(chan os.Signal, 1)
-	signal.Notify(exit, syscall.SIGINT, syscall.SIGTERM)
-	hupper := make(chan os.Signal, 1)
-	signal.Notify(hupper, syscall.SIGHUP)
-
-	POPExiter = func(args ...interface{}) {
-		var msg string
-		log.Printf("POPExiter: will try to clean up.")
-
-		err := pd.SaveRpzSerial()
-		if err != nil {
-			log.Printf("Error saving RPZ serial: %v", err)
-		}
-
-		switch args[0].(type) {
-		case string:
-			msg = fmt.Sprintf("POPExiter: Exit message: %s",
-				fmt.Sprintf(args[0].(string), args[1:]...))
-		case error:
-			msg = fmt.Sprintf("POPExiter: Error message: %s", args[0].(error).Error())
-
-		default:
-			msg = fmt.Sprintf("POPExiter: Exit message: %v", args[0])
-		}
-
-		fmt.Println(msg)
-		log.Println(msg)
-
-		os.Exit(1)
+func Run(ctx context.Context, opts RunOptions) (runErr error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	stdout := opts.Stdout
+	if stdout == nil {
+		stdout = os.Stdout
+	}
+	stderr := opts.Stderr
+	if stderr == nil {
+		stderr = os.Stderr
+	}
+	name := opts.Name
+	if name == "" {
+		name = "dnstapir-pop"
+	}
+	version := opts.Version
+	if version == "" {
+		version = "BAD-BUILD"
+	}
+	commit := opts.Commit
+	if commit == "" {
+		commit = "BAD-BUILD"
 	}
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-
-	go func() {
-		for {
-			// log.Println("mainloop: signal dispatcher")
-			select {
-			case <-exit:
-				log.Println("mainloop: Exit signal received. Cleaning up.")
-				err := pd.SaveRpzSerial()
-				if err != nil {
-					log.Printf("Error saving RPZ serial: %v", err)
-				}
-				// do whatever we need to do to wrap up nicely
-				wg.Done()
-			case <-hupper:
-				// config file to use has already been set in main()
-				if err := viper.ReadInConfig(); err == nil {
-					fmt.Fprintln(os.Stderr, "Using config file:", *configfile)
-				} else {
-					POPExiter("Could not load config %s: Error: %v", *configfile, err)
-				}
-
-				log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
-				log.Printf("mainloop: Requesting refresh of all RPZ zones")
-				conf.PopData.RpzRefreshCh <- RpzRefresh{Name: ""}
-			case <-conf.Internal.APIStopCh:
-				log.Printf("mainloop: API instruction to stop\n")
-				err := pd.SaveRpzSerial()
-				if err != nil {
-					log.Printf("Error saving RPZ serial: %v", err)
-				}
-				wg.Done()
-			}
-		}
-	}()
-	wg.Wait()
-
-	log.Println("mainloop: leaving signal dispatcher")
-}
-
-var Gconfig Config
-var mqttclientid string
-
-
-func main() {
-	fmt.Printf("%s (TAPIR Edge Manager) version %s (%s) starting.\n", name, version, commit)
-	// var conf Config
-	mqttclientid = "tapir-pop-" + uuid.New().String()
-	flag.BoolVarP(&tapir.GlobalCF.Debug, "debug", "d", false, "Debug mode")
-	flag.BoolVarP(&tapir.GlobalCF.Verbose, "verbose", "v", false, "Verbose mode")
-	flag.StringVarP(&mqttclientid, "client-id", "", mqttclientid, "MQTT client id, default is a random string")
-
-	flag.Parse()
-
-	var cfgFileUsed string
-
-	var cfgFile string
-	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
-	} else {
-		viper.SetConfigFile(tapir.DefaultPopCfgFile)
+	if _, err := fmt.Fprintf(stdout, "%s (TAPIR Edge Manager) version %s (%s) starting.\n", name, version, commit); err != nil {
+		return fmt.Errorf("writing startup message: %w", err)
 	}
 
-	viper.AutomaticEnv() // read in environment variables that match
-
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-		cfgFileUsed = viper.ConfigFileUsed()
-	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.DefaultPopCfgFile, err)
-	}
-	viper.SetConfigFile(tapir.PopSourcesCfgFile)
-	if err := viper.MergeInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-		cfgFileUsed = viper.ConfigFileUsed()
-	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.PopSourcesCfgFile, err)
-	}
-	viper.SetConfigFile(tapir.PopOutputsCfgFile)
-	if err := viper.MergeInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-		cfgFileUsed = viper.ConfigFileUsed()
-	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.PopOutputsCfgFile, err)
-	}
-	viper.SetConfigFile(tapir.PopPolicyCfgFile)
-	if err := viper.MergeInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-		cfgFileUsed = viper.ConfigFileUsed()
-	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.PopPolicyCfgFile, err)
+	mqttClientID := "tapir-pop-" + uuid.New().String()
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.BoolVarP(&tapir.GlobalCF.Debug, "debug", "d", false, "Debug mode")
+	fs.BoolVarP(&tapir.GlobalCF.Verbose, "verbose", "v", false, "Verbose mode")
+	fs.StringVar(&mqttClientID, "client-id", mqttClientID, "MQTT client id, default is a random string")
+	if err := fs.Parse(opts.Args); err != nil {
+		return err
 	}
 
-	SetupLogging(&Gconfig)
-
-	err := ValidateConfig(nil, cfgFileUsed) // will terminate on error
+	cfgFiles, err := loadConfigFiles(stderr)
 	if err != nil {
-		POPExiter("Error validating config: %v", err)
+		return err
 	}
 
-	err = viper.Unmarshal(&Gconfig)
-	if err != nil {
-		POPExiter("Error unmarshalling config into struct: %v", err)
+	if err := ValidateConfig(nil, strings.Join(cfgFiles, ", ")); err != nil {
+		return fmt.Errorf("error validating config: %w", err)
 	}
 
-	var stopch = make(chan struct{}, 10)
+	var conf Config
+	if err := viper.Unmarshal(&conf); err != nil {
+		return fmt.Errorf("error unmarshalling config into struct: %w", err)
+	}
+
+	if err := SetupLogging(&conf); err != nil {
+		return err
+	}
 
 	statusch := make(chan tapir.ComponentStatusUpdate, 10)
-	Gconfig.Internal.ComponentStatusCh = statusch
+	conf.Internal.ComponentStatusCh = statusch
+	conf.Internal.APIStopCh = make(chan struct{}, 1)
 
-	pd, err := NewPopData(&Gconfig, log.Default())
+	pd, err := NewPopData(&conf, log.Default())
 	if err != nil {
-		POPExiter("Error from NewPopData: %v", err)
+		return fmt.Errorf("error from NewPopData: %w", err)
 	}
+	defer func() {
+		if cleanupErr := cleanupPopData(pd); cleanupErr != nil {
+			runErr = errors.Join(runErr, cleanupErr)
+		}
+	}()
 
 	if pd.MqttEngine == nil {
 		pd.mu.Lock()
-		err := pd.CreateMqttEngine(mqttclientid, statusch, pd.MqttLogger)
-		if err != nil {
-			POPExiter("Error creating MQTT Engine: %v", err)
-		}
+		err := pd.CreateMqttEngine(mqttClientID, statusch, pd.MqttLogger)
 		pd.mu.Unlock()
-		err = pd.StartMqttEngine(pd.MqttEngine)
 		if err != nil {
-			POPExiter("Error starting MQTT Engine: %v", err)
+			return fmt.Errorf("error creating MQTT Engine: %w", err)
+		}
+		if err := pd.StartMqttEngine(pd.MqttEngine); err != nil {
+			return fmt.Errorf("error starting MQTT Engine: %w", err)
 		}
 	}
 
-	go pd.ConfigUpdater(&Gconfig, stopch) // Note that ConfigUpdater must as early as possible
-	go pd.StatusUpdater(&Gconfig, stopch) // Note that StatusUpdater must as early as possible
-	go pd.RefreshEngine(&Gconfig, stopch)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	workerErrCh := make(chan error, 5)
+	startWorker := func(name string, fn func(context.Context) error) {
+		go func() {
+			if err := fn(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				select {
+				case workerErrCh <- fmt.Errorf("%s: %w", name, err):
+				case <-ctx.Done():
+				}
+			}
+		}()
+	}
+
+	startWorker("config updater", func(ctx context.Context) error {
+		return pd.ConfigUpdater(ctx, &conf)
+	})
+	startWorker("status updater", func(ctx context.Context) error {
+		return pd.StatusUpdater(ctx, &conf)
+	})
+	startWorker("refresh engine", func(ctx context.Context) error {
+		return pd.RefreshEngine(ctx, &conf)
+	})
 
 	log.Println("*** main: Calling ParseSourcesNG()")
-	err = pd.ParseSourcesNG()
-	if err != nil {
-		POPExiter("Error from ParseSourcesNG: %v", err)
+	if err := pd.ParseSourcesNG(); err != nil {
+		return fmt.Errorf("error from ParseSourcesNG: %w", err)
 	}
 	log.Println("*** main: Returned from ParseSourcesNG()")
 
-	err = pd.ParseOutputs()
-	if err != nil {
-		POPExiter("Error from ParseOutputs: %v", err)
+	if err := pd.ParseOutputs(); err != nil {
+		return fmt.Errorf("error from ParseOutputs: %w", err)
 	}
 
-	apistopper := make(chan struct{}) //
-	Gconfig.Internal.APIStopCh = apistopper
-	go APIhandler(&Gconfig, apistopper)
-	//	go httpsserver(&conf, apistopper)
+	startWorker("api handler", func(ctx context.Context) error {
+		return APIhandler(ctx, &conf)
+	})
+	startWorker("dns engine", func(ctx context.Context) error {
+		return DnsEngine(ctx, &conf)
+	})
 
-	go func() {
-		if err := DnsEngine(&Gconfig); err != nil {
-			log.Printf("Error starting DnsEngine: %v", err)
-		}
-	}()
-	Gconfig.BootTime = time.Now()
-
+	conf.BootTime = time.Now()
 	statusch <- tapir.ComponentStatusUpdate{
 		Component: "main-boot",
 		Status:    tapir.StatusOK,
@@ -249,5 +179,114 @@ func main() {
 		TimeStamp: time.Now(),
 	}
 
-	mainloop(&Gconfig, &cfgFileUsed, pd)
+	return runLoop(ctx, &conf, cfgFiles, opts.Reload, workerErrCh, stderr)
+}
+
+func loadConfigFiles(stderr io.Writer) ([]string, error) {
+	viper.Reset()
+	viper.SetConfigFile(tapir.DefaultPopCfgFile)
+	viper.AutomaticEnv()
+
+	if err := viper.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("could not load config %s: %w", tapir.DefaultPopCfgFile, err)
+	}
+	cfgFiles := []string{viper.ConfigFileUsed()}
+	if err := printConfigFileUsed(stderr, cfgFiles[0]); err != nil {
+		return nil, err
+	}
+
+	for _, cfgFile := range []string{
+		tapir.PopSourcesCfgFile,
+		tapir.PopOutputsCfgFile,
+		tapir.PopPolicyCfgFile,
+	} {
+		viper.SetConfigFile(cfgFile)
+		if err := viper.MergeInConfig(); err != nil {
+			return nil, fmt.Errorf("could not load config %s: %w", cfgFile, err)
+		}
+		cfgFiles = append(cfgFiles, viper.ConfigFileUsed())
+		if err := printConfigFileUsed(stderr, viper.ConfigFileUsed()); err != nil {
+			return nil, err
+		}
+	}
+
+	return cfgFiles, nil
+}
+
+func runLoop(ctx context.Context, conf *Config, cfgFiles []string, reload <-chan struct{}, workerErrCh <-chan error, stderr io.Writer) error {
+	log.Println("mainloop: enter")
+	defer log.Println("mainloop: leaving signal dispatcher")
+
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("mainloop: context cancelled. Cleaning up.")
+			return nil
+		case err := <-workerErrCh:
+			if err != nil {
+				return err
+			}
+		case <-reload:
+			if err := reloadConfig(cfgFiles, stderr); err != nil {
+				return err
+			}
+			log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
+			log.Printf("mainloop: Requesting refresh of all RPZ zones")
+			conf.PopData.RpzRefreshCh <- RpzRefresh{Name: ""}
+		case <-conf.Internal.APIStopCh:
+			log.Printf("mainloop: API instruction to stop\n")
+			return nil
+		}
+	}
+}
+
+func reloadConfig(cfgFiles []string, stderr io.Writer) error {
+	if len(cfgFiles) == 0 {
+		return fmt.Errorf("no config files to reload")
+	}
+	viper.Reset()
+	viper.SetConfigFile(cfgFiles[0])
+	viper.AutomaticEnv()
+
+	if err := viper.ReadInConfig(); err != nil {
+		return fmt.Errorf("could not load config %s: %w", cfgFiles[0], err)
+	}
+	if err := printConfigFileUsed(stderr, viper.ConfigFileUsed()); err != nil {
+		return err
+	}
+
+	for _, cfgFile := range cfgFiles[1:] {
+		viper.SetConfigFile(cfgFile)
+		if err := viper.MergeInConfig(); err != nil {
+			return fmt.Errorf("could not load config %s: %w", cfgFile, err)
+		}
+		if err := printConfigFileUsed(stderr, viper.ConfigFileUsed()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printConfigFileUsed(stderr io.Writer, cfgFile string) error {
+	if _, err := fmt.Fprintln(stderr, "Using config file:", cfgFile); err != nil {
+		return fmt.Errorf("writing config file notice: %w", err)
+	}
+	return nil
+}
+
+func cleanupPopData(pd *PopData) error {
+	if pd == nil {
+		return nil
+	}
+
+	var errs []error
+	if err := pd.SaveRpzSerial(); err != nil {
+		errs = append(errs, fmt.Errorf("error saving RPZ serial: %w", err))
+	}
+	if pd.MqttEngine != nil && pd.TapirMqttEngineRunning {
+		if _, err := pd.MqttEngine.StopEngine(); err != nil {
+			errs = append(errs, fmt.Errorf("error stopping MQTT Engine: %w", err))
+		}
+	}
+	return errors.Join(errs...)
 }
