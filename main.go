@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/dnstapir/tapir"
@@ -70,7 +71,9 @@ func Run(ctx context.Context, opts RunOptions) (runErr error) {
 		commit = "BAD-BUILD"
 	}
 
-	fmt.Fprintf(stdout, "%s (TAPIR Edge Manager) version %s (%s) starting.\n", name, version, commit)
+	if _, err := fmt.Fprintf(stdout, "%s (TAPIR Edge Manager) version %s (%s) starting.\n", name, version, commit); err != nil {
+		return fmt.Errorf("writing startup message: %w", err)
+	}
 
 	mqttClientID := "tapir-pop-" + uuid.New().String()
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
@@ -82,12 +85,12 @@ func Run(ctx context.Context, opts RunOptions) (runErr error) {
 		return err
 	}
 
-	cfgFileUsed, err := loadConfigFiles(stderr)
+	cfgFiles, err := loadConfigFiles(stderr)
 	if err != nil {
 		return err
 	}
 
-	if err := ValidateConfig(nil, cfgFileUsed); err != nil {
+	if err := ValidateConfig(nil, strings.Join(cfgFiles, ", ")); err != nil {
 		return fmt.Errorf("error validating config: %w", err)
 	}
 
@@ -176,19 +179,21 @@ func Run(ctx context.Context, opts RunOptions) (runErr error) {
 		TimeStamp: time.Now(),
 	}
 
-	return runLoop(ctx, &conf, cfgFileUsed, opts.Reload, workerErrCh, stderr)
+	return runLoop(ctx, &conf, cfgFiles, opts.Reload, workerErrCh, stderr)
 }
 
-func loadConfigFiles(stderr io.Writer) (string, error) {
+func loadConfigFiles(stderr io.Writer) ([]string, error) {
 	viper.Reset()
 	viper.SetConfigFile(tapir.DefaultPopCfgFile)
 	viper.AutomaticEnv()
 
 	if err := viper.ReadInConfig(); err != nil {
-		return "", fmt.Errorf("could not load config %s: %w", tapir.DefaultPopCfgFile, err)
+		return nil, fmt.Errorf("could not load config %s: %w", tapir.DefaultPopCfgFile, err)
 	}
-	cfgFileUsed := viper.ConfigFileUsed()
-	fmt.Fprintln(stderr, "Using config file:", cfgFileUsed)
+	cfgFiles := []string{viper.ConfigFileUsed()}
+	if err := printConfigFileUsed(stderr, cfgFiles[0]); err != nil {
+		return nil, err
+	}
 
 	for _, cfgFile := range []string{
 		tapir.PopSourcesCfgFile,
@@ -197,16 +202,18 @@ func loadConfigFiles(stderr io.Writer) (string, error) {
 	} {
 		viper.SetConfigFile(cfgFile)
 		if err := viper.MergeInConfig(); err != nil {
-			return "", fmt.Errorf("could not load config %s: %w", cfgFile, err)
+			return nil, fmt.Errorf("could not load config %s: %w", cfgFile, err)
 		}
-		cfgFileUsed = viper.ConfigFileUsed()
-		fmt.Fprintln(stderr, "Using config file:", cfgFileUsed)
+		cfgFiles = append(cfgFiles, viper.ConfigFileUsed())
+		if err := printConfigFileUsed(stderr, viper.ConfigFileUsed()); err != nil {
+			return nil, err
+		}
 	}
 
-	return cfgFileUsed, nil
+	return cfgFiles, nil
 }
 
-func runLoop(ctx context.Context, conf *Config, cfgFileUsed string, reload <-chan struct{}, workerErrCh <-chan error, stderr io.Writer) error {
+func runLoop(ctx context.Context, conf *Config, cfgFiles []string, reload <-chan struct{}, workerErrCh <-chan error, stderr io.Writer) error {
 	log.Println("mainloop: enter")
 	defer log.Println("mainloop: leaving signal dispatcher")
 
@@ -220,7 +227,7 @@ func runLoop(ctx context.Context, conf *Config, cfgFileUsed string, reload <-cha
 				return err
 			}
 		case <-reload:
-			if err := reloadConfig(cfgFileUsed, stderr); err != nil {
+			if err := reloadConfig(cfgFiles, stderr); err != nil {
 				return err
 			}
 			log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
@@ -233,11 +240,37 @@ func runLoop(ctx context.Context, conf *Config, cfgFileUsed string, reload <-cha
 	}
 }
 
-func reloadConfig(cfgFileUsed string, stderr io.Writer) error {
-	if err := viper.ReadInConfig(); err != nil {
-		return fmt.Errorf("could not load config %s: %w", cfgFileUsed, err)
+func reloadConfig(cfgFiles []string, stderr io.Writer) error {
+	if len(cfgFiles) == 0 {
+		return fmt.Errorf("no config files to reload")
 	}
-	fmt.Fprintln(stderr, "Using config file:", cfgFileUsed)
+	viper.Reset()
+	viper.SetConfigFile(cfgFiles[0])
+	viper.AutomaticEnv()
+
+	if err := viper.ReadInConfig(); err != nil {
+		return fmt.Errorf("could not load config %s: %w", cfgFiles[0], err)
+	}
+	if err := printConfigFileUsed(stderr, viper.ConfigFileUsed()); err != nil {
+		return err
+	}
+
+	for _, cfgFile := range cfgFiles[1:] {
+		viper.SetConfigFile(cfgFile)
+		if err := viper.MergeInConfig(); err != nil {
+			return fmt.Errorf("could not load config %s: %w", cfgFile, err)
+		}
+		if err := printConfigFileUsed(stderr, viper.ConfigFileUsed()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printConfigFileUsed(stderr io.Writer, cfgFile string) error {
+	if _, err := fmt.Fprintln(stderr, "Using config file:", cfgFile); err != nil {
+		return fmt.Errorf("writing config file notice: %w", err)
+	}
 	return nil
 }
 

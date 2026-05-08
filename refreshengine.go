@@ -118,11 +118,12 @@ func (pd *PopData) RefreshEngine(ctx context.Context, conf *Config) error {
 						Msg:       fmt.Sprintf("ProcessTapirUpdate error: %v", err),
 					}
 					log.Printf("RefreshEngine: Error from ProcessTapirUpdate(): %v", err)
-				}
-				pd.ComponentStatusCh <- tapir.ComponentStatusUpdate{
-					Status:    tapir.StatusOK,
-					Component: "tapir-observation",
-					Msg:       fmt.Sprintf("ProcessTapirUpdate: MQTT observation message received"),
+				} else {
+					pd.ComponentStatusCh <- tapir.ComponentStatusUpdate{
+						Status:    tapir.StatusOK,
+						Component: "tapir-observation",
+						Msg:       "ProcessTapirUpdate: MQTT observation message received",
+					}
 				}
 				log.Printf("RefreshEngine: Tapir Observation update evaluated.")
 
@@ -266,7 +267,9 @@ func (pd *PopData) RefreshEngine(ctx context.Context, conf *Config) error {
 				if rc.CurRefresh <= 0 {
 					upstream = rc.Upstream
 					if rc.RRParseFunc == nil {
-						return fmt.Errorf("RefreshEngine: parsefunc=nil")
+						log.Printf("RefreshEngine: zone %s has nil RRParseFunc, removing refresh counter", zone)
+						delete(refreshCounters, zone)
+						continue
 					}
 
 					log.Printf("RefreshEngine: will refresh zone %s due to refresh counter", zone)

@@ -242,7 +242,7 @@ func (pd *PopData) ParseSourcesNG() error {
 				err = pd.ParseLocalFile(name, &newsource)
 			case "xfr":
 				err = pd.ParseRpzFeed(name, &newsource)
-				pd.Logger.Printf("Thread %d: source \"%s\" now returned from ParseRpzFeed(). %d remaining", thread, name, threads)
+				pd.Logger.Printf("Thread %d: source %q now returned from ParseRpzFeed()", thread, name)
 			default:
 				err = fmt.Errorf("unhandled source type %s", src.Source)
 			}

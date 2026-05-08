@@ -65,8 +65,8 @@ func (pd *PopData) Doubtlisted(name string) bool {
 			//		case "trie":
 			//			return list.Trie.Search(name) != nil
 		default:
-			pd.Logger.Printf("Unknown doubtlist format %s", list.Format)
-			return false
+			pd.Logger.Printf("Unknown doubtlist format %s for doubtlist %s", list.Format, list.Name)
+			continue
 		}
 	}
 	return false

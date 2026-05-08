@@ -25,11 +25,6 @@ func (td *PopData) BootstrapMqttSource(src SourceConf) (*tapir.WBGlist, error) {
 		AuthMethod: "X-API-Key",
 	}
 
-	cd := viper.GetString("certs.certdir")
-	if cd == "" {
-		return nil, fmt.Errorf("missing config key: certs.certdir")
-	}
-	// cert := cd + "/" + certname
 	key := viper.GetString("certs.tapir-pop.key")
 	cert := viper.GetString("certs.tapir-pop.cert")
 	tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"), key, cert)

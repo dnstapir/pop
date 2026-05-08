@@ -82,9 +82,6 @@ func (pd *PopData) StatusUpdater(ctx context.Context, conf *Config) error {
 	}
 	pd.Logger.Printf("StatusUpdater: Topic status for MQTT engine %s", me.Creator)
 
-	if err := pd.StartMqttEngine(me); err != nil {
-		return fmt.Errorf("error starting MQTT Engine: %w", err)
-	}
 	outbox := pd.TapirMqttPubCh
 	if outbox == nil {
 		return fmt.Errorf("MQTT publish channel not available")

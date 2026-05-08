@@ -87,9 +87,11 @@ func (pd *PopData) ProcessTapirGlobalConfig(gconfig tapir.GlobalConfig) error {
 			continue
 		}
 
-		for _, topic := range wbgl.MqttDetails.Topics {
-			pd.MqttEngine.RemoveTopic(topic)
-			break // Only one topic
+		if len(wbgl.MqttDetails.Topics) > 0 {
+			topic := wbgl.MqttDetails.Topics[0]
+			if err := pd.MqttEngine.RemoveTopic(topic); err != nil {
+				pd.Logger.Printf("ProcessTapirGlobalConfig: error removing previous MQTT topic %q: %v", topic, err)
+			}
 		}
 
 		pd.mu.Lock()
