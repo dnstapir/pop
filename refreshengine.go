@@ -45,6 +45,10 @@ type RefreshCounter struct {
 	Downstreams []string
 }
 
+// RefreshEngineInactiveError is the stable RpzCmdResponse.ErrorMsg prefix
+// returned when an RPZ command is rejected because the refresh engine is disabled.
+const RefreshEngineInactiveError = "refresh engine inactive"
+
 func (pd *PopData) RefreshEngine(ctx context.Context, conf *Config) error {
 
 	var ObservationsCh = pd.TapirObservations
@@ -74,6 +78,12 @@ func (pd *PopData) RefreshEngine(ctx context.Context, conf *Config) error {
 			case <-zonerefch:
 				// ensure that we keep reading to keep the channel open
 				continue
+			case cmd, ok := <-rpzcmdch:
+				if !ok {
+					rpzcmdch = nil
+					continue
+				}
+				respondRefreshEngineInactive(cmd)
 			}
 		}
 	} else {
@@ -431,6 +441,27 @@ func (pd *PopData) RefreshEngine(ctx context.Context, conf *Config) error {
 			}
 		}
 	}
+}
+
+func respondRefreshEngineInactive(cmd RpzCmdData) {
+	resp := RpzCmdResponse{
+		Time:     time.Now(),
+		Zone:     cmd.Zone,
+		Domain:   cmd.Domain,
+		Error:    true,
+		ErrorMsg: fmt.Sprintf("%s: command %q rejected", RefreshEngineInactiveError, cmd.Command),
+	}
+	if cmd.Result == nil {
+		log.Printf("RefreshEngine: dropping inactive-engine response for command %q with nil result channel", cmd.Command)
+		return
+	}
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("RefreshEngine: dropping inactive-engine response for command %q on closed result channel: %v", cmd.Command, r)
+		}
+	}()
+	cmd.Result <- resp
 }
 
 func (pd *PopData) NotifyDownstreams() error {
