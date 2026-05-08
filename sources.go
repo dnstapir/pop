@@ -1,9 +1,10 @@
 /*
  * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
-package main
+package pop
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -55,7 +56,7 @@ func NewPopData(conf *Config, lg *log.Logger) (*PopData, error) {
 
 	err := pd.ParseOutputs()
 	if err != nil {
-		POPExiter("NewPopData: Error from ParseOutputs(): %v", err)
+		return nil, fmt.Errorf("ParseOutputs: %w", err)
 	}
 
 	//	pd.Rpz.IxfrChain = map[uint32]RpzIxfr{}
@@ -69,42 +70,41 @@ func NewPopData(conf *Config, lg *log.Logger) (*PopData, error) {
 	pd.Policy.Logger = conf.Loggers.Policy
 	pd.Policy.AllowlistAction, err = tapir.StringToAction(viper.GetString("policy.allowlist.action"))
 	if err != nil {
-		POPExiter("Error parsing allowlist policy: %v", err)
+		return nil, fmt.Errorf("error parsing allowlist policy: %w", err)
 	}
 	pd.Policy.DenylistAction, err = tapir.StringToAction(viper.GetString("policy.denylist.action"))
 	if err != nil {
-		POPExiter("Error parsing denylist policy: %v", err)
+		return nil, fmt.Errorf("error parsing denylist policy: %w", err)
 	}
 	pd.Policy.Doubtlist.NumSources = viper.GetInt("policy.doubtlist.numsources.limit")
 	if pd.Policy.Doubtlist.NumSources == 0 {
-		//nolint:typecheck
-		POPExiter("Error parsing policy: doubtlist.numsources.limit cannot be 0")
+		return nil, fmt.Errorf("error parsing policy: doubtlist.numsources.limit cannot be 0")
 	}
 	pd.Policy.Doubtlist.NumSourcesAction, err =
 		tapir.StringToAction(viper.GetString("policy.doubtlist.numsources.action"))
 	if err != nil {
-		POPExiter("Error parsing policy: %v", err)
+		return nil, fmt.Errorf("error parsing policy: %w", err)
 	}
 
 	pd.Policy.Doubtlist.NumTapirTags = viper.GetInt("policy.doubtlist.numtapirtags.limit")
 	if pd.Policy.Doubtlist.NumTapirTags == 0 {
-		POPExiter("Error parsing policy: doubtlist.numtapirtags.limit cannot be 0")
+		return nil, fmt.Errorf("error parsing policy: doubtlist.numtapirtags.limit cannot be 0")
 	}
 	pd.Policy.Doubtlist.NumTapirTagsAction, err =
 		tapir.StringToAction(viper.GetString("policy.doubtlist.numtapirtags.action"))
 	if err != nil {
-		POPExiter("Error parsing policy: %v", err)
+		return nil, fmt.Errorf("error parsing policy: %w", err)
 	}
 
 	tmp := viper.GetStringSlice("policy.doubtlist.denytapir.tags")
 	pd.Policy.Doubtlist.DenyTapirTags, err = tapir.StringsToTagMask(tmp)
 	if err != nil {
-		POPExiter("Error parsing policy: %v", err)
+		return nil, fmt.Errorf("error parsing policy: %w", err)
 	}
 	pd.Policy.Doubtlist.DenyTapirAction, err =
 		tapir.StringToAction(viper.GetString("policy.doubtlist.denytapir.action"))
 	if err != nil {
-		POPExiter("Error parsing policy: %v", err)
+		return nil, fmt.Errorf("error parsing policy: %w", err)
 	}
 
 	// Note: We can not parse data sources here, as RefreshEngine has not yet started.
@@ -159,7 +159,11 @@ func (pd *PopData) ParseSourcesNG() error {
 
 	threads := 0
 
-	var rptchan = make(chan string, 5)
+	type sourceResult struct {
+		name string
+		err  error
+	}
+	resultCh := make(chan sourceResult, len(srcs))
 
 	for name, src := range srcs {
 		if !*src.Active {
@@ -169,15 +173,13 @@ func (pd *PopData) ParseSourcesNG() error {
 		if pd.Debug {
 			pd.Logger.Printf("=== ParseSourcesNG: Source: %s (%s) will be used (list type %s)", name, src.Name, src.Type)
 		}
-
-		var err error
-
 		threads++
 
 		go func(name string, src SourceConf, thread int) {
-			//			defer func() {
-			//pd.Logger.Printf("<--Thread %d: source \"%s\" (%s) is now complete. %d remaining", thread, name, src.Source, threads)
-			// }()
+			var err error
+			defer func() {
+				resultCh <- sourceResult{name: name, err: err}
+			}()
 			pd.Logger.Printf("-->Thread %d: parsing source \"%s\" (source %s)", thread, name, src.Source)
 
 			newsource := tapir.WBGlist{
@@ -196,25 +198,30 @@ func (pd *PopData) ParseSourcesNG() error {
 			pd.Logger.Printf("ParseSourcesNG: thread %d working on source \"%s\" (%s)", thread, name, src.Source)
 			switch src.Source {
 			case "mqtt":
+				if pd.MqttEngine == nil {
+					err = fmt.Errorf("MQTT Engine not configured")
+					return
+				}
 				if pd.Debug {
 					pd.Logger.Printf("ParseSourcesNG: Fetching MQTT validator key for topic %s", src.Topic)
 				}
 
 				pd.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
-				err := pd.MqttEngine.SubToTopic(src.Topic, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
+				err = pd.MqttEngine.SubToTopic(src.Topic, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
 				if err != nil {
-					POPExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
+					err = fmt.Errorf("error adding topic %s to MQTT Engine: %w", src.Topic, err)
+					return
 				}
 				pd.Logger.Printf("ParseSourcesNG: Topic data for topic %s", src.Topic)
 
-                mqttDetails := tapir.MqttDetails{
-                    Topics:        []string{src.Topic},
-                    Bootstrap:     src.Bootstrap,
-                    BootstrapUrl:  src.BootstrapUrl,
-                    BootstrapKey:  src.BootstrapKey,
-                }
-                newsource.MqttDetails = &mqttDetails
-                newsource.Immutable = src.Immutable
+				mqttDetails := tapir.MqttDetails{
+					Topics:       []string{src.Topic},
+					Bootstrap:    src.Bootstrap,
+					BootstrapUrl: src.BootstrapUrl,
+					BootstrapKey: src.BootstrapKey,
+				}
+				newsource.MqttDetails = &mqttDetails
+				newsource.Immutable = src.Immutable
 
 				newsource.Format = "map" // for now
 				if len(src.Bootstrap) > 0 {
@@ -231,14 +238,13 @@ func (pd *PopData) ParseSourcesNG() error {
 				pd.Logger.Printf("Created list [doubtlist][%s]", newsource.Name)
 				pd.mu.Unlock()
 				pd.Logger.Printf("*** MQTT sources are only managed via RefreshEngine.")
-				rptchan <- name
 			case "file":
-				err = pd.ParseLocalFile(name, &newsource, rptchan)
+				err = pd.ParseLocalFile(name, &newsource)
 			case "xfr":
-				err = pd.ParseRpzFeed(name, &newsource, rptchan)
+				err = pd.ParseRpzFeed(name, &newsource)
 				pd.Logger.Printf("Thread %d: source \"%s\" now returned from ParseRpzFeed(). %d remaining", thread, name, threads)
 			default:
-				pd.Logger.Printf("*** ParseSourcesNG: Error: unhandled source type %s", src.Source)
+				err = fmt.Errorf("unhandled source type %s", src.Source)
 			}
 			if err != nil {
 				log.Printf("Error parsing source %s (datasource %s): %v",
@@ -247,19 +253,23 @@ func (pd *PopData) ParseSourcesNG() error {
 		}(name, src, threads)
 	}
 
-	for {
-		if threads == 0 {
-			break
-		}
-		tmp := <-rptchan
+	var errs []error
+	for threads > 0 {
+		result := <-resultCh
 		threads--
-		pd.Logger.Printf("ParseSources: source \"%s\" is now complete. %d remaining", tmp, threads)
+		if result.err != nil {
+			errs = append(errs, fmt.Errorf("source %s: %w", result.name, result.err))
+		}
+		pd.Logger.Printf("ParseSources: source \"%s\" is now complete. %d remaining", result.name, threads)
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
 	}
 
 	if pd.MqttEngine != nil && !pd.TapirMqttEngineRunning {
 		err := pd.StartMqttEngine(pd.MqttEngine)
 		if err != nil {
-			POPExiter("Error starting MQTT Engine: %v", err)
+			return fmt.Errorf("error starting MQTT Engine: %w", err)
 		}
 	}
 
@@ -273,15 +283,14 @@ func (pd *PopData) ParseSourcesNG() error {
 	return nil
 }
 
-func (pd *PopData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan string) error {
+func (pd *PopData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 	pd.Logger.Printf("ParseLocalFile: %s (%s)", sourceid, s.Type)
 	var df dawg.Finder
 	var err error
 
 	s.Filename = viper.GetString(fmt.Sprintf("sources.%s.filename", sourceid))
 	if s.Filename == "" {
-		POPExiter("ParseLocalFile: source %s of type file has undefined filename",
-			sourceid)
+		return fmt.Errorf("source %s of type file has undefined filename", sourceid)
 	}
 
 	switch s.SrcFormat {
@@ -291,10 +300,9 @@ func (pd *PopData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 		_, err := tapir.ParseText(s.Filename, s.Names, true)
 		if err != nil {
 			if os.IsNotExist(err) {
-				POPExiter("ParseLocalFile: source %s (type file: %s) does not exist",
-					sourceid, s.Filename)
+				return fmt.Errorf("source %s (type file: %s) does not exist", sourceid, s.Filename)
 			}
-			POPExiter("ParseLocalFile: error parsing file %s: %v", s.Filename, err)
+			return fmt.Errorf("error parsing file %s: %w", s.Filename, err)
 		}
 
 	case "csv":
@@ -303,39 +311,36 @@ func (pd *PopData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 		_, err := tapir.ParseCSV(s.Filename, s.Names, true)
 		if err != nil {
 			if os.IsNotExist(err) {
-				POPExiter("ParseLocalFile: source %s (type file: %s) does not exist",
-					sourceid, s.Filename)
+				return fmt.Errorf("source %s (type file: %s) does not exist", sourceid, s.Filename)
 			}
-			POPExiter("ParseLocalFile: error parsing file %s: %v", s.Filename, err)
+			return fmt.Errorf("error parsing file %s: %w", s.Filename, err)
 		}
 
 	case "dawg":
 		if s.Type != "allowlist" {
-			POPExiter("Error: source %s (file %s): DAWG is only defined for allowlists.",
-				sourceid, s.Filename)
+			return fmt.Errorf("source %s (file %s): DAWG is only defined for allowlists", sourceid, s.Filename)
 		}
 		pd.Logger.Printf("ParseLocalFile: loading DAWG: %s", s.Filename)
 		df, err = dawg.Load(s.Filename)
 		if err != nil {
-			POPExiter("Error from dawg.Load(%s): %v", s.Filename, err)
+			return fmt.Errorf("dawg.Load(%s): %w", s.Filename, err)
 		}
 		pd.Logger.Printf("ParseLocalFile: DAWG loaded")
 		s.Format = "dawg"
 		s.Dawgf = df
 
 	default:
-		POPExiter("ParseLocalFile: SrcFormat \"%s\" is unknown.", s.SrcFormat)
+		return fmt.Errorf("SrcFormat %q is unknown", s.SrcFormat)
 	}
 
 	pd.mu.Lock()
 	pd.Lists[s.Type][s.Name] = s
 	pd.mu.Unlock()
-	rpt <- sourceid
 
 	return nil
 }
 
-func (pd *PopData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan string) error {
+func (pd *PopData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
 	//	zone := viper.GetString(fmt.Sprintf("sources.%s.zone", sourceid)) // XXX: not the way to do it
 	//	if zone == "" {
 	//		return fmt.Errorf("Unable to load RPZ source %s, upstream zone not specified.",
@@ -363,12 +368,14 @@ func (pd *PopData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan stri
 		Resp:        reRpt,
 	}
 
-	<-reRpt
+	result := <-reRpt
+	if result.Error {
+		return fmt.Errorf("refreshing RPZ source %s: %s", sourceid, result.ErrorMsg)
+	}
 
 	pd.mu.Lock()
 	pd.Lists[s.Type][s.Name] = s
 	pd.mu.Unlock()
-	rpt <- sourceid
 	pd.Logger.Printf("ParseRpzFeed: parsing RPZ %s complete", s.RpzZoneName)
 
 	return nil

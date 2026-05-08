@@ -2,7 +2,7 @@
  * Copyright (c) Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
-package main
+package pop
 
 import (
 	"bytes"
@@ -27,20 +27,20 @@ func (td *PopData) BootstrapMqttSource(src SourceConf) (*tapir.WBGlist, error) {
 
 	cd := viper.GetString("certs.certdir")
 	if cd == "" {
-		POPExiter("BootstrapMqttSource error: missing config key: certs.certdir")
+		return nil, fmt.Errorf("missing config key: certs.certdir")
 	}
 	// cert := cd + "/" + certname
-    key := viper.GetString("certs.tapir-pop.key")
-    cert := viper.GetString("certs.tapir-pop.cert")
+	key := viper.GetString("certs.tapir-pop.key")
+	cert := viper.GetString("certs.tapir-pop.cert")
 	tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"), key, cert)
 	if err != nil {
-		POPExiter("BootstrapMqttSource: Error: Could not set up TLS: %v", err)
+		return nil, fmt.Errorf("could not set up TLS: %w", err)
 	}
 	// XXX: Need to verify that the server cert is valid for the bootstrap server
 	tlsConfig.InsecureSkipVerify = true
 	err = api.SetupTLS(tlsConfig)
 	if err != nil {
-		POPExiter("BootstrapMqttSource: error setting up TLS for the API client: %v", err)
+		return nil, fmt.Errorf("error setting up TLS for the API client: %w", err)
 	}
 
 	bootstrapaddrs := viper.GetStringSlice("bootstrapserver.addresses")

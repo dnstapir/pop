@@ -2,9 +2,10 @@
  * Copyright (c) 2024 Johan Stenstam, joahn.stenstam@internetstiftelsen.se
  */
 
-package main
+package pop
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"os"
@@ -34,7 +35,7 @@ func (pd *PopData) ParseOutputs() error {
 	pd.Logger.Printf("ParseOutputs: reading outputs from %s", tapir.PopOutputsCfgFile)
 	cfgdata, err := os.ReadFile(tapir.PopOutputsCfgFile)
 	if err != nil {
-		log.Fatalf("Error from ReadFile(%s): %v", tapir.PopOutputsCfgFile, err)
+		return fmt.Errorf("ReadFile(%s): %w", tapir.PopOutputsCfgFile, err)
 	}
 
 	var oconf = PopOutputs{
@@ -44,7 +45,7 @@ func (pd *PopData) ParseOutputs() error {
 	// pd.Logger.Printf("ParseOutputs: config read: %s", cfgdata)
 	err = yaml.Unmarshal(cfgdata, &oconf)
 	if err != nil {
-		log.Fatalf("Error from yaml.Unmarshal(OutputsConfig): %v", err)
+		return fmt.Errorf("yaml.Unmarshal(OutputsConfig): %w", err)
 	}
 
 	pd.Logger.Printf("ParseOutputs: found %d outputs", len(oconf.Outputs))
@@ -105,7 +106,7 @@ func (pd *PopData) ParseOutputs() error {
 
 // Note: we onlygethere when we know that this name is only doubtlisted
 // so no need tocheckfor allow- or denylisting
-func (pd *PopData) ComputeRpzDoubtlistAction(name string) tapir.Action {
+func (pd *PopData) ComputeRpzDoubtlistAction(name string) (tapir.Action, error) {
 
 	var doubtHits = map[string]*tapir.TapirName{}
 	for listname, list := range pd.Lists["doubtlist"] {
@@ -121,13 +122,13 @@ func (pd *PopData) ComputeRpzDoubtlistAction(name string) tapir.Action {
 			//				doubtHits = append(doubtHits, v)
 			//			}
 		default:
-			POPExiter("Unknown doubtlist format %s", list.Format)
+			return tapir.ALLOWLIST, fmt.Errorf("unknown doubtlist format %s", list.Format)
 		}
 	}
 	if len(doubtHits) >= pd.Policy.Doubtlist.NumSources {
 		pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s is in %d or more sources, action is %s",
 			name, pd.Policy.Doubtlist.NumSources, tapir.ActionToString[pd.Policy.Doubtlist.NumSourcesAction])
-		return pd.Policy.Doubtlist.NumSourcesAction
+		return pd.Policy.Doubtlist.NumSourcesAction, nil
 	}
 	pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s is in %d sources, not enough for action", name, len(doubtHits))
 
@@ -136,13 +137,13 @@ func (pd *PopData) ComputeRpzDoubtlistAction(name string) tapir.Action {
 		if numtapirtags >= pd.Policy.Doubtlist.NumTapirTags {
 			pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s has more than %d tapir tags, action is %s",
 				name, pd.Policy.Doubtlist.NumTapirTags, tapir.ActionToString[pd.Policy.Doubtlist.NumTapirTagsAction])
-			return pd.Policy.Doubtlist.NumTapirTagsAction
+			return pd.Policy.Doubtlist.NumTapirTagsAction, nil
 		}
 		pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s has %d tapir tags, not enough for action", name, numtapirtags)
 	}
 	pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s is present in %d doubtlists, but does not trigger any action",
 		name, len(doubtHits))
-	return pd.Policy.AllowlistAction
+	return pd.Policy.AllowlistAction, nil
 }
 
 // Decision to block a doubtlisted name:
@@ -166,22 +167,22 @@ func ApplyDoubtPolicy(name string, v *tapir.TapirName) string {
 	return rpzaction
 }
 
-func (pd *PopData) ComputeRpzAction(name string) tapir.Action {
+func (pd *PopData) ComputeRpzAction(name string) (tapir.Action, error) {
 	if pd.Allowlisted(name) {
 		if pd.Debug {
 			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is doubtlisted, action is %s", name, tapir.ActionToString[pd.Policy.AllowlistAction])
 		}
-		return pd.Policy.AllowlistAction
+		return pd.Policy.AllowlistAction, nil
 	} else if pd.Denylisted(name) {
 		if pd.Debug {
 			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is denylisted, action is %s", name, tapir.ActionToString[pd.Policy.DenylistAction])
 		}
-		return pd.Policy.DenylistAction
+		return pd.Policy.DenylistAction, nil
 	} else if pd.Doubtlisted(name) {
 		if pd.Debug {
 			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is doubtlisted, needs further evaluation to determine action", name)
 		}
 		return pd.ComputeRpzDoubtlistAction(name) // This is not complete, only a placeholder for now.
 	}
-	return tapir.ALLOWLIST
+	return tapir.ALLOWLIST, nil
 }

@@ -2,11 +2,10 @@
  * Copyright (c) Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
-package main
+package pop
 
 import (
 	"fmt"
-	"log"
 
 	//	"github.com/smhanov/dawg"
 	"github.com/dnstapir/tapir"
@@ -66,7 +65,8 @@ func (pd *PopData) Doubtlisted(name string) bool {
 			//		case "trie":
 			//			return list.Trie.Search(name) != nil
 		default:
-			log.Fatalf("Unknown doubtlist format %s", list.Format)
+			pd.Logger.Printf("Unknown doubtlist format %s", list.Format)
+			return false
 		}
 	}
 	return false

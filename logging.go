@@ -2,7 +2,7 @@
  * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
-package main
+package pop
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-func SetupLogging(conf *Config) {
+func SetupLogging(conf *Config) error {
 	logfile := viper.GetString("log.file")
 
 	debug := viper.GetString("log.mode") == "debug"
@@ -35,7 +35,7 @@ func SetupLogging(conf *Config) {
 		})
 		fmt.Printf("TAPIR-POP standard logging to: %s\n", logfile)
 	} else {
-		POPExiter("Error: standard log (key log.file) not specified")
+		return fmt.Errorf("standard log (key log.file) not specified")
 	}
 
 	logfile = viper.GetString("policy.logfile")
@@ -43,7 +43,7 @@ func SetupLogging(conf *Config) {
 		logfile = filepath.Clean(logfile)
 		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec G302
 		if err != nil {
-			POPExiter("error opening TAPIR-POP policy logfile '%s': %v", logfile, err)
+			return fmt.Errorf("error opening TAPIR-POP policy logfile %q: %w", logfile, err)
 		}
 
 		if debug {
@@ -67,7 +67,7 @@ func SetupLogging(conf *Config) {
 		logfile = filepath.Clean(logfile)
 		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec G302
 		if err != nil {
-			POPExiter("error opening TAPIR-POP dnsengine logfile '%s': %v", logfile, err)
+			return fmt.Errorf("error opening TAPIR-POP dnsengine logfile %q: %w", logfile, err)
 		}
 
 		if debug {
@@ -91,7 +91,7 @@ func SetupLogging(conf *Config) {
 		logfile = filepath.Clean(logfile)
 		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec G302
 		if err != nil {
-			POPExiter("error opening TAPIR-POP MQTT logfile '%s': %v", logfile, err)
+			return fmt.Errorf("error opening TAPIR-POP MQTT logfile %q: %w", logfile, err)
 		}
 
 		if debug {
@@ -109,4 +109,5 @@ func SetupLogging(conf *Config) {
 		log.Println("No MQTT logfile specified, using default")
 		conf.Loggers.Mqtt = log.Default()
 	}
+	return nil
 }

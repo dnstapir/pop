@@ -2,9 +2,10 @@
  * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
 
-package main
+package pop
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -19,7 +20,7 @@ type Config struct {
 	ApiServer       ApiserverConf
 	DnsEngine       DnsengineConf
 	BootstrapServer BootstrapServerConf
-    KeyStore        KeystoreConf
+	KeyStore        KeystoreConf
 	Sources         map[string]SourceConf
 	Policy          PolicyConf
 	Log             struct {
@@ -78,7 +79,7 @@ type ServerConf struct {
 }
 
 type KeystoreConf struct {
-    Path string `validate:"required,file"`
+	Path string `validate:"required,file"`
 }
 
 type SourceConf struct {
@@ -88,7 +89,7 @@ type SourceConf struct {
 	Type         string `validate:"required"`
 	Format       string `validate:"required"`
 	Source       string `validate:"required"`
-    Immutable    bool
+	Immutable    bool
 	Topic        string
 	ValidatorKey string
 	Bootstrap    []string
@@ -141,11 +142,11 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 
 	if v == nil {
 		if err := viper.Unmarshal(&config); err != nil {
-			POPExiter("ValidateConfig: Unmarshal error: %v", err)
+			return fmt.Errorf("ValidateConfig: unmarshal error: %w", err)
 		}
 	} else {
 		if err := v.Unmarshal(&config); err != nil {
-			POPExiter("ValidateConfig: Unmarshal error: %v", err)
+			return fmt.Errorf("ValidateConfig: unmarshal error: %w", err)
 		}
 	}
 
@@ -166,7 +167,7 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 	//	configsections["oldsources"] = config.OldSources
 
 	if err := ValidateBySection(&config, configsections, cfgfile); err != nil {
-		POPExiter("Config \"%s\" is missing required attributes:\n%v\n", cfgfile, err)
+		return fmt.Errorf("config %q is missing required attributes: %w", cfgfile, err)
 	}
 	return nil
 }
@@ -183,7 +184,7 @@ func ValidateBySection(config *Config, configsections map[string]interface{}, cf
 		}
 		if err := validate.Struct(data); err != nil {
 			log.Printf("ValidateBySection: data that caused validation to fail:\n%v\n", data)
-			POPExiter("ValidateBySection: Config %s, section %s: missing required attributes:\n%v\n", cfgfile, k, err)
+			return fmt.Errorf("config %s, section %s: missing required attributes: %w", cfgfile, k, err)
 		}
 	}
 	return nil

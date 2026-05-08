@@ -1,9 +1,10 @@
 /*
  * Copyright (c) 2024 Johan Stenstam, johan.stenstam@internetstiftelsen.se
  */
-package main
+package pop
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -14,13 +15,19 @@ import (
 	"github.com/spf13/viper"
 )
 
-func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
+func (pd *PopData) StatusUpdater(ctx context.Context, conf *Config) error {
 
 	active := viper.GetBool("tapir.status.active")
 	if !active {
 		pd.Logger.Printf("*** StatusUpdater: not active, will just read status updates from channel and not publish anything")
-		for csu := range pd.ComponentStatusCh {
-			log.Printf("StatusUpdater: got status update message: %+v", csu)
+		for {
+			select {
+			case <-ctx.Done():
+				log.Printf("StatusUpdater: stopping")
+				return nil
+			case csu := <-pd.ComponentStatusCh:
+				log.Printf("StatusUpdater: got status update message: %+v", csu)
+			}
 		}
 	}
 
@@ -30,19 +37,14 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 		ComponentStatus: make(map[string]tapir.TapirComponentStatus),
 	}
 
-	//	me := pd.MqttEngine
-	//	if me == nil {
-	//		POPExiter("StatusUpdater: MQTT Engine not running")
-	//	}
-
 	// Create a new mqtt engine just for the statusupdater.
-	//	me, err := tapir.NewMqttEngine("statusupdater", viper.GetString("tapir.mqtt.clientid")+"statusupdates", tapir.TapirPub, pd.ComponentStatusCh, log.Default())
-	// if err != nil {
-	// 	POPExiter("StatusUpdater: Error creating MQTT Engine: %v", err)
-	// }
 	me := pd.MqttEngine
+	if me == nil {
+		return fmt.Errorf("MQTT Engine not running")
+	}
 
 	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
 
 	// var statusch = make(chan tapir.ComponentStatusUpdate, 10)
 	// If any status updates arrive, print them out
@@ -54,35 +56,38 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 
 	certCN, _, _, err := tapir.FetchTapirClientCert(log.Default(), pd.ComponentStatusCh)
 	if err != nil {
-		POPExiter("StatusUpdater: Error fetching client certificate: %v", err)
+		return fmt.Errorf("error fetching client certificate: %w", err)
 	}
 
 	statusTopic, err := tapir.MqttTopic(certCN, "tapir.status.topic")
 	if err != nil {
-		POPExiter("StatusUpdater: MQTT status topic not set")
+		return fmt.Errorf("MQTT status topic not set: %w", err)
 	}
 
 	keyfile := viper.GetString("tapir.status.signingkey")
 	if keyfile == "" {
-		POPExiter("StatusUpdater: MQTT status signing key not set")
+		return fmt.Errorf("MQTT status signing key not set")
 	}
 
 	keyfile = filepath.Clean(keyfile)
 	signkey, err := tapir.FetchMqttSigningKey(statusTopic, keyfile)
 	if err != nil {
-		POPExiter("StatusUpdater: Error fetching MQTT signing key for topic %s: %v", statusTopic, err)
+		return fmt.Errorf("error fetching MQTT signing key for topic %s: %w", statusTopic, err)
 	}
 
 	pd.Logger.Printf("StatusUpdater: Adding pub topic '%s' to MQTT Engine", statusTopic)
 	err = me.PubToTopic(statusTopic, signkey, "struct", true) // XXX: Brr. kludge.
 	if err != nil {
-		POPExiter("Error adding topic %s to MQTT Engine: %v", statusTopic, err)
+		return fmt.Errorf("error adding topic %s to MQTT Engine: %w", statusTopic, err)
 	}
-	pd.Logger.Printf("StatusUpdater: Topic status for MQTT engine %s: %+v", me.Creator)
+	pd.Logger.Printf("StatusUpdater: Topic status for MQTT engine %s", me.Creator)
 
-	_, outbox, _, err := me.StartEngine()
-	if err != nil {
-		POPExiter("StatusUpdater: Error starting MQTT Engine: %v", err)
+	if err := pd.StartMqttEngine(me); err != nil {
+		return fmt.Errorf("error starting MQTT Engine: %w", err)
+	}
+	outbox := pd.TapirMqttPubCh
+	if outbox == nil {
+		return fmt.Errorf("MQTT publish channel not available")
 	}
 
 	log.Printf("StatusUpdater: Starting")
@@ -132,7 +137,7 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 					}
 					s.ComponentStatus[csu.Component] = comp
 					dirty = true
-					sur.Msg = fmt.Sprintf("StatusUpdater: %s report for known component: %s", csu.Status, csu.Component)
+					sur.Msg = fmt.Sprintf("StatusUpdater: %s report for known component: %s", tapir.StatusToString[csu.Status], csu.Component)
 				default:
 					log.Printf("StatusUpdater: %s report for unknown component: %s", tapir.StatusToString[csu.Status], csu.Component)
 					sur.Error = true
@@ -157,11 +162,11 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 				}
 
 			default:
-				log.Printf("StatusUpdater: Unknown status: %s", csu.Status)
+				log.Printf("StatusUpdater: Unknown status: %v", csu.Status)
 			}
-		case <-stopch:
+		case <-ctx.Done():
 			log.Printf("StatusUpdater: stopping")
-			return
+			return nil
 		}
 	}
 }

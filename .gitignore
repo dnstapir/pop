@@ -33,3 +33,6 @@ version.go
 
 # Ignore output dir
 out
+
+# Local Go build cache used by sandboxed verification
+.gocache/
