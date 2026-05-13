@@ -1,29 +1,38 @@
 # POP Configuration Guide
 
-POP uses a YAML configuration file. Below is a complete example with explanations for key fields.
+POP loads configuration from four separate YAML files at startup, all located in `/etc/dnstapir/`:
 
-## Example Configuration
+| File | Purpose |
+|------|---------|
+| `dnstapir-pop.yaml` | Main config: logging, services, API/DNS/bootstrap servers, keystore |
+| `pop-sources.yaml` | Intelligence sources (MQTT, file, RPZ zone transfer) |
+| `pop-outputs.yaml` | RPZ downstream outputs |
+| `pop-policy.yaml` | Policy rules for allow/deny/doubtlist decisions |
+
+---
+
+## dnstapir-pop.yaml
 
 ```yaml
 log:
-  file: "/var/log/pop.log"    # Path to log file
-  verbose: false               # Enable verbose logging
-  debug: false                 # Enable debug logging
+  file: "/var/log/dnstapir/pop.log"
+  verbose: false
+  debug: false
 
 services:
   rpz:
-    zonename: "rpz.example.com."                # RPZ zone name
-    serialcache: "/var/cache/pop/serial.cache"  # Path to serial cache file
+    zonename: "rpz.example.com."
+    serialcache: "/var/cache/dnstapir/pop-serial.yaml"
   reaper:
-    interval: 3600   # Cleanup interval in seconds
+    interval: 3600
 
 apiserver:
   active: true
   name: "pop-api"
   key: "your-api-key"
-  addresses:                   # HTTP listen addresses
+  addresses:
     - "127.0.0.1:8080"
-  tlsaddresses:                # HTTPS listen addresses
+  tlsaddresses:
     - "0.0.0.0:8443"
 
 dnsengine:
@@ -31,111 +40,190 @@ dnsengine:
   name: "pop-dns"
   addresses:
     - "127.0.0.1:53"
-  logfile: "/var/log/pop-dns.log"
+  logfile: "/var/log/dnstapir/pop-dns.log"
 
 bootstrapserver:
-  active: false                # Set to true to enable bootstrap server
+  active: false
   name: "pop-bootstrap"
-  addresses:                   # HTTP listen addresses
+  addresses:
     - "127.0.0.1:9090"
-  tlsaddresses:                # HTTPS listen addresses
+  tlsaddresses:
     - "0.0.0.0:9443"
-  logfile: "/var/log/pop-bootstrap.log"  # Optional log file
+  logfile: "/var/log/dnstapir/pop-bootstrap.log"
 
 keystore:
-  path: "/etc/pop/keystore.json"   # Path to keystore file (must exist)
+  path: "/etc/dnstapir/keystore.json"
+```
 
+### Field reference
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `log.file` | yes | Log file path |
+| `log.verbose` | yes | Enable verbose logging |
+| `log.debug` | yes | Enable debug logging |
+| `services.rpz.zonename` | yes | RPZ zone name served to downstream resolvers |
+| `services.rpz.serialcache` | yes | File where the current RPZ serial is persisted across restarts |
+| `services.reaper.interval` | yes | Interval in seconds for the cleanup (reaper) goroutine |
+| `apiserver.active` | yes | Enable the REST API server |
+| `apiserver.name` | yes | API server identifier |
+| `apiserver.key` | yes | API authentication key |
+| `apiserver.addresses` | yes | HTTP listen addresses (list) |
+| `apiserver.tlsaddresses` | yes | HTTPS listen addresses (list) |
+| `dnsengine.active` | yes | Enable the DNS engine |
+| `dnsengine.name` | yes | DNS engine identifier |
+| `dnsengine.addresses` | yes | DNS listen addresses (list) |
+| `dnsengine.logfile` | yes | DNS engine log file path |
+| `bootstrapserver.active` | yes | Enable the bootstrap server |
+| `bootstrapserver.name` | yes | Bootstrap server identifier |
+| `bootstrapserver.addresses` | yes | HTTP listen addresses (list) |
+| `bootstrapserver.tlsaddresses` | yes | HTTPS listen addresses (list) |
+| `bootstrapserver.logfile` | no | Bootstrap server log file path |
+| `keystore.path` | yes | Path to the keystore file (must already exist) |
+
+---
+
+## pop-sources.yaml
+
+Each entry under `sources` defines one intelligence feed. The `source` field controls how the data is fetched; the `type` field controls which list the data is loaded into.
+
+```yaml
 sources:
-  example-mqtt-source:
+  # MQTT-based intelligence feed
+  tapir-mqtt-feed:
     active: true
-    name: "example-mqtt-source"
-    description: "Example MQTT intelligence source"
-    type: "mqtt"                   # Source type: mqtt or file
-    format: "json"                 # Data format: json or rpz
-    source: "mqtt://broker.example.com"
-    topic: "tapir/feed/blocklist"  # MQTT topic (mqtt sources only)
-    validatorkey: "path/to/validator.key"
-    bootstrap:                     # Bootstrap URLs (optional)
+    name: "tapir-mqtt-feed"
+    description: "DNS TAPIR MQTT intelligence feed"
+    type: "doubtlist"        # List to load into: allowlist, denylist, or doubtlist
+    format: "json"           # Wire format: json
+    source: "mqtt"           # Fetch method: mqtt, file, or xfr
+    topic: "tapir/feed/blocklist"
+    validatorkey: "/etc/dnstapir/validator.key"
+    bootstrap:
       - "https://bootstrap.example.com/feed"
     bootstrapurl: "https://bootstrap.example.com"
-    bootstrapkey: "path/to/bootstrap.key"
+    bootstrapkey: "/etc/dnstapir/bootstrap.key"
 
-  example-file-source:
+  # Local domain list (plain text, one domain per line)
+  local-allowlist:
     active: true
-    name: "example-file-source"
-    description: "Example local file source"
-    type: "file"
-    format: "rpz"
-    source: "local"
-    filename: "/etc/pop/blocklist.rpz"  # Local file path (file sources only)
-    immutable: false                     # If true, source will not be updated
+    name: "local-allowlist"
+    description: "Locally managed allowlist"
+    type: "allowlist"
+    format: "domains"        # File format: domains, csv, or dawg
+    source: "file"
+    filename: "/etc/dnstapir/allowlist.txt"
+    immutable: false         # If true, the list is never updated at runtime
 
+  # RPZ zone transfer feed
+  upstream-rpz:
+    active: true
+    name: "upstream-rpz"
+    description: "Upstream RPZ denylist via zone transfer"
+    type: "denylist"
+    format: "rpz"
+    source: "xfr"
+    upstream: "192.0.2.1:53"
+    zone: "blocklist.example.com."
+```
+
+### Field reference
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `active` | yes | Enable this source |
+| `name` | yes | Source identifier |
+| `description` | yes | Human-readable description |
+| `type` | yes | Target list: `allowlist`, `denylist`, or `doubtlist` |
+| `format` | yes | Data format. For `source: mqtt`: `json`. For `source: file`: `domains`, `csv`, or `dawg`. For `source: xfr`: `rpz` |
+| `source` | yes | Fetch method: `mqtt`, `file`, or `xfr` |
+| `topic` | no | MQTT topic to subscribe to (`source: mqtt` only) |
+| `validatorkey` | no | Path to the key used to verify signed MQTT messages |
+| `bootstrap` | no | List of bootstrap server URLs for initial data load (`source: mqtt` only) |
+| `bootstrapurl` | no | Bootstrap server base URL |
+| `bootstrapkey` | no | Path to the bootstrap authentication key |
+| `filename` | no | Path to the local file (`source: file` only) |
+| `immutable` | no | If `true`, the list is never refreshed at runtime (default: `false`) |
+| `upstream` | no | Upstream DNS server address `host:port` for zone transfer (`source: xfr` only) |
+| `zone` | no | Zone name to transfer (`source: xfr` only) |
+
+**Note on `type: allowlist` with DAWG format:** DAWG files are only supported for `type: allowlist`.
+
+---
+
+## pop-outputs.yaml
+
+Outputs define downstream DNS resolvers that receive RPZ NOTIFY and can perform AXFR/IXFR.
+
+```yaml
+outputs:
+  downstream-resolver:
+    active: true
+    name: "downstream-resolver"
+    description: "Primary downstream DNS resolver"
+    type: "doubtlist"
+    format: "rpz"
+    downstream: "192.0.2.10:53"
+```
+
+### Field reference
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `active` | yes | Enable this output |
+| `name` | yes | Output identifier |
+| `description` | yes | Human-readable description |
+| `type` | yes | Source list type this output is derived from |
+| `format` | yes | Output format (`rpz`) |
+| `downstream` | yes | Downstream resolver address `host:port` to send DNS NOTIFY to |
+
+---
+
+## pop-policy.yaml
+
+Policy rules determine what RPZ action is applied to names found in each list.
+
+```yaml
 policy:
-  logfile: "/var/log/pop-policy.log"   # Optional policy log file
+  logfile: "/var/log/dnstapir/pop-policy.log"
   allowlist:
-    action: "accept"          # Action for allowlisted domains
+    action: "allowlist"
   denylist:
-    action: "drop"            # Action for denylisted domains
+    action: "nxdomain"
   doubtlist:
     numsources:
-      limit: 3                # Block if domain seen in this many sources
-      action: "drop"
+      limit: 3
+      action: "nxdomain"
     numtapirtags:
-      limit: 2                # Block if domain has this many TAPIR tags
+      limit: 2
       action: "drop"
     denytapir:
-      tags:                   # Block if domain has any of these TAPIR tags
+      tags:
         - "malware"
         - "phishing"
       action: "drop"
 ```
 
-## Required Fields
+### Field reference
 
-All fields are required unless marked as optional.
+| Field | Required | Description |
+|-------|----------|-------------|
+| `policy.logfile` | no | Policy decision log file path |
+| `policy.allowlist.action` | yes | Action for allowlisted names |
+| `policy.denylist.action` | yes | Action for denylisted names |
+| `policy.doubtlist.numsources.limit` | yes | Block if a name appears in this many or more doubtlist sources |
+| `policy.doubtlist.numsources.action` | yes | Action when `numsources.limit` is reached |
+| `policy.doubtlist.numtapirtags.limit` | yes | Block if a name carries this many or more TAPIR tags |
+| `policy.doubtlist.numtapirtags.action` | yes | Action when `numtapirtags.limit` is reached |
+| `policy.doubtlist.denytapir.tags` | yes | Block if a name carries any of these TAPIR tags |
+| `policy.doubtlist.denytapir.action` | yes | Action when a tag in `denytapir.tags` is matched |
 
-| Section | Field | Required | Description |
-|---------|-------|----------|-------------|
-| log | file | ✅ | Log file path |
-| log | verbose | ✅ | Enable verbose logging |
-| log | debug | ✅ | Enable debug logging |
-| services.rpz | zonename | ✅ | RPZ zone name |
-| services.rpz | serialcache | ✅ | Serial cache file path |
-| services.reaper | interval | ✅ | Cleanup interval in seconds |
-| apiserver | active | ✅ | Enable API server |
-| apiserver | name | ✅ | API server name |
-| apiserver | key | ✅ | API authentication key |
-| apiserver | addresses | ✅ | HTTP listen addresses |
-| apiserver | tlsaddresses | ✅ | HTTPS listen addresses |
-| dnsengine | active | ✅ | Enable DNS engine |
-| dnsengine | name | ✅ | DNS engine name |
-| dnsengine | addresses | ✅ | DNS listen addresses |
-| dnsengine | logfile | ✅ | DNS engine log file |
-| bootstrapserver | active | ✅ | Enable bootstrap server |
-| bootstrapserver | name | ✅ | Bootstrap server name |
-| bootstrapserver | addresses | ✅ | HTTP listen addresses |
-| bootstrapserver | tlsaddresses | ✅ | HTTPS listen addresses |
-| bootstrapserver | logfile | ➖ | Log file path (optional) |
-| keystore | path | ✅ | Path to keystore file (must exist) |
-| sources.* | active | ✅ | Enable this source |
-| sources.* | name | ✅ | Source name |
-| sources.* | description | ✅ | Source description |
-| sources.* | type | ✅ | Source type: `mqtt` or `file` |
-| sources.* | format | ✅ | Data format: `json` or `rpz` |
-| sources.* | source | ✅ | Source connection string |
-| sources.* | topic | ➖ | MQTT topic (mqtt sources only) |
-| sources.* | filename | ➖ | Local file path (file sources only) |
-| sources.* | immutable | ➖ | Prevent source updates (optional, default: false) |
-| sources.* | validatorkey | ➖ | Path to validator key (optional) |
-| sources.* | bootstrap | ➖ | Bootstrap URLs (optional) |
-| sources.* | bootstrapurl | ➖ | Bootstrap server URL (optional) |
-| sources.* | bootstrapkey | ➖ | Bootstrap key path (optional) |
-| policy | logfile | ➖ | Policy log file (optional) |
-| policy.allowlist | action | ✅ | Action for allowlisted domains |
-| policy.denylist | action | ✅ | Action for denylisted domains |
-| policy.doubtlist.numsources | limit | ✅ | Source count threshold |
-| policy.doubtlist.numsources | action | ✅ | Action when threshold exceeded |
-| policy.doubtlist.numtapirtags | limit | ✅ | TAPIR tag count threshold |
-| policy.doubtlist.numtapirtags | action | ✅ | Action when threshold exceeded |
-| policy.doubtlist.denytapir | tags | ✅ | TAPIR tags that trigger denial |
-| policy.doubtlist.denytapir | action | ✅ | Action for matched tags |
+### Valid action values
+
+| Value | RPZ effect |
+|-------|-----------|
+| `allowlist` or `passthru` | `rpz-passthru.` — allow the name through |
+| `nxdomain` | `.` — return NXDOMAIN |
+| `nodata` | `*.` — return NODATA |
+| `drop` | `rpz-drop.` — silently drop the query |
+| `redirect` | redirect (target TBD in upstream config) |
