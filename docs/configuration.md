@@ -137,15 +137,15 @@ sources:
 | `type` | yes | Target list: `allowlist`, `denylist`, or `doubtlist` |
 | `format` | yes | Data format. For `source: mqtt`: `json`. For `source: file`: `domains`, `csv`, or `dawg`. For `source: xfr`: `rpz` |
 | `source` | yes | Fetch method: `mqtt`, `file`, or `xfr` |
-| `topic` | no | MQTT topic to subscribe to (`source: mqtt` only) |
+| `topic` | required when `source: mqtt` | MQTT topic to subscribe to |
 | `validatorkey` | no | Path to the key used to verify signed MQTT messages |
 | `bootstrap` | no | List of bootstrap server URLs for initial data load (`source: mqtt` only) |
-| `bootstrapurl` | no | Bootstrap server base URL |
-| `bootstrapkey` | no | Path to the bootstrap authentication key |
-| `filename` | no | Path to the local file (`source: file` only) |
+| `bootstrapurl` | no | Bootstrap server base URL (`source: mqtt` only) |
+| `bootstrapkey` | no | Path to the bootstrap authentication key (`source: mqtt` only) |
+| `filename` | required when `source: file` | Path to the local file |
 | `immutable` | no | If `true`, the list is never refreshed at runtime (default: `false`) |
-| `upstream` | no | Upstream DNS server address `host:port` for zone transfer (`source: xfr` only) |
-| `zone` | no | Zone name to transfer (`source: xfr` only) |
+| `upstream` | required when `source: xfr` | Upstream DNS server address `host:port` for zone transfer |
+| `zone` | required when `source: xfr` | Zone name to transfer |
 
 **Note on `type: allowlist` with DAWG format:** DAWG files are only supported for `type: allowlist`.
 
