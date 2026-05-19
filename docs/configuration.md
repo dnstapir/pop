@@ -153,13 +153,13 @@ sources:
 
 ## pop-outputs.yaml
 
-Outputs define downstream DNS resolvers that receive RPZ NOTIFY and can perform AXFR/IXFR.
+Outputs define downstream DNS resolvers that receive DNS NOTIFY messages and can perform DNS AXFR/IXFR zone transfers.
 
 ```yaml
 outputs:
-  downstream-resolver:
+  primary-resolver:
     active: true
-    name: "downstream-resolver"
+    name: "primary-resolver"
     description: "Primary downstream DNS resolver"
     type: "doubtlist"
     format: "rpz"
@@ -174,7 +174,7 @@ outputs:
 | `name` | yes | Output identifier |
 | `description` | yes | Human-readable description |
 | `type` | yes | Source list type this output is derived from |
-| `format` | yes | Output format (`rpz`) |
+| `format` | yes | Output format: `rpz` (currently the only supported format) |
 | `downstream` | yes | Downstream resolver address `host:port` to send DNS NOTIFY to |
 
 ---
