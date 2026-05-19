@@ -303,7 +303,7 @@ File-based sources (`source: file`) support three formats, set via the `format` 
 
 Plain text, one fully-qualified domain name per line. Lines are read as-is and converted to FQDN (trailing dot appended if missing).
 
-```
+```text
 example.com
 malicious.example.org
 blocked.test.
@@ -313,7 +313,7 @@ blocked.test.
 
 CSV file with a header row (skipped) and the domain name in the **second column** (index 1).
 
-```
+```csv
 id,domain,category
 1,malicious.example.com,malware
 2,phishing.example.org,phishing
