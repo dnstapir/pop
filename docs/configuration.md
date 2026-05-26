@@ -4,20 +4,21 @@ POP loads configuration from four separate YAML files at startup, all located in
 
 | File | Purpose |
 |------|---------|
-| `dnstapir-pop.yaml` | Main config: logging, services, API/DNS/bootstrap servers, keystore |
+| `tapir-pop.yaml` | Main config: logging, services, API/DNS/bootstrap servers, keystore, TAPIR/MQTT |
 | `pop-sources.yaml` | Intelligence sources (MQTT, file, RPZ zone transfer) |
 | `pop-outputs.yaml` | RPZ downstream outputs |
 | `pop-policy.yaml` | Policy rules for allow/deny/doubtlist decisions |
 
 ---
 
-## dnstapir-pop.yaml
+## tapir-pop.yaml
 
 ```yaml
 log:
+  mode: "debug"            # "debug" enables debug logging; any other value disables it
   file: "/var/log/dnstapir/pop.log"
-  verbose: false
-  debug: false
+  verbose: false           # Forwarded to the sources library
+  debug: false             # Forwarded to the sources library
 
 services:
   rpz:
@@ -25,6 +26,20 @@ services:
     serialcache: "/var/cache/dnstapir/pop-serial.yaml"
   reaper:
     interval: 3600
+  refreshengine:
+    active: true           # Enable the periodic RPZ refresh engine
+
+# Note: a few legacy keys live under the singular "service:" key (not "services:")
+service:
+  reset_soa_serial: false  # If true, reset RPZ SOA serial on startup
+  maxrefresh: 3600         # Upper bound (seconds) for refresh interval
+
+tapir:
+  config:
+    active: true           # Enable receiving TAPIR global config over MQTT
+    topic: "tapir/config"  # MQTT topic for global config updates
+  mqtt:
+    logfile: "/var/log/dnstapir/pop-mqtt.log"
 
 apiserver:
   active: true
@@ -59,12 +74,19 @@ keystore:
 
 | Field | Required | Description |
 |-------|----------|-------------|
+| `log.mode` | no | Set to `"debug"` to enable debug logging in POP itself |
 | `log.file` | yes | Log file path |
-| `log.verbose` | yes | Enable verbose logging |
-| `log.debug` | yes | Enable debug logging |
+| `log.verbose` | no | Forwarded to the sources library to enable verbose source logging |
+| `log.debug` | no | Forwarded to the sources library to enable debug source logging |
 | `services.rpz.zonename` | yes | RPZ zone name served to downstream resolvers |
 | `services.rpz.serialcache` | yes | File where the current RPZ serial is persisted across restarts |
 | `services.reaper.interval` | yes | Interval in seconds for the cleanup (reaper) goroutine |
+| `services.refreshengine.active` | yes | Enable the periodic RPZ refresh engine |
+| `service.reset_soa_serial` | no | Reset the RPZ SOA serial on startup (note: singular `service`, not `services`) |
+| `service.maxrefresh` | no | Upper bound in seconds applied to refresh intervals (note: singular `service`) |
+| `tapir.config.active` | no | Enable receiving TAPIR global config updates via MQTT |
+| `tapir.config.topic` | required when `tapir.config.active: true` | MQTT topic carrying TAPIR global config |
+| `tapir.mqtt.logfile` | no | Dedicated log file for TAPIR MQTT traffic |
 | `apiserver.active` | yes | Enable the REST API server |
 | `apiserver.name` | yes | API server identifier |
 | `apiserver.key` | yes | API authentication key |
@@ -97,6 +119,7 @@ sources:
     type: "doubtlist"        # List to load into: allowlist, denylist, or doubtlist
     format: "json"           # Wire format: json
     source: "mqtt"           # Fetch method: mqtt, file, or xfr
+    immutable: false         # MQTT-only: if true, ignore TAPIR global config updates
     topic: "tapir/feed/blocklist"
     validatorkey: "/etc/dnstapir/validator.key"
     bootstrap:
@@ -113,7 +136,6 @@ sources:
     format: "domains"        # File format: domains, csv, or dawg
     source: "file"
     filename: "/etc/dnstapir/allowlist.txt"
-    immutable: false         # If true, the list is never updated at runtime
 
   # RPZ zone transfer feed
   upstream-rpz:
@@ -143,7 +165,7 @@ sources:
 | `bootstrapurl` | no | Bootstrap server base URL (`source: mqtt` only) |
 | `bootstrapkey` | no | Path to the bootstrap authentication key (`source: mqtt` only) |
 | `filename` | required when `source: file` | Path to the local file |
-| `immutable` | no | If `true`, the list is never refreshed at runtime (default: `false`) |
+| `immutable` | no | MQTT sources only: if `true`, the source ignores TAPIR global config updates that would otherwise replace it. Has no effect on `file` or `xfr` sources |
 | `upstream` | required when `source: xfr` | Upstream DNS server address `host:port` for zone transfer |
 | `zone` | required when `source: xfr` | Zone name to transfer |
 
@@ -226,7 +248,8 @@ policy:
 | `nxdomain` | `.` — return NXDOMAIN |
 | `nodata` | `*.` — return NODATA |
 | `drop` | `rpz-drop.` — silently drop the query |
-| `redirect` | redirect (target TBD in upstream config) |
+
+> Note: a `redirect` action exists in the codebase but is not fully implemented — it currently maps to a placeholder CNAME target, and the doubtlist AXFR path does not handle it. Avoid using `redirect` until upstream support lands.
 
 ### Policy examples
 
