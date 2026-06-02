@@ -15,6 +15,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/smhanov/dawg"
 	"github.com/spf13/viper"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 )
 
@@ -157,9 +158,13 @@ func (pd *PopData) ParseSourcesNG() error {
 	srcs := srcfoo.Sources
 	pd.Logger.Printf("*** ParseSourcesNG: there are %d sources defined in config", len(srcs))
 
-	threads := 0
-
-	var rptchan = make(chan string, 5)
+	// Each active source is parsed in its own goroutine. We use an errgroup
+	// rather than a hand-rolled WaitGroup/counter+channel: a source completes
+	// when its closure *returns*, so there is no separate "signal done" step
+	// to forget (the old code deadlocked when a source type was unhandled and
+	// never signalled its completion channel). g.Wait() also collects the
+	// first error for free.
+	var g errgroup.Group
 
 	for name, src := range srcs {
 		if !*src.Active {
@@ -170,15 +175,10 @@ func (pd *PopData) ParseSourcesNG() error {
 			pd.Logger.Printf("=== ParseSourcesNG: Source: %s (%s) will be used (list type %s)", name, src.Name, src.Type)
 		}
 
-		var err error
+		name, src := name, src // capture range vars for the closure
 
-		threads++
-
-		go func(name string, src SourceConf, thread int) {
-			//			defer func() {
-			//pd.Logger.Printf("<--Thread %d: source \"%s\" (%s) is now complete. %d remaining", thread, name, src.Source, threads)
-			// }()
-			pd.Logger.Printf("-->Thread %d: parsing source \"%s\" (source %s)", thread, name, src.Source)
+		g.Go(func() error {
+			pd.Logger.Printf("--> parsing source \"%s\" (source %s)", name, src.Source)
 
 			newsource := tapir.WBGlist{
 				Name:        src.Name,
@@ -193,7 +193,6 @@ func (pd *PopData) ParseSourcesNG() error {
 				RpzZoneName: dns.Fqdn(src.Zone),
 			}
 
-			pd.Logger.Printf("ParseSourcesNG: thread %d working on source \"%s\" (%s)", thread, name, src.Source)
 			switch src.Source {
 			case "mqtt":
 				if pd.Debug {
@@ -207,14 +206,14 @@ func (pd *PopData) ParseSourcesNG() error {
 				}
 				pd.Logger.Printf("ParseSourcesNG: Topic data for topic %s", src.Topic)
 
-                mqttDetails := tapir.MqttDetails{
-                    Topics:        []string{src.Topic},
-                    Bootstrap:     src.Bootstrap,
-                    BootstrapUrl:  src.BootstrapUrl,
-                    BootstrapKey:  src.BootstrapKey,
-                }
-                newsource.MqttDetails = &mqttDetails
-                newsource.Immutable = src.Immutable
+				mqttDetails := tapir.MqttDetails{
+					Topics:       []string{src.Topic},
+					Bootstrap:    src.Bootstrap,
+					BootstrapUrl: src.BootstrapUrl,
+					BootstrapKey: src.BootstrapKey,
+				}
+				newsource.MqttDetails = &mqttDetails
+				newsource.Immutable = src.Immutable
 
 				newsource.Format = "map" // for now
 				if len(src.Bootstrap) > 0 {
@@ -231,30 +230,26 @@ func (pd *PopData) ParseSourcesNG() error {
 				pd.Logger.Printf("Created list [doubtlist][%s]", newsource.Name)
 				pd.mu.Unlock()
 				pd.Logger.Printf("*** MQTT sources are only managed via RefreshEngine.")
-				rptchan <- name
+				return nil
 			case "file":
-				err = pd.ParseLocalFile(name, &newsource, rptchan)
+				return pd.ParseLocalFile(name, &newsource)
 			case "xfr":
-				err = pd.ParseRpzFeed(name, &newsource, rptchan)
-				pd.Logger.Printf("Thread %d: source \"%s\" now returned from ParseRpzFeed(). %d remaining", thread, name, threads)
+				err := pd.ParseRpzFeed(name, &newsource)
+				pd.Logger.Printf("source \"%s\" now returned from ParseRpzFeed().", name)
+				return err
 			default:
-				pd.Logger.Printf("*** ParseSourcesNG: Error: unhandled source type %s", src.Source)
+				return fmt.Errorf("unhandled source type %q for source %q", src.Source, name)
 			}
-			if err != nil {
-				log.Printf("Error parsing source %s (datasource %s): %v",
-					name, src.Source, err)
-			}
-		}(name, src, threads)
+		})
 	}
 
-	for {
-		if threads == 0 {
-			break
-		}
-		tmp := <-rptchan
-		threads--
-		pd.Logger.Printf("ParseSources: source \"%s\" is now complete. %d remaining", tmp, threads)
+	// A failing source is logged and the rest are kept (matching the previous
+	// log-and-continue behaviour); it does not abort startup. g.Wait() blocks
+	// until every source goroutine has returned.
+	if err := g.Wait(); err != nil {
+		log.Printf("ParseSourcesNG: at least one source failed to parse: %v", err)
 	}
+	pd.Logger.Printf("ParseSources: all sources done.")
 
 	if pd.MqttEngine != nil && !pd.TapirMqttEngineRunning {
 		err := pd.StartMqttEngine(pd.MqttEngine)
@@ -273,7 +268,7 @@ func (pd *PopData) ParseSourcesNG() error {
 	return nil
 }
 
-func (pd *PopData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan string) error {
+func (pd *PopData) ParseLocalFile(sourceid string, s *tapir.WBGlist) error {
 	pd.Logger.Printf("ParseLocalFile: %s (%s)", sourceid, s.Type)
 	var df dawg.Finder
 	var err error
@@ -330,12 +325,11 @@ func (pd *PopData) ParseLocalFile(sourceid string, s *tapir.WBGlist, rpt chan st
 	pd.mu.Lock()
 	pd.Lists[s.Type][s.Name] = s
 	pd.mu.Unlock()
-	rpt <- sourceid
 
 	return nil
 }
 
-func (pd *PopData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan string) error {
+func (pd *PopData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
 	//	zone := viper.GetString(fmt.Sprintf("sources.%s.zone", sourceid)) // XXX: not the way to do it
 	//	if zone == "" {
 	//		return fmt.Errorf("Unable to load RPZ source %s, upstream zone not specified.",
@@ -368,7 +362,6 @@ func (pd *PopData) ParseRpzFeed(sourceid string, s *tapir.WBGlist, rpt chan stri
 	pd.mu.Lock()
 	pd.Lists[s.Type][s.Name] = s
 	pd.mu.Unlock()
-	rpt <- sourceid
 	pd.Logger.Printf("ParseRpzFeed: parsing RPZ %s complete", s.RpzZoneName)
 
 	return nil
