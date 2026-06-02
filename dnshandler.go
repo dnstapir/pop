@@ -154,10 +154,12 @@ func (pd *PopData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16, 
 	m.SetReply(r)
 	m.MsgHdr.Authoritative = true
 
-	//	apex := zd.Owners[zd.OwnerIndex[zd.ZoneName]]
-	// zd.Logger.Printf("*** Ownerindex(%s)=%d apex: %v", zd.ZoneName, zd.OwnerIndex[zd.ZoneName], apex)
-	zd := pd.Rpz.Axfr.ZoneData
-	// XXX: we need this, but later var glue tapir.RRset
+	snap := pd.snapshot.Load()
+	if snap == nil {
+		lg.Printf("RpzResponder: no snapshot published yet; refusing")
+		m.MsgHdr.Rcode = dns.RcodeServerFailure
+		return w.WriteMsg(m)
+	}
 
 	downstream, _, err := net.SplitHostPort(w.RemoteAddr().String())
 	if err != nil {
@@ -167,47 +169,31 @@ func (pd *PopData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16, 
 
 	switch qtype {
 	case dns.TypeAXFR:
-		lg.Printf("We have the zone %s, so let's try to serve it", pd.Rpz.ZoneName)
-		//		log.Printf("SOA: %s", zd.SOA.String())
-		//		log.Printf("BodyRRs: %d (+ %d apex RRs)", len(zd.BodyRRs), zd.ApexLen)
-
-		//		pd.Logger.Printf("RpzResponder: sending zone %s with %d body RRs to XfrOut",
-		//			zd.ZoneName, len(zd.RRs))
-
+		lg.Printf("RpzResponder: serving AXFR of %s", snap.ZoneName)
 		_, _, err := pd.RpzAxfrOut(w, r)
 		if err != nil {
-			lg.Printf("RpzResponder: error from RpzAxfrOut() serving zone %s: %v", zd.ZoneName, err)
+			lg.Printf("RpzResponder: error from RpzAxfrOut() serving zone %s: %v", snap.ZoneName, err)
 		}
-
 		return nil
 
 	case dns.TypeIXFR:
-		lg.Printf("RpzResponder: %s is our RPZ output", pd.Rpz.ZoneName)
-
+		lg.Printf("RpzResponder: %s is our RPZ output", snap.ZoneName)
 		serial, _, err := pd.RpzIxfrOut(w, r)
 		if err != nil {
-			lg.Printf("RpzResponder: error from RpzIxfrOut() serving zone %s: %v", zd.ZoneName, err)
+			lg.Printf("RpzResponder: error from RpzIxfrOut() serving zone %s: %v", snap.ZoneName, err)
 		}
-
-		pd.mu.Lock()
-		pd.DownstreamSerials[downstream] = serial // track the highest known serial for each downstream
-		pd.mu.Unlock()
+		// Track the serial this downstream now holds (own mutex, not pd.mu).
+		pd.downstreamSerials.record(downstream, serial)
 		return nil
 	case dns.TypeSOA:
-		// zd.Logger.Printf("There are %d SOA RRs in %s. rrset: %v", len(apex.RRtypes[dns.TypeSOA].RRs),
-		// 			   zd.ZoneName, apex.RRtypes[dns.TypeSOA])
-		//		m.Answer = append(m.Answer, dns.RR(&zd.SOA))
-		pd.Rpz.Axfr.SOA.Serial = pd.Rpz.CurrentSerial
-		m.Answer = append(m.Answer, dns.RR(&pd.Rpz.Axfr.SOA))
-		//		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeNS].RRs...)
-		m.Ns = append(m.Ns, pd.Rpz.Axfr.ZoneData.NSrrs...)
-		//		glue = *zd.FindGlue(apex.RRtypes[dns.TypeNS])
-		//		m.Extra = append(m.Extra, glue.RRs...)
+		soa := snap.SOA // copy from immutable snapshot
+		m.Answer = append(m.Answer, dns.RR(&soa))
+		m.Ns = append(m.Ns, snap.NSrrs...)
 
 	default:
 		// every apex query we don't want to deal with
 		m.MsgHdr.Rcode = dns.RcodeRefused
-		m.Ns = append(m.Ns, zd.NSrrs...)
+		m.Ns = append(m.Ns, snap.NSrrs...)
 	}
 	err = w.WriteMsg(m)
 	if err != nil {
@@ -409,31 +395,30 @@ func (pd *PopData) QueryResponder(w dns.ResponseWriter, r *dns.Msg, qname string
 	m.SetReply(r)
 	m.MsgHdr.Authoritative = true
 
+	snap := pd.snapshot.Load()
+	if snap == nil {
+		m.MsgHdr.Rcode = dns.RcodeServerFailure
+		return w.WriteMsg(m)
+	}
+	soa := snap.SOA // copy from immutable snapshot
+
 	returnNXDOMAIN := func() {
-		// return NXDOMAIN
 		m.MsgHdr.Rcode = dns.RcodeNameError
-		//		m.Ns = append(m.Ns, apex.RRtypes[dns.TypeSOA].RRs...)
-		m.Ns = append(m.Ns, dns.RR(&pd.Rpz.Axfr.SOA))
+		m.Ns = append(m.Ns, dns.RR(&soa))
 		err := w.WriteMsg(m)
 		if err != nil {
 			lg.Printf("Error from WriteMsg(): %v", err)
 		}
 	}
 
-	// log.Printf("Zone %s Data: %v", zd.ZoneName, zd.Data)
-
-	//	var err error
-	var exist bool
-	var tn *tapir.RpzName
-
-	if tn, exist = pd.Rpz.Axfr.Data[qname]; exist {
+	if tn, exist := snap.Data[qname]; exist {
 		m.MsgHdr.Rcode = dns.RcodeSuccess
 		switch qtype {
 		case dns.TypeCNAME, dns.TypeANY:
 			m.Answer = append(m.Answer, *tn.RR)
-			m.Ns = append(m.Ns, pd.Rpz.Axfr.NSrrs...)
+			m.Ns = append(m.Ns, snap.NSrrs...)
 		default:
-			m.Ns = append(m.Ns, dns.RR(&pd.Rpz.Axfr.SOA))
+			m.Ns = append(m.Ns, dns.RR(&soa))
 		}
 		err := w.WriteMsg(m)
 		if err != nil {
