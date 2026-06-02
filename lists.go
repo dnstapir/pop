@@ -6,71 +6,16 @@ package main
 
 import (
 	"fmt"
-	"log"
-
-	//	"github.com/smhanov/dawg"
-	"github.com/dnstapir/tapir"
 )
 
-func (pd *PopData) Allowlisted(name string) bool {
-	for _, list := range pd.Lists["allowlist"] {
-		switch list.Format {
-		case "dawg":
-			if tapir.GlobalCF.Debug {
-				pd.Logger.Printf("Allowlisted: DAWG: checking %s in allowlist %s", name, list.Name)
-			}
-			if list.Dawgf.IndexOf(name) != -1 {
-				return true
-			}
-		case "map":
-			if tapir.GlobalCF.Debug {
-				pd.Logger.Printf("Allowlisted: MAP: checking %s in allowlist %s", name, list.Name)
-			}
-			if _, exists := list.Names[name]; exists {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (pd *PopData) Denylisted(name string) bool {
-	for _, list := range pd.Lists["denylist"] {
-		if tapir.GlobalCF.Debug {
-			pd.Logger.Printf("Denylisted: checking %s in Denylist %s", name, list.Name)
-		}
-		switch list.Format {
-		case "dawg":
-			if list.Dawgf.IndexOf(name) != -1 {
-				return true
-			}
-		case "map":
-			if _, exists := list.Names[name]; exists {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (pd *PopData) Doubtlisted(name string) bool {
-	for _, list := range pd.Lists["doubtlist"] {
-		if tapir.GlobalCF.Debug {
-			pd.Logger.Printf("Doubtlisted: checking %s in doubtlist %s", name, list.Name)
-		}
-		switch list.Format {
-		case "map":
-			if _, exists := list.Names[name]; exists {
-				return true
-			}
-			//		case "trie":
-			//			return list.Trie.Search(name) != nil
-		default:
-			log.Fatalf("Unknown doubtlist format %s", list.Format)
-		}
-	}
-	return false
-}
+// Allowlisted / Denylisted / Doubtlisted are thin membership predicates over
+// the single listOf() lookup (defined in policy.go). They previously each
+// re-implemented the same per-format scan; Doubtlisted additionally crashed
+// the daemon (log.Fatalf) on an unknown list format, which listOf() now
+// degrades to a logged skip.
+func (pd *PopData) Allowlisted(name string) bool { return len(pd.listOf("allowlist", name)) > 0 }
+func (pd *PopData) Denylisted(name string) bool  { return len(pd.listOf("denylist", name)) > 0 }
+func (pd *PopData) Doubtlisted(name string) bool { return len(pd.listOf("doubtlist", name)) > 0 }
 
 func (pd *PopData) DoubtlistingReport(name string) (bool, string) {
 	var report string
