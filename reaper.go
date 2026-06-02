@@ -66,13 +66,16 @@ func (pd *PopData) Reaper(full bool) error {
 	}
 
 	if len(tm.Removed) > 0 {
+		// GenerateRpzIxfr publishes the new snapshot itself.
 		ixfr, err := pd.GenerateRpzIxfr(&tm)
 		if err != nil {
 			pd.Logger.Printf("Reaper: Error from GenerateRpzIxfr(): %v", err)
+			return nil
 		}
-		err = pd.ProcessIxfrIntoAxfr(ixfr)
-		if err != nil {
-			pd.Logger.Printf("Reaper: Error from ProcessIxfrIntoAxfr(): %v", err)
+		if ixfr.FromSerial != ixfr.ToSerial {
+			if err := pd.NotifyDownstreams(); err != nil {
+				pd.Logger.Printf("Reaper: Error from NotifyDownstreams(): %v", err)
+			}
 		}
 	}
 	return nil
