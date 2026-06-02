@@ -29,6 +29,7 @@ package main
 
 import (
 	"log"
+	"strings"
 	"testing"
 
 	"github.com/dnstapir/tapir"
@@ -263,12 +264,29 @@ func TestDecideOrderIndependence(t *testing.T) {
 		listFixture{"doubtlist", "alpha", []tapir.TapirName{tn(q, 0, 0)}},
 	)
 
-	actA, _ := a.decide(q)
-	actB, _ := b.decide(q)
+	actA, reasonA := a.decide(q)
+	actB, reasonB := b.decide(q)
 	if actA != actB {
 		t.Errorf("decide is order-dependent: %s vs %s",
 			tapir.ActionToString[actA], tapir.ActionToString[actB])
 	}
+	// Reason.Sources must also be order-independent: listOf sorts by source
+	// name, so both insertion orders must yield the same sequence (alpha, zeta).
+	if got := sourceList(reasonA.Sources); got != "alpha,zeta" {
+		t.Errorf("reasonA.Sources = %q, want alpha,zeta", got)
+	}
+	if sourceList(reasonA.Sources) != sourceList(reasonB.Sources) {
+		t.Errorf("Reason.Sources order depends on insertion order: %q vs %q",
+			sourceList(reasonA.Sources), sourceList(reasonB.Sources))
+	}
+}
+
+func sourceList(hits []ListHit) string {
+	var ss []string
+	for _, h := range hits {
+		ss = append(ss, h.Source)
+	}
+	return strings.Join(ss, ",")
 }
 
 // --- TestDecideDeterminism -------------------------------------------------
@@ -282,12 +300,18 @@ func TestDecideDeterminism(t *testing.T) {
 		listFixture{"doubtlist", "other", []tapir.TapirName{tn(q, 0, 0)}},
 	)
 
-	first, _ := pd.decide(q)
+	first, firstReason := pd.decide(q)
+	firstSources := sourceList(firstReason.Sources)
 	for i := 0; i < 100; i++ {
-		got, _ := pd.decide(q)
+		got, gotReason := pd.decide(q)
 		if got != first {
 			t.Fatalf("decide is non-deterministic: call %d gave %s, first gave %s",
 				i, tapir.ActionToString[got], tapir.ActionToString[first])
+		}
+		// Reason.Sources ordering must be stable too (listOf sorts).
+		if gs := sourceList(gotReason.Sources); gs != firstSources {
+			t.Fatalf("Reason.Sources non-deterministic: call %d gave %q, first gave %q",
+				i, gs, firstSources)
 		}
 	}
 }
