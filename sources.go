@@ -243,11 +243,16 @@ func (pd *PopData) ParseSourcesNG() error {
 		})
 	}
 
-	// A failing source is logged and the rest are kept (matching the previous
-	// log-and-continue behaviour); it does not abort startup. g.Wait() blocks
-	// until every source goroutine has returned.
+	// Source-parse failures are NON-FATAL by design: a single bad/unreachable
+	// feed is logged and the remaining sources are kept, rather than aborting
+	// startup of a daemon that may serve several feeds (this matches the
+	// pre-errgroup log-and-continue behaviour). g.Wait() blocks until every
+	// source goroutine has returned. We deliberately do NOT propagate this
+	// error: ParseSourcesNG returns nil so the caller does not treat a single
+	// failed feed as fatal. (Whether some classes of source failure SHOULD be
+	// fatal is the broader fatal-vs-degrade question tracked in #154.)
 	if err := g.Wait(); err != nil {
-		log.Printf("ParseSourcesNG: at least one source failed to parse: %v", err)
+		log.Printf("ParseSourcesNG: at least one source failed to parse (non-fatal, continuing): %v", err)
 	}
 	pd.Logger.Printf("ParseSources: all sources done.")
 

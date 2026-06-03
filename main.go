@@ -23,9 +23,9 @@ import (
 )
 
 /* Rewritten if building with make */
-var name    = "BAD-BUILD"
+var name = "BAD-BUILD"
 var version = "BAD-BUILD"
-var commit  = "BAD-BUILD"
+var commit = "BAD-BUILD"
 
 var POPExiter = func(args ...interface{}) {
 	log.Printf("POPExiter: [placeholderfunction w/o real cleanup]")
@@ -128,7 +128,6 @@ func mainloop(conf *Config, configfile *string, pd *PopData) {
 var Gconfig Config
 var mqttclientid string
 
-
 func main() {
 	fmt.Printf("%s (TAPIR Edge Manager) version %s (%s) starting.\n", name, version, commit)
 	// var conf Config
@@ -219,9 +218,12 @@ func main() {
 	go pd.RefreshEngine(&Gconfig, stopch)
 
 	log.Println("*** main: Calling ParseSourcesNG()")
-	err = pd.ParseSourcesNG()
-	if err != nil {
-		POPExiter("Error from ParseSourcesNG: %v", err)
+	// ParseSourcesNG is intentionally non-fatal: it logs failures of individual
+	// sources and continues (one bad/unreachable feed must not block startup of
+	// a multi-feed daemon). It returns nil; we still check the error in case
+	// that contract changes, but a returned error here would be unexpected.
+	if err = pd.ParseSourcesNG(); err != nil {
+		log.Printf("main: ParseSourcesNG reported an error (continuing): %v", err)
 	}
 	log.Println("*** main: Returned from ParseSourcesNG()")
 
