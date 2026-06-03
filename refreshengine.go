@@ -333,12 +333,12 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						}
 						resp.Msg = fmt.Sprintf("Zone %s: bumped serial from %d to %d. Notified downstreams: %v",
 							zone, resp.OldSerial, resp.NewSerial, rc.Downstreams)
-						log.Printf(resp.Msg)
+						log.Print(resp.Msg)
 						resp.Status = true
 					} else {
 						resp.Error = true
 						resp.ErrorMsg = fmt.Sprintf("Request to bump serial for unknown zone '%s'", zone)
-						log.Printf(resp.ErrorMsg)
+						log.Print(resp.ErrorMsg)
 					}
 				}
 				cmd.Result <- resp
