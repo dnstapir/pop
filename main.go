@@ -218,12 +218,16 @@ func main() {
 	go pd.RefreshEngine(&Gconfig, stopch)
 
 	log.Println("*** main: Calling ParseSourcesNG()")
-	// ParseSourcesNG is intentionally non-fatal: it logs failures of individual
-	// sources and continues (one bad/unreachable feed must not block startup of
-	// a multi-feed daemon). It returns nil; we still check the error in case
-	// that contract changes, but a returned error here would be unexpected.
+	// ParseSourcesNG has a two-tier error contract:
+	//   - Failure of an INDIVIDUAL source (one bad/unreachable feed) is logged
+	//     and the rest are kept; it does NOT return an error (non-fatal by
+	//     design — see the g.Wait() comment in sources.go).
+	//   - Failure to load the sources config FILE itself (unreadable / malformed
+	//     YAML) returns a non-nil error. That is a whole-config failure, fatal
+	//     at startup just like the other config files — starting with zero
+	//     sources loaded would be worse than not starting.
 	if err = pd.ParseSourcesNG(); err != nil {
-		log.Printf("main: ParseSourcesNG reported an error (continuing): %v", err)
+		POPExiter("Error from ParseSourcesNG (sources config could not be loaded): %v", err)
 	}
 	log.Println("*** main: Returned from ParseSourcesNG()")
 
