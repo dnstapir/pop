@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -209,6 +210,10 @@ func (pd *PopData) listOf(class, name string) []ListHit {
 			pd.Logger.Printf("listOf: skipping source %q: unknown format %q", src, list.Format)
 		}
 	}
+	// Sort by source name so the result (and therefore Reason.Sources) is
+	// deterministic — pd.Lists is a map, so iteration order is randomized.
+	// This upholds the "same inputs -> same (Action, Reason)" invariant.
+	sort.Slice(hits, func(i, j int) bool { return hits[i].Source < hits[j].Source })
 	return hits
 }
 
