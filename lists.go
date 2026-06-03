@@ -6,86 +6,68 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"strings"
 
-	//	"github.com/smhanov/dawg"
 	"github.com/dnstapir/tapir"
+	"github.com/miekg/dns"
 )
 
-func (pd *PopData) Allowlisted(name string) bool {
-	for _, list := range pd.Lists["allowlist"] {
-		switch list.Format {
-		case "dawg":
-			if tapir.GlobalCF.Debug {
-				pd.Logger.Printf("Allowlisted: DAWG: checking %s in allowlist %s", name, list.Name)
-			}
-			if list.Dawgf.IndexOf(name) != -1 {
-				return true
-			}
-		case "map":
-			if tapir.GlobalCF.Debug {
-				pd.Logger.Printf("Allowlisted: MAP: checking %s in allowlist %s", name, list.Name)
-			}
-			if _, exists := list.Names[name]; exists {
-				return true
+// Allowlisted / Denylisted / Doubtlisted are thin membership predicates over
+// the single listOf() lookup (defined in policy.go). They previously each
+// re-implemented the same per-format scan; Doubtlisted additionally crashed
+// the daemon (log.Fatalf) on an unknown list format, which listOf() now
+// degrades to a logged skip.
+func (pd *PopData) Allowlisted(name string) bool { return len(pd.listOf("allowlist", name)) > 0 }
+func (pd *PopData) Denylisted(name string) bool  { return len(pd.listOf("denylist", name)) > 0 }
+func (pd *PopData) Doubtlisted(name string) bool { return len(pd.listOf("doubtlist", name)) > 0 }
+
+// LookupReport explains the RPZ decision for a name using the SAME decide()
+// path that builds the served zone, so the explanation can never disagree with
+// what is actually served (AXFR/IXFR). It reports the emitted action, the
+// deciding stage, the matching sources, and (for doubtlist decisions) which
+// rules fired. This is the minimal unification; the richer structured output
+// for the "filter reason" CLI command (task a) is built on the same Reason.
+func (pd *PopData) LookupReport(name string) string {
+	action, reason := pd.decide(name)
+	fqdn := dns.Fqdn(name)
+
+	var b strings.Builder
+	switch reason.Stage {
+	case StageAllowlist:
+		fmt.Fprintf(&b, "Domain name %q is allowlisted (sources: %s); not filtered.\n",
+			fqdn, sourceNames(reason.Sources))
+	case StageDenylist:
+		fmt.Fprintf(&b, "Domain name %q is denylisted (sources: %s); served as %s.\n",
+			fqdn, sourceNames(reason.Sources), tapir.ActionToString[action])
+	case StageDoubtlist:
+		if action == tapir.ALLOWLIST {
+			fmt.Fprintf(&b, "Domain name %q is in doubtlists (sources: %s) but no rule triggered; not filtered.\n",
+				fqdn, sourceNames(reason.Sources))
+		} else {
+			fmt.Fprintf(&b, "Domain name %q is doubtlisted (sources: %s); served as %s.\n",
+				fqdn, sourceNames(reason.Sources), tapir.ActionToString[action])
+			for _, rr := range reason.Fired {
+				fmt.Fprintf(&b, "  rule %q fired: %s (action %s)\n",
+					rr.Rule, rr.Detail, tapir.ActionToString[rr.Action])
 			}
 		}
+	default: // StageNone
+		fmt.Fprintf(&b, "Domain name %q is not present in any list; not filtered.\n", fqdn)
 	}
-	return false
+	return b.String()
 }
 
-func (pd *PopData) Denylisted(name string) bool {
-	for _, list := range pd.Lists["denylist"] {
-		if tapir.GlobalCF.Debug {
-			pd.Logger.Printf("Denylisted: checking %s in Denylist %s", name, list.Name)
-		}
-		switch list.Format {
-		case "dawg":
-			if list.Dawgf.IndexOf(name) != -1 {
-				return true
-			}
-		case "map":
-			if _, exists := list.Names[name]; exists {
-				return true
-			}
-		}
+// sourceNames renders the source names of a set of ListHits, in the (already
+// sorted) order listOf produced.
+func sourceNames(hits []ListHit) string {
+	if len(hits) == 0 {
+		return "(none)"
 	}
-	return false
-}
-
-func (pd *PopData) Doubtlisted(name string) bool {
-	for _, list := range pd.Lists["doubtlist"] {
-		if tapir.GlobalCF.Debug {
-			pd.Logger.Printf("Doubtlisted: checking %s in doubtlist %s", name, list.Name)
-		}
-		switch list.Format {
-		case "map":
-			if _, exists := list.Names[name]; exists {
-				return true
-			}
-			//		case "trie":
-			//			return list.Trie.Search(name) != nil
-		default:
-			log.Fatalf("Unknown doubtlist format %s", list.Format)
-		}
+	names := make([]string, 0, len(hits))
+	for _, h := range hits {
+		names = append(names, h.Source)
 	}
-	return false
-}
-
-func (pd *PopData) DoubtlistingReport(name string) (bool, string) {
-	var report string
-	// 	if len(pd.Doubtlists) == 0 {
-	if len(pd.Lists["doubtlist"]) == 0 {
-		return false, fmt.Sprintf("Domain name \"%s\" is not doubtlisted (there are no active doubtlists).\n", name)
-	}
-
-	// 	for _, list := range pd.Doubtlists {
-	for _, list := range pd.Lists["doubtlist"] {
-		pd.Logger.Printf("Doubtlisted: checking %s in doubtlist %s", name, list.Name)
-		report += fmt.Sprintf("Domain name \"%s\" could be present in doubtlist %s\n", name, list.Name)
-	}
-	return false, report
-
+	return strings.Join(names, ", ")
 }
 
 func (pd *PopData) DoubtlistAdd(name, policy, source string) (string, error) {
