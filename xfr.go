@@ -229,7 +229,10 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	rrs := []dns.RR{dns.RR(&soa)} // leading SOA at current serial
 
 	var total_sent, count int
-	var finalSerial uint32
+	// Default to the client's own serial: if no delta applies (client already
+	// up to date) we serve a SOA-only IXFR and report the unchanged serial,
+	// not 0.
+	finalSerial := curserial
 	for _, ixfr := range snap.IxfrChain {
 		if ixfr.FromSerial < curserial {
 			continue
@@ -294,6 +297,12 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 // building a new snapshot, so all chain mutation stays on the engine goroutine.
 // (Replaces the old PruneRpzIxfrChain, which mutated shared state from a DNS
 // goroutine and had an off-by-two bug.)
+//
+// Invariant relied on: the chain is contiguous and oldest-first — each delta's
+// ToSerial equals the next delta's FromSerial. GenerateRpzIxfr guarantees this
+// by only ever appending curserial -> curserial+1. Trimming a contiguous chain
+// from the front preserves contiguity, so RpzIxfrOut can always walk an
+// unbroken serial path from any in-range client serial to the current one.
 func pruneIxfrChain(chain []RpzIxfr, lowSerial uint32, haveDownstreams bool) []RpzIxfr {
 	if !haveDownstreams || len(chain) == 0 {
 		return chain
