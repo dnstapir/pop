@@ -23,9 +23,9 @@ import (
 )
 
 /* Rewritten if building with make */
-var name    = "BAD-BUILD"
+var name = "BAD-BUILD"
 var version = "BAD-BUILD"
-var commit  = "BAD-BUILD"
+var commit = "BAD-BUILD"
 
 var POPExiter = func(args ...interface{}) {
 	log.Printf("POPExiter: [placeholderfunction w/o real cleanup]")
@@ -49,6 +49,30 @@ func (pd *PopData) SaveRpzSerial() error {
 		log.Printf("Saved current serial %d to file %s", pd.Rpz.CurrentSerial, serialFile)
 	}
 	return err
+}
+
+// reloadConfig re-reads the given config file on SIGHUP. It first reads into a
+// throwaway viper so that a malformed file cannot corrupt the live global
+// config; only if that succeeds does it re-read into the global viper. It
+// returns an error (rather than exiting) on any failure, so the daemon keeps
+// running with its existing config — an operator's config typo must never take
+// POP down (#155).
+//
+// Note: this re-reads the primary config file only; it does not yet re-run full
+// validation or re-apply sources/outputs/policy (that belongs with the larger
+// config-application rework). The guarantee here is narrowly "a bad reload does
+// not kill the daemon and does not corrupt the running config".
+func reloadConfig(configfile string) error {
+	vtmp := viper.New()
+	vtmp.SetConfigFile(configfile)
+	if err := vtmp.ReadInConfig(); err != nil {
+		return fmt.Errorf("config file %s did not parse: %w", configfile, err)
+	}
+	if err := viper.ReadInConfig(); err != nil {
+		// The throwaway read above succeeded, so this is unexpected.
+		return fmt.Errorf("re-reading %s into live config failed: %w", configfile, err)
+	}
+	return nil
 }
 
 func mainloop(conf *Config, configfile *string, pd *PopData) {
@@ -99,16 +123,21 @@ func mainloop(conf *Config, configfile *string, pd *PopData) {
 				}
 				// do whatever we need to do to wrap up nicely
 				wg.Done()
+				// Stop dispatching: we are shutting down. Returning here also
+				// guarantees wg.Done() is called exactly once even if another
+				// shutdown signal (e.g. APIStopCh) arrives concurrently —
+				// otherwise the loop would Done() again and panic the
+				// WaitGroup with a negative counter. (#159)
+				return
 			case <-hupper:
-				// config file to use has already been set in main()
-				if err := viper.ReadInConfig(); err == nil {
-					fmt.Fprintln(os.Stderr, "Using config file:", *configfile)
-				} else {
-					POPExiter("Could not load config %s: Error: %v", *configfile, err)
+				// SIGHUP: reload config, but NEVER let a bad config file take
+				// down a running daemon (#155).
+				if err := reloadConfig(*configfile); err != nil {
+					log.Printf("mainloop: SIGHUP: reload of %s failed (%v); keeping running config unchanged", *configfile, err)
+					continue
 				}
-
+				fmt.Fprintln(os.Stderr, "Reloaded config file:", *configfile)
 				log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
-				log.Printf("mainloop: Requesting refresh of all RPZ zones")
 				conf.PopData.RpzRefreshCh <- RpzRefresh{Name: ""}
 			case <-conf.Internal.APIStopCh:
 				log.Printf("mainloop: API instruction to stop\n")
@@ -117,6 +146,7 @@ func mainloop(conf *Config, configfile *string, pd *PopData) {
 					log.Printf("Error saving RPZ serial: %v", err)
 				}
 				wg.Done()
+				return // see #159 note in the exit case
 			}
 		}
 	}()
@@ -127,7 +157,6 @@ func mainloop(conf *Config, configfile *string, pd *PopData) {
 
 var Gconfig Config
 var mqttclientid string
-
 
 func main() {
 	fmt.Printf("%s (TAPIR Edge Manager) version %s (%s) starting.\n", name, version, commit)
