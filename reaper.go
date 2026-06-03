@@ -4,6 +4,7 @@
 package main
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/dnstapir/tapir"
@@ -66,11 +67,12 @@ func (pd *PopData) Reaper(full bool) error {
 	}
 
 	if len(tm.Removed) > 0 {
-		// GenerateRpzIxfr publishes the new snapshot itself.
+		// GenerateRpzIxfr publishes the new snapshot itself. If it fails, no new
+		// snapshot was published; propagate the error so the caller (the engine
+		// loop) sees the failure rather than treating the reap as successful.
 		ixfr, err := pd.GenerateRpzIxfr(&tm)
 		if err != nil {
-			pd.Logger.Printf("Reaper: Error from GenerateRpzIxfr(): %v", err)
-			return nil
+			return fmt.Errorf("Reaper: GenerateRpzIxfr failed: %w", err)
 		}
 		if ixfr.FromSerial != ixfr.ToSerial {
 			if err := pd.NotifyDownstreams(); err != nil {
