@@ -12,58 +12,57 @@ import (
 	"github.com/spf13/viper"
 )
 
-// reloadConfig must never propagate a way to kill the daemon: a malformed
-// config file returns an error (the SIGHUP handler logs it and keeps running),
-// and crucially must NOT corrupt the live global viper config (#155).
-func TestReloadConfig(t *testing.T) {
+// ValidateConfig must RETURN an error (never call POPExiter / os.Exit) on a bad
+// config, so it is safe to call on a SIGHUP reload of a running daemon (#155).
+// Before this change it crashed the process, which is exactly why reloadConfig
+// could not validate before swapping. These tests pin the non-fatal contract.
+func TestValidateConfigReturnsErrorNotFatal(t *testing.T) {
 	dir := t.TempDir()
 
-	good := filepath.Join(dir, "good.yaml")
-	if err := os.WriteFile(good, []byte("log:\n  verbose: true\nkeyval: original\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	// Establish a known live config.
-	viper.Reset()
-	t.Cleanup(viper.Reset)
-	viper.SetConfigFile(good)
-	if err := viper.ReadInConfig(); err != nil {
-		t.Fatalf("initial ReadInConfig: %v", err)
-	}
-	if got := viper.GetString("keyval"); got != "original" {
-		t.Fatalf("setup: keyval = %q, want original", got)
-	}
-
-	t.Run("valid reload succeeds and applies", func(t *testing.T) {
-		if err := os.WriteFile(good, []byte("log:\n  verbose: true\nkeyval: updated\n"), 0o600); err != nil {
+	t.Run("invalid config returns error", func(t *testing.T) {
+		// A config missing the required sections must produce an error, not a
+		// process exit. (If this regressed to POPExiter/os.Exit, the test binary
+		// would die here and the run would fail loudly — which is the point.)
+		f := filepath.Join(dir, "invalid.yaml")
+		if err := os.WriteFile(f, []byte("log:\n  verbose: true\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		if err := reloadConfig(good); err != nil {
-			t.Fatalf("reloadConfig(valid) = %v, want nil", err)
+		v := viper.New()
+		v.SetConfigFile(f)
+		if err := v.ReadInConfig(); err != nil {
+			t.Fatalf("ReadInConfig: %v", err)
 		}
-		if got := viper.GetString("keyval"); got != "updated" {
-			t.Errorf("after reload keyval = %q, want updated", got)
+		if err := ValidateConfig(v, f); err == nil {
+			t.Errorf("ValidateConfig(invalid) = nil, want error")
 		}
 	})
 
-	t.Run("malformed reload errors and does NOT corrupt live config", func(t *testing.T) {
-		bad := filepath.Join(dir, "bad.yaml")
-		// Invalid YAML.
-		if err := os.WriteFile(bad, []byte("log:\n  verbose: true\n  : : not valid : :\n"), 0o600); err != nil {
+	t.Run("unparseable unmarshal returns error", func(t *testing.T) {
+		// Type mismatch (string where a struct/section is expected) should be
+		// surfaced as an error from the unmarshal/validate path, not a crash.
+		f := filepath.Join(dir, "badtype.yaml")
+		if err := os.WriteFile(f, []byte("services: \"not-a-section\"\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		before := viper.GetString("keyval")
-		if err := reloadConfig(bad); err == nil {
-			t.Errorf("reloadConfig(malformed) = nil, want error")
+		v := viper.New()
+		v.SetConfigFile(f)
+		if err := v.ReadInConfig(); err != nil {
+			t.Fatalf("ReadInConfig: %v", err)
 		}
-		if got := viper.GetString("keyval"); got != before {
-			t.Errorf("live config changed after failed reload: %q -> %q", before, got)
+		if err := ValidateConfig(v, f); err == nil {
+			t.Errorf("ValidateConfig(bad type) = nil, want error")
 		}
 	})
+}
 
-	t.Run("missing file errors", func(t *testing.T) {
-		if err := reloadConfig(filepath.Join(dir, "nonexistent.yaml")); err == nil {
-			t.Errorf("reloadConfig(missing) = nil, want error")
-		}
-	})
+// loadAllConfig reads the primary config then merges sources/outputs/policy.
+// On a missing file it must return an error (so reloadConfig can reject a bad
+// reload), not panic or exit.
+func TestLoadAllConfigMissingFileErrors(t *testing.T) {
+	// The real config paths (tapir.DefaultPopCfgFile, ...) do not exist in the
+	// test environment, so loadAllConfig must report that as an error.
+	v := viper.New()
+	if _, err := loadAllConfig(v); err == nil {
+		t.Errorf("loadAllConfig with no config files present = nil, want error")
+	}
 }

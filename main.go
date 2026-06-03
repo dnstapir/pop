@@ -51,26 +51,62 @@ func (pd *PopData) SaveRpzSerial() error {
 	return err
 }
 
-// reloadConfig re-reads the given config file on SIGHUP. It first reads into a
-// throwaway viper so that a malformed file cannot corrupt the live global
-// config; only if that succeeds does it re-read into the global viper. It
-// returns an error (rather than exiting) on any failure, so the daemon keeps
-// running with its existing config — an operator's config typo must never take
-// POP down (#155).
+// loadAllConfig loads POP's full config into v: the primary config file
+// followed by a merge of the sources, outputs and policy files. It returns the
+// last config file touched (for diagnostics) and an error on any failure. Both
+// startup (main) and SIGHUP reload (reloadConfig) use it, so the reload reads
+// exactly the same set of files, in the same order, as startup.
+func loadAllConfig(v *viper.Viper) (string, error) {
+	var used string
+	steps := []struct {
+		file  string
+		merge bool // false = ReadInConfig (primary), true = MergeInConfig
+	}{
+		{tapir.DefaultPopCfgFile, false},
+		{tapir.PopSourcesCfgFile, true},
+		{tapir.PopOutputsCfgFile, true},
+		{tapir.PopPolicyCfgFile, true},
+	}
+	for _, s := range steps {
+		v.SetConfigFile(s.file)
+		var err error
+		if s.merge {
+			err = v.MergeInConfig()
+		} else {
+			err = v.ReadInConfig()
+		}
+		if err != nil {
+			return used, fmt.Errorf("could not load config %s: %w", s.file, err)
+		}
+		used = v.ConfigFileUsed()
+	}
+	return used, nil
+}
+
+// reloadConfig re-reads POP's full config on SIGHUP. It loads AND validates into
+// a THROWAWAY viper first, so a malformed or invalid config cannot corrupt the
+// live global config or take down a running daemon — an operator's config typo
+// must never kill POP (#155). Only once the new config loads and validates does
+// it re-apply the same load sequence to the global viper. It returns an error
+// (never exits) on any failure, leaving the running config unchanged.
 //
-// Note: this re-reads the primary config file only; it does not yet re-run full
-// validation or re-apply sources/outputs/policy (that belongs with the larger
-// config-application rework). The guarantee here is narrowly "a bad reload does
-// not kill the daemon and does not corrupt the running config".
+// Caveat: the global viper is read concurrently by other goroutines, so the
+// final re-apply is still a concurrent mutation of shared config state — the
+// pre-existing config-access race (design doc §5 / #157), out of scope here.
+// What this guarantees: a bad reload neither kills the daemon nor replaces the
+// good config with a broken one.
 func reloadConfig(configfile string) error {
 	vtmp := viper.New()
-	vtmp.SetConfigFile(configfile)
-	if err := vtmp.ReadInConfig(); err != nil {
-		return fmt.Errorf("config file %s did not parse: %w", configfile, err)
+	if _, err := loadAllConfig(vtmp); err != nil {
+		return fmt.Errorf("reload rejected, keeping running config: %w", err)
 	}
-	if err := viper.ReadInConfig(); err != nil {
-		// The throwaway read above succeeded, so this is unexpected.
-		return fmt.Errorf("re-reading %s into live config failed: %w", configfile, err)
+	if err := ValidateConfig(vtmp, configfile); err != nil {
+		return fmt.Errorf("reload rejected, keeping running config: %w", err)
+	}
+	// New config is valid; re-apply the same load sequence to the global viper.
+	if _, err := loadAllConfig(viper.GetViper()); err != nil {
+		// Unexpected: the throwaway load just succeeded.
+		return fmt.Errorf("re-applying validated config to live viper failed: %w", err)
 	}
 	return nil
 }
@@ -168,50 +204,21 @@ func main() {
 
 	flag.Parse()
 
-	var cfgFileUsed string
-
-	var cfgFile string
-	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
-	} else {
-		viper.SetConfigFile(tapir.DefaultPopCfgFile)
-	}
-
 	viper.AutomaticEnv() // read in environment variables that match
 
-	// If a config file is found, read it in.
-	if err := viper.ReadInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-		cfgFileUsed = viper.ConfigFileUsed()
-	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.DefaultPopCfgFile, err)
+	// Load the full config (primary + merged sources/outputs/policy). At
+	// startup a load failure is genuinely fatal, so we POPExit on error here;
+	// the same loadAllConfig() is reused by reloadConfig() on SIGHUP, where it
+	// is non-fatal.
+	cfgFileUsed, err := loadAllConfig(viper.GetViper())
+	if err != nil {
+		POPExiter("Error loading config: %v", err)
 	}
-	viper.SetConfigFile(tapir.PopSourcesCfgFile)
-	if err := viper.MergeInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-		cfgFileUsed = viper.ConfigFileUsed()
-	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.PopSourcesCfgFile, err)
-	}
-	viper.SetConfigFile(tapir.PopOutputsCfgFile)
-	if err := viper.MergeInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-		cfgFileUsed = viper.ConfigFileUsed()
-	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.PopOutputsCfgFile, err)
-	}
-	viper.SetConfigFile(tapir.PopPolicyCfgFile)
-	if err := viper.MergeInConfig(); err == nil {
-		fmt.Fprintln(os.Stderr, "Using config file:", viper.ConfigFileUsed())
-		cfgFileUsed = viper.ConfigFileUsed()
-	} else {
-		POPExiter("Could not load config %s: Error: %v", tapir.PopPolicyCfgFile, err)
-	}
+	fmt.Fprintln(os.Stderr, "Using config file:", cfgFileUsed)
 
 	SetupLogging(&Gconfig)
 
-	err := ValidateConfig(nil, cfgFileUsed) // will terminate on error
-	if err != nil {
+	if err := ValidateConfig(nil, cfgFileUsed); err != nil { // fatal at startup
 		POPExiter("Error validating config: %v", err)
 	}
 
