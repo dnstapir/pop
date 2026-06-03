@@ -21,6 +21,14 @@ func (pd *PopData) Reaper(full bool) error {
 	timekey := time.Now().Truncate(pd.ReaperInterval)
 	// tpkg := tapir.MqttPkgIn{}
 	tm := tapir.TapirMsg{}
+	// ReaperData buckets to clear, but ONLY after GenerateRpzIxfr publishes the
+	// removals successfully. Deleting names from pd.Lists (so decide() reflects
+	// the removal) must happen BEFORE GenerateRpzIxfr — otherwise decide() still
+	// sees the name listed and emits no delete. But the ReaperData bucket is the
+	// retry source of truth: if the publish fails we must keep it so the next
+	// reaper tick re-attempts the (still-unpublished) removals. So Lists is
+	// mutated in phase 1; ReaperData buckets are cleared in phase 2 on success.
+	bucketsToClear := []*tapir.WBGlist{}
 	pd.Logger.Printf("Reaper: working on time slot %s across all lists", timekey.Format(tapir.TimeLayout))
 	for _, listtype := range []string{"allowlist", "doubtlist", "denylist"} {
 		for listname, wbgl := range pd.Lists[listtype] {
@@ -53,27 +61,29 @@ func (pd *PopData) Reaper(full bool) error {
 				for name := range wbgl.ReaperData[timekey] {
 					pd.Logger.Printf("Reaper: removing %s from %s %s", name, listtype, listname)
 					delete(pd.Lists[listtype][listname].Names, name)
-					delete(wbgl.ReaperData[timekey], name)
 					tm.Removed = append(tm.Removed, tapir.Domain{Name: name})
 				}
-				// pd.Logger.Printf("Reaper: %s %s now has %d items:", listtype, listname, len(pd.Lists[listtype][listname].Names))
-				// for name, item := range pd.Lists[listtype][listname].Names {
-				// 	pd.Logger.Printf("Reaper: remaining: key: %s name: %s", name, item.Name)
-				// }
-				delete(wbgl.ReaperData, timekey)
 				pd.mu.Unlock()
+				// Defer clearing this bucket until the publish succeeds (below).
+				bucketsToClear = append(bucketsToClear, wbgl)
 			}
 		}
 	}
 
 	if len(tm.Removed) > 0 {
-		// GenerateRpzIxfr publishes the new snapshot itself. If it fails, no new
-		// snapshot was published; propagate the error so the caller (the engine
-		// loop) sees the failure rather than treating the reap as successful.
+		// GenerateRpzIxfr publishes the new snapshot itself. The names are
+		// already gone from pd.Lists (so decide() reflects the removal); if the
+		// publish fails we keep the ReaperData buckets so the next tick retries.
 		ixfr, err := pd.GenerateRpzIxfr(&tm)
 		if err != nil {
-			return fmt.Errorf("Reaper: GenerateRpzIxfr failed: %w", err)
+			return fmt.Errorf("Reaper: GenerateRpzIxfr failed (ReaperData kept for retry): %w", err)
 		}
+		// Publish succeeded: now it is safe to clear the reaper buckets.
+		pd.mu.Lock()
+		for _, wbgl := range bucketsToClear {
+			delete(wbgl.ReaperData, timekey)
+		}
+		pd.mu.Unlock()
 		if ixfr.FromSerial != ixfr.ToSerial {
 			if err := pd.NotifyDownstreams(); err != nil {
 				pd.Logger.Printf("Reaper: Error from NotifyDownstreams(): %v", err)

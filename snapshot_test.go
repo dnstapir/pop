@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
@@ -355,6 +356,53 @@ func TestGenerateRpzIxfrConcurrentWithReaders(t *testing.T) {
 		t.Errorf("IxfrChain grew past maxIxfrChain: %d", len(snap.IxfrChain))
 	}
 }
+
+// --- reaper two-phase commit (CodeRabbit reaper.go finding) -----------------
+//
+// If the snapshot publish fails, the reaper must keep the ReaperData bucket so
+// the next tick can retry — otherwise the expired names are gone from pd.Lists
+// but never removed from the served zone, and the retry source is lost.
+
+func TestReaperKeepsReaperDataOnPublishFailure(t *testing.T) {
+	pd := newSnapshotTestPopData()
+	pd.Policy = PopPolicy{Logger: discardLogger(), AllowlistAction: tapir.ALLOWLIST, DenylistAction: tapir.NODATA,
+		Doubtlist: DoubtlistPolicy{NumSources: 1, NumSourcesAction: tapir.NXDOMAIN}}
+	pd.downstreamSerials = newDownstreamTracker()
+	pd.Downstreams = map[string]RpzDownstream{}
+	pd.ReaperInterval = time.Minute
+
+	// A doubtlist entry due for reaping in the current time slot.
+	timekey := timeNowTrunc(pd.ReaperInterval)
+	name := dns.Fqdn("expired.example")
+	feed := &tapir.WBGlist{
+		Name: "feed", Type: "doubtlist", Format: "map",
+		Names:      map[string]tapir.TapirName{name: {Name: name}},
+		ReaperData: map[time.Time]map[string]bool{timekey: {name: true}},
+	}
+	pd.Lists = map[string]map[string]*tapir.WBGlist{
+		"allowlist": {}, "denylist": {}, "doubtlist": {"feed": feed},
+	}
+
+	// Force GenerateRpzIxfr to fail: no snapshot published yet -> it errors.
+	// (pd.snapshot is the zero value here.)
+	err := pd.Reaper(false)
+	if err == nil {
+		t.Fatalf("expected Reaper to return the publish error, got nil")
+	}
+	// The name was removed from the source list (phase 1)...
+	if _, still := feed.Names[name]; still {
+		t.Errorf("name should have been removed from Names in phase 1")
+	}
+	// ...but the ReaperData bucket MUST survive for the next tick to retry.
+	if _, ok := feed.ReaperData[timekey]; !ok {
+		t.Errorf("ReaperData[timekey] was cleared despite publish failure; retry data lost")
+	}
+	if !feed.ReaperData[timekey][name] {
+		t.Errorf("ReaperData bucket no longer contains %q after failed publish", name)
+	}
+}
+
+func timeNowTrunc(d time.Duration) time.Time { return time.Now().Truncate(d) }
 
 // --- helpers ---------------------------------------------------------------
 
