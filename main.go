@@ -23,9 +23,9 @@ import (
 )
 
 /* Rewritten if building with make */
-var name    = "BAD-BUILD"
+var name = "BAD-BUILD"
 var version = "BAD-BUILD"
-var commit  = "BAD-BUILD"
+var commit = "BAD-BUILD"
 
 var POPExiter = func(args ...interface{}) {
 	log.Printf("POPExiter: [placeholderfunction w/o real cleanup]")
@@ -128,7 +128,6 @@ func mainloop(conf *Config, configfile *string, pd *PopData) {
 var Gconfig Config
 var mqttclientid string
 
-
 func main() {
 	fmt.Printf("%s (TAPIR Edge Manager) version %s (%s) starting.\n", name, version, commit)
 	// var conf Config
@@ -219,9 +218,16 @@ func main() {
 	go pd.RefreshEngine(&Gconfig, stopch)
 
 	log.Println("*** main: Calling ParseSourcesNG()")
-	err = pd.ParseSourcesNG()
-	if err != nil {
-		POPExiter("Error from ParseSourcesNG: %v", err)
+	// ParseSourcesNG has a two-tier error contract:
+	//   - Failure of an INDIVIDUAL source (one bad/unreachable feed) is logged
+	//     and the rest are kept; it does NOT return an error (non-fatal by
+	//     design — see the g.Wait() comment in sources.go).
+	//   - Failure to load the sources config FILE itself (unreadable / malformed
+	//     YAML) returns a non-nil error. That is a whole-config failure, fatal
+	//     at startup just like the other config files — starting with zero
+	//     sources loaded would be worse than not starting.
+	if err = pd.ParseSourcesNG(); err != nil {
+		POPExiter("Error from ParseSourcesNG (sources config could not be loaded): %v", err)
 	}
 	log.Println("*** main: Returned from ParseSourcesNG()")
 
