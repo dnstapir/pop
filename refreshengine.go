@@ -333,12 +333,12 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						}
 						resp.Msg = fmt.Sprintf("Zone %s: bumped serial from %d to %d. Notified downstreams: %v",
 							zone, resp.OldSerial, resp.NewSerial, rc.Downstreams)
-						log.Printf(resp.Msg)
+						log.Print(resp.Msg)
 						resp.Status = true
 					} else {
 						resp.Error = true
 						resp.ErrorMsg = fmt.Sprintf("Request to bump serial for unknown zone '%s'", zone)
-						log.Printf(resp.ErrorMsg)
+						log.Print(resp.ErrorMsg)
 					}
 				}
 				cmd.Result <- resp
@@ -384,24 +384,9 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 
 			case "RPZ-LOOKUP":
 				log.Printf("RefreshEngine: recieved an RPZ LOOKUP command: %s", cmd.Domain)
-				var msg string
-				if pd.Allowlisted(cmd.Domain) {
-					resp.Msg = fmt.Sprintf("Domain name \"%s\" is allowlisted.", cmd.Domain)
-					cmd.Result <- resp
-					continue
-				}
-				msg += fmt.Sprintf("Domain name \"%s\" is not allowlisted.\n", cmd.Domain)
-
-				if pd.Denylisted(cmd.Domain) {
-					resp.Msg = fmt.Sprintf("Domain name \"%s\" is denylisted.", cmd.Domain)
-					cmd.Result <- resp
-					continue
-				}
-				msg += fmt.Sprintf("Domain name \"%s\" is not denylisted.\n", cmd.Domain)
-
-				// if the name isn't either allowlisted or denylisted: go though all doubtlists
-				_, doubtmsg := pd.DoubtlistingReport(cmd.Domain)
-				resp.Msg = msg + doubtmsg
+				// Explain via the same decide() path that builds the served
+				// zone, so the lookup verdict can never disagree with AXFR/IXFR.
+				resp.Msg = pd.LookupReport(cmd.Domain)
 				cmd.Result <- resp
 				continue
 

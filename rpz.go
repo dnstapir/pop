@@ -54,35 +54,28 @@ func (pd *PopData) GenerateRpzAxfr() error {
 	pd.DenylistedNames = deny
 	pd.Logger.Printf("GenRpzAxfr: There are a total of %d Denylisted names in the sources", len(deny))
 
+	// Collect the candidate set of doubtlisted names. A name that is also
+	// denylisted is already handled by the denylist; allowlisted names are
+	// excluded by decide() below (allowlist is absolute), so the per-name
+	// decision is deferred to the emission loop where decide() is the single
+	// authority on both inclusion and action.
 	for gname, glist := range pd.Lists["doubtlist"] {
 		pd.Logger.Printf("---> GenRpzAxfr: working on doubtlist %s (%d names)",
 			gname, len(glist.Names))
 		switch glist.Format {
 		case "map":
 			for k, v := range glist.Names {
-				// pd.Logger.Printf("Adding name %s from doubtlist %s to tentative output.", k, gname)
 				if _, exists := pd.DenylistedNames[k]; exists {
-					// pd.Logger.Printf("Doubtlisted name %s is also denylisted. No need to add twice.", k)
-				} else if pd.Allowlisted(k) {
-					// pd.Logger.Printf("Doubtlisted name %s is also allowlisted. Dropped from output.", k)
+					continue // already covered by the denylist
+				}
+				if existing, exists := doubt[k]; exists {
+					// Same name in several doubtlists: merge tags/actions.
+					// Order-independent because OR is commutative.
+					existing.TagMask |= v.TagMask
+					existing.Action |= v.Action
 				} else {
-					// pd.Logger.Printf("Doubtlisted name %s is not allowlisted. Evalutate inclusion in output.", k)
-					action := pd.ComputeRpzAction(k)
-					if action == tapir.ALLOWLIST {
-						// pd.Logger.Printf("Doubtlisted name %s is not included in output.", k)
-					} else {
-						// pd.Logger.Printf("Doubtlisted name %s is included in output.", k)
-
-						if _, exists := doubt[k]; exists {
-							// pd.Logger.Printf("Doubt name %s already in output. Combining tags and actions.", k)
-							tmp := doubt[k]
-							tmp.TagMask = doubt[k].TagMask | v.TagMask
-							tmp.Action = tmp.Action | v.Action
-							doubt[k] = tmp
-						} else {
-							doubt[k] = &v
-						}
-					}
+					v := v // copy; don't alias the map value
+					doubt[k] = &v
 				}
 			}
 		default:
@@ -90,10 +83,8 @@ func (pd *PopData) GenerateRpzAxfr() error {
 		}
 	}
 	pd.DoubtlistedNames = doubt
-	pd.Logger.Printf("GenRpzAxfr: There are a total of %d doubtlisted names in the sources", len(doubt))
+	pd.Logger.Printf("GenRpzAxfr: There are a total of %d candidate doubtlisted names in the sources", len(doubt))
 
-	// newaxfrdata := []*tapir.RpzName{}
-	// pd.Rpz.RpzMap = map[string]*tapir.RpzName{}
 	for name := range pd.DenylistedNames {
 		cname := new(dns.CNAME)
 		cname.Hdr = dns.RR_Header{
@@ -110,39 +101,39 @@ func (pd *PopData) GenerateRpzAxfr() error {
 			RR:     &rr,
 			Action: pd.Policy.DenylistAction,
 		}
-		// newaxfrdata = append(newaxfrdata, &rpzn)
-		// pd.Rpz.RpzMap[nname+pd.Rpz.ZoneName] = &rpzn
 		pd.mu.Lock()
 		pd.Rpz.Axfr.Data[name+pd.Rpz.ZoneName] = &rpzn
 		pd.mu.Unlock()
 	}
 
-	for name, v := range pd.DoubtlistedNames {
-		rpzaction := ApplyDoubtPolicy(name, v)
-
-		if rpzaction != "" {
-			cname := new(dns.CNAME)
-			cname.Hdr = dns.RR_Header{
-				Name:     name + pd.Rpz.ZoneName,
-				Rrtype:   dns.TypeCNAME,
-				Class:    dns.ClassINET,
-				Ttl:      3600,
-				Rdlength: 1,
-			}
-			cname.Target = rpzaction // XXX: wrong
-			rr := dns.RR(cname)
-
-			rpzn := tapir.RpzName{
-				Name:   name,
-				RR:     &rr,
-				Action: pd.Policy.DenylistAction, // XXX: naa
-			}
-			// newaxfrdata = append(newaxfrdata, &rpzn)
-			// pd.Rpz.RpzMap[name+pd.Rpz.ZoneName] = &rpzn
-			pd.mu.Lock()
-			pd.Rpz.Axfr.Data[name+pd.Rpz.ZoneName] = &rpzn
-			pd.mu.Unlock()
+	for name := range pd.DoubtlistedNames {
+		// decide() is the single source of truth: it enforces allowlist
+		// precedence and applies the (provisional) doubtlist policy. A name
+		// that does not earn an action passes through and is not emitted.
+		action, _ := pd.decide(name)
+		if action == tapir.ALLOWLIST {
+			continue
 		}
+
+		cname := new(dns.CNAME)
+		cname.Hdr = dns.RR_Header{
+			Name:     name + pd.Rpz.ZoneName,
+			Rrtype:   dns.TypeCNAME,
+			Class:    dns.ClassINET,
+			Ttl:      3600,
+			Rdlength: 1,
+		}
+		cname.Target = tapir.ActionToCNAMETarget[action]
+		rr := dns.RR(cname)
+
+		rpzn := tapir.RpzName{
+			Name:   name,
+			RR:     &rr,
+			Action: action,
+		}
+		pd.mu.Lock()
+		pd.Rpz.Axfr.Data[name+pd.Rpz.ZoneName] = &rpzn
+		pd.mu.Unlock()
 	}
 
 	//	pd.Rpz.Axfr.Data = pd.Rpz.RpzMap
@@ -186,7 +177,7 @@ func (pd *PopData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 		tn.Name = dns.Fqdn(tn.Name)
 		pd.Policy.Logger.Printf("GenerateRpzIxfr: evaluating removed name %s", tn.Name)
 		if cur, exist := pd.Rpz.Axfr.Data[tn.Name]; exist {
-			newAction := pd.ComputeRpzAction(tn.Name)
+			newAction, _ := pd.decide(tn.Name)
 			oldAction := cur.Action
 			if newAction != oldAction {
 				if pd.Debug {
@@ -232,7 +223,7 @@ func (pd *PopData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 		tn.Name = dns.Fqdn(tn.Name)
 		pd.Policy.Logger.Printf("GenerateRpzIxfr: evaluating added name %s", tn.Name)
 		addtorpz = false
-		newAction := pd.ComputeRpzAction(tn.Name)
+		newAction, _ := pd.decide(tn.Name)
 		if cur, exist := pd.Rpz.Axfr.Data[tn.Name]; exist {
 			if newAction == tapir.ALLOWLIST {
 				// delete from rpz

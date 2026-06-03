@@ -5,10 +5,12 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -103,85 +105,227 @@ func (pd *PopData) ParseOutputs() error {
 	return nil
 }
 
-// Note: we onlygethere when we know that this name is only doubtlisted
-// so no need tocheckfor allow- or denylisting
-func (pd *PopData) ComputeRpzDoubtlistAction(name string) tapir.Action {
+// ---------------------------------------------------------------------------
+// Unified policy engine (issue #156).
+//
+// decide() is the single decision function used by BOTH the RPZ compilation
+// (GenerateRpzAxfr/Ixfr) and any lookup/explain path, so the served zone and
+// an explanation of it can never disagree. It returns the emitted Action plus
+// a Reason that records why, which is also the substrate for the future
+// "filter reason" CLI command.
+//
+// Invariants (objectives a + b in the design doc; these are NOT provisional):
+//   1. Allowlist is absolute: a name on any allowlist is never in the output.
+//   2. Order independence: source declaration / map iteration order must not
+//      affect the result.
+//   3. Determinism: same inputs -> same (Action, Reason).
+//
+// The doubtlist rules themselves ARE provisional (a future policy language),
+// so they are expressed as a slice of pluggable rules rather than an if-ladder:
+// adding a knob is one entry + one test, removing one is a deletion.
+// ---------------------------------------------------------------------------
 
-	var doubtHits = map[string]*tapir.TapirName{}
-	for listname, list := range pd.Lists["doubtlist"] {
+// Stage records which precedence level made the decision.
+type Stage int
+
+const (
+	StageNone Stage = iota // not in any list
+	StageAllowlist
+	StageDenylist
+	StageDoubtlist
+)
+
+func (s Stage) String() string {
+	switch s {
+	case StageAllowlist:
+		return "allowlist"
+	case StageDenylist:
+		return "denylist"
+	case StageDoubtlist:
+		return "doubtlist"
+	default:
+		return "none"
+	}
+}
+
+// ListHit is one source (of a given list class) that contained the name.
+// Entry is nil for dawg-format lists, which support membership but not
+// per-name metadata.
+type ListHit struct {
+	Source string
+	Entry  *tapir.TapirName
+}
+
+// RuleResult is the outcome of evaluating one doubtlist rule.
+type RuleResult struct {
+	Rule   string // "numsources" | "numtapirtags" | "denytapir"
+	Fired  bool
+	Action tapir.Action
+	Detail string // human-readable explanation, e.g. "in 3 sources (limit 2)"
+}
+
+// Reason is the structured explanation returned alongside the action.
+type Reason struct {
+	Action  tapir.Action
+	Stage   Stage
+	Sources []ListHit    // sources (of the deciding stage) that contained the name
+	Fired   []RuleResult // doubt rules that fired (only when Stage == StageDoubtlist)
+	Winner  *RuleResult  // the fired rule whose action was emitted (nil if none fired)
+}
+
+// actionSeverity ranks actions from most to least restrictive. mostRestrictive
+// picks the highest. Defined as a single ordered table so the ranking is a
+// one-line change if operators push back (e.g. on REDIRECT's placement).
+// ALLOWLIST is the "no action / passthru" value (note: tapir.Action is a
+// bitmask and tapir.PASSTHRU is a distinct unused bit; the codebase uses
+// ALLOWLIST as the pass value, matching the old ComputeRpzAction).
+var actionSeverity = map[tapir.Action]int{
+	tapir.DROP:      5,
+	tapir.NXDOMAIN:  4,
+	tapir.NODATA:    3,
+	tapir.REDIRECT:  2,
+	tapir.ALLOWLIST: 1,
+}
+
+// listOf returns every source in the given class that contains name. This is
+// the single membership-lookup helper that replaces the former
+// Allowlisted/Denylisted/Doubtlisted trio. Order-independent: it scans all
+// sources and the caller does not rely on iteration order.
+func (pd *PopData) listOf(class, name string) []ListHit {
+	var hits []ListHit
+	for src, list := range pd.Lists[class] {
 		switch list.Format {
-		case "map":
-			if v, exists := list.Names[name]; exists {
-				// pd.Logger.Printf("ComputeRpzDoubtlistAction: found %s in doubtlist %s (%d names)",
-				// 	name, listname, len(list.Names))
-				doubtHits[listname] = &v
+		case "dawg":
+			if list.Dawgf.IndexOf(name) != -1 {
+				hits = append(hits, ListHit{Source: src})
 			}
-			//		case "trie":
-			//			if list.Trie.Search(name) != nil {
-			//				doubtHits = append(doubtHits, v)
-			//			}
+		case "map":
+			if e, ok := list.Names[name]; ok {
+				e := e // copy; don't alias the map value
+				hits = append(hits, ListHit{Source: src, Entry: &e})
+			}
 		default:
-			POPExiter("Unknown doubtlist format %s", list.Format)
+			// Degrade, never crash a long-running daemon on a bad list format
+			// (was log.Fatalf in the old Doubtlisted()). See issue #6.
+			pd.Logger.Printf("listOf: skipping source %q: unknown format %q", src, list.Format)
 		}
 	}
-	if len(doubtHits) >= pd.Policy.Doubtlist.NumSources {
-		pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s is in %d or more sources, action is %s",
-			name, pd.Policy.Doubtlist.NumSources, tapir.ActionToString[pd.Policy.Doubtlist.NumSourcesAction])
-		return pd.Policy.Doubtlist.NumSourcesAction
-	}
-	pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s is in %d sources, not enough for action", name, len(doubtHits))
-
-	if _, exists := doubtHits["dns-tapir"]; exists {
-		numtapirtags := doubtHits["dns-tapir"].TagMask.NumTags()
-		if numtapirtags >= pd.Policy.Doubtlist.NumTapirTags {
-			pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s has more than %d tapir tags, action is %s",
-				name, pd.Policy.Doubtlist.NumTapirTags, tapir.ActionToString[pd.Policy.Doubtlist.NumTapirTagsAction])
-			return pd.Policy.Doubtlist.NumTapirTagsAction
-		}
-		pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s has %d tapir tags, not enough for action", name, numtapirtags)
-	}
-	pd.Policy.Logger.Printf("ComputeRpzDoubtlistAction: name %s is present in %d doubtlists, but does not trigger any action",
-		name, len(doubtHits))
-	return pd.Policy.AllowlistAction
+	// Sort by source name so the result (and therefore Reason.Sources) is
+	// deterministic — pd.Lists is a map, so iteration order is randomized.
+	// This upholds the "same inputs -> same (Action, Reason)" invariant.
+	sort.Slice(hits, func(i, j int) bool { return hits[i].Source < hits[j].Source })
+	return hits
 }
 
-// Decision to block a doubtlisted name:
-// 1. More than N tags present
-// 2. Name is present in more than M sources
-// 3. Name
-
-func ApplyDoubtPolicy(name string, v *tapir.TapirName) string {
-	var rpzaction string
-	if v.HasAction(tapir.NXDOMAIN) {
-		rpzaction = "."
-	} else if v.HasAction(tapir.NODATA) {
-		rpzaction = "*."
-	} else if v.HasAction(tapir.DROP) {
-		rpzaction = "rpz-drop."
-	} else if v.TagMask != 0 {
-		log.Printf("there are tags")
-		rpzaction = "rpz-drop."
-	}
-
-	return rpzaction
+// doubtRule is a single pluggable doubtlist rule.
+type doubtRule struct {
+	name string
+	eval func(hits []ListHit, p DoubtlistPolicy) RuleResult
 }
 
-func (pd *PopData) ComputeRpzAction(name string) tapir.Action {
-	if pd.Allowlisted(name) {
-		if pd.Debug {
-			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is doubtlisted, action is %s", name, tapir.ActionToString[pd.Policy.AllowlistAction])
+// doubtRules is the ordered set of rules evaluated for a doubtlisted name.
+// This release ships exactly the three knobs documented in pop-policy.yaml.
+// To add a future knob, append a rule here and a test row in policy_test.go.
+var doubtRules = []doubtRule{
+	{
+		name: "numsources",
+		eval: func(hits []ListHit, p DoubtlistPolicy) RuleResult {
+			r := RuleResult{Rule: "numsources"}
+			if len(hits) >= p.NumSources {
+				r.Fired, r.Action = true, p.NumSourcesAction
+				r.Detail = fmt.Sprintf("in %d sources (limit %d)", len(hits), p.NumSources)
+			}
+			return r
+		},
+	},
+	{
+		name: "numtapirtags",
+		eval: func(hits []ListHit, p DoubtlistPolicy) RuleResult {
+			// Counts tags on the dns-tapir source's entry ONLY (Q2). A future
+			// "numtags" rule could count the merged tag set across sources.
+			r := RuleResult{Rule: "numtapirtags"}
+			if e := dnsTapirEntry(hits); e != nil {
+				if n := e.TagMask.NumTags(); n >= p.NumTapirTags {
+					r.Fired, r.Action = true, p.NumTapirTagsAction
+					r.Detail = fmt.Sprintf("dns-tapir entry has %d tags (limit %d)", n, p.NumTapirTags)
+				}
+			}
+			return r
+		},
+	},
+	{
+		name: "denytapir",
+		eval: func(hits []ListHit, p DoubtlistPolicy) RuleResult {
+			// Fires when the dns-tapir entry carries any tag in DenyTapirTags.
+			// Newly wired in: parsed from config today but never consulted.
+			// Default DenyTapirTags is empty, so this is a no-op until set.
+			r := RuleResult{Rule: "denytapir"}
+			if p.DenyTapirTags == 0 {
+				return r
+			}
+			if e := dnsTapirEntry(hits); e != nil && e.TagMask&p.DenyTapirTags != 0 {
+				r.Fired, r.Action = true, p.DenyTapirAction
+				r.Detail = "dns-tapir entry carries a denytapir tag"
+			}
+			return r
+		},
+	},
+}
+
+// dnsTapirEntry returns the TapirName from the special "dns-tapir" source among
+// the hits, or nil if that source did not contain the name (or had no entry,
+// e.g. a dawg list).
+func dnsTapirEntry(hits []ListHit) *tapir.TapirName {
+	for _, h := range hits {
+		if h.Source == "dns-tapir" {
+			return h.Entry
 		}
-		return pd.Policy.AllowlistAction
-	} else if pd.Denylisted(name) {
-		if pd.Debug {
-			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is denylisted, action is %s", name, tapir.ActionToString[pd.Policy.DenylistAction])
-		}
-		return pd.Policy.DenylistAction
-	} else if pd.Doubtlisted(name) {
-		if pd.Debug {
-			pd.Policy.Logger.Printf("ComputeRpzAction: name %s is doubtlisted, needs further evaluation to determine action", name)
-		}
-		return pd.ComputeRpzDoubtlistAction(name) // This is not complete, only a placeholder for now.
 	}
-	return tapir.ALLOWLIST
+	return nil
+}
+
+// decide is the single source of truth for the policy decision on a name.
+func (pd *PopData) decide(name string) (tapir.Action, Reason) {
+	// Stage 1: allowlist is absolute (invariant 1).
+	if hits := pd.listOf("allowlist", name); len(hits) > 0 {
+		return pd.Policy.AllowlistAction, Reason{
+			Action: pd.Policy.AllowlistAction, Stage: StageAllowlist, Sources: hits,
+		}
+	}
+
+	// Stage 2: denylist.
+	if hits := pd.listOf("denylist", name); len(hits) > 0 {
+		return pd.Policy.DenylistAction, Reason{
+			Action: pd.Policy.DenylistAction, Stage: StageDenylist, Sources: hits,
+		}
+	}
+
+	// Stage 3: doubtlist (provisional, pluggable rules).
+	hits := pd.listOf("doubtlist", name)
+	if len(hits) == 0 {
+		return tapir.ALLOWLIST, Reason{Action: tapir.ALLOWLIST, Stage: StageNone}
+	}
+
+	var fired []RuleResult
+	for _, rule := range doubtRules {
+		if r := rule.eval(hits, pd.Policy.Doubtlist); r.Fired {
+			fired = append(fired, r)
+		}
+	}
+
+	if len(fired) == 0 {
+		// In one or more doubtlists, but no rule triggered -> passthru.
+		return tapir.ALLOWLIST, Reason{Action: tapir.ALLOWLIST, Stage: StageDoubtlist, Sources: hits}
+	}
+
+	// Conflict resolution: most-restrictive action wins (order-independent).
+	winner := &fired[0]
+	for i := 1; i < len(fired); i++ {
+		if actionSeverity[fired[i].Action] > actionSeverity[winner.Action] {
+			winner = &fired[i]
+		}
+	}
+	return winner.Action, Reason{
+		Action: winner.Action, Stage: StageDoubtlist, Sources: hits, Fired: fired, Winner: winner,
+	}
 }
