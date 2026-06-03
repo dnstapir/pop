@@ -78,7 +78,7 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 	if err != nil {
 		POPExiter("Error adding topic %s to MQTT Engine: %v", statusTopic, err)
 	}
-	pd.Logger.Printf("StatusUpdater: Topic status for MQTT engine %s: %+v", me.Creator)
+	pd.Logger.Printf("StatusUpdater: pub topic configured for MQTT engine %s", me.Creator)
 
 	_, outbox, _, err := me.StartEngine()
 	if err != nil {
@@ -132,7 +132,7 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 					}
 					s.ComponentStatus[csu.Component] = comp
 					dirty = true
-					sur.Msg = fmt.Sprintf("StatusUpdater: %s report for known component: %s", csu.Status, csu.Component)
+					sur.Msg = fmt.Sprintf("StatusUpdater: %s report for known component: %s", tapir.StatusToString[csu.Status], csu.Component)
 				default:
 					log.Printf("StatusUpdater: %s report for unknown component: %s", tapir.StatusToString[csu.Status], csu.Component)
 					sur.Error = true
@@ -157,7 +157,7 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 				}
 
 			default:
-				log.Printf("StatusUpdater: Unknown status: %s", csu.Status)
+				log.Printf("StatusUpdater: Unknown status: %s", tapir.StatusToString[csu.Status])
 			}
 		case <-stopch:
 			log.Printf("StatusUpdater: stopping")
