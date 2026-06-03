@@ -66,3 +66,35 @@ func TestLoadAllConfigMissingFileErrors(t *testing.T) {
 		t.Errorf("loadAllConfig with no config files present = nil, want error")
 	}
 }
+
+// applyToGlobalViper must REPLACE the live config with the validated settings,
+// not merge onto it — so keys removed from the new config do not survive as
+// orphans (#177 adversarial review §2.2), and new values take effect.
+func TestApplyToGlobalViperReplacesAndDropsOrphans(t *testing.T) {
+	viper.Reset()
+	t.Cleanup(viper.Reset)
+
+	// Seed the live global config with an "old" state including a key that the
+	// new config will NOT contain.
+	viper.Set("keep", "old")
+	viper.Set("orphan", "should-disappear")
+
+	// The validated incoming config (as if just loaded into a throwaway viper).
+	src := viper.New()
+	src.Set("keep", "new")
+	src.Set("added", "present")
+
+	if err := applyToGlobalViper(src); err != nil {
+		t.Fatalf("applyToGlobalViper: %v", err)
+	}
+
+	if got := viper.GetString("keep"); got != "new" {
+		t.Errorf("keep = %q, want new (new value should apply)", got)
+	}
+	if got := viper.GetString("added"); got != "present" {
+		t.Errorf("added = %q, want present (new key should apply)", got)
+	}
+	if viper.IsSet("orphan") {
+		t.Errorf("orphan key survived the reload; Reset should have dropped it (got %q)", viper.GetString("orphan"))
+	}
+}

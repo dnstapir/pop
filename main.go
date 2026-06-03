@@ -86,29 +86,49 @@ func loadAllConfig(v *viper.Viper) (string, error) {
 // reloadConfig re-reads POP's full config on SIGHUP. It loads AND validates into
 // a THROWAWAY viper first, so a malformed or invalid config cannot corrupt the
 // live global config or take down a running daemon — an operator's config typo
-// must never kill POP (#155). Only once the new config loads and validates does
-// it re-apply the same load sequence to the global viper. It returns an error
-// (never exits) on any failure, leaving the running config unchanged.
+// must never kill POP (#155). Only once the new config loads and validates is it
+// applied to the global viper, by RESETTING the global and copying the
+// already-validated settings out of the throwaway. Resetting first means keys
+// that were deleted from the config files do not linger as orphans in the live
+// config; copying the in-memory settings (rather than re-reading the files)
+// means there is no second disk read that could fail or change between
+// validation and apply (no partial/TOCTOU apply). It returns an error (never
+// exits) on any failure, leaving the running config unchanged.
 //
-// Caveat: the global viper is read concurrently by other goroutines, so the
-// final re-apply is still a concurrent mutation of shared config state — the
-// pre-existing config-access race (design doc §5 / #157), out of scope here.
-// What this guarantees: a bad reload neither kills the daemon nor replaces the
-// good config with a broken one.
+// Scope: this reloads VIPER config only. It does not re-apply runtime state
+// derived from config at startup — Gconfig, logging, the parsed sources/outputs
+// and pd.Policy are not refreshed (tracked separately; taking new sources or
+// policy into effect still requires a restart). And the global viper is read
+// concurrently by other goroutines, so the apply is still a concurrent mutation
+// of shared config state — the pre-existing config-access race (design §5 /
+// #157), out of scope here.
 func reloadConfig(configfile string) error {
 	vtmp := viper.New()
+	vtmp.AutomaticEnv() // parity with startup, which calls viper.AutomaticEnv()
 	if _, err := loadAllConfig(vtmp); err != nil {
 		return fmt.Errorf("reload rejected, keeping running config: %w", err)
 	}
 	if err := ValidateConfig(vtmp, configfile); err != nil {
 		return fmt.Errorf("reload rejected, keeping running config: %w", err)
 	}
-	// New config is valid; re-apply the same load sequence to the global viper.
-	if _, err := loadAllConfig(viper.GetViper()); err != nil {
-		// Unexpected: the throwaway load just succeeded.
+	// New config is valid; apply it to the live global viper.
+	if err := applyToGlobalViper(vtmp); err != nil {
+		// Unexpected: vtmp validated moments ago.
 		return fmt.Errorf("re-applying validated config to live viper failed: %w", err)
 	}
 	return nil
+}
+
+// applyToGlobalViper replaces the live global viper config with the
+// already-validated settings from src. It RESETS the global first so keys that
+// were removed from the config files do not linger as orphans, re-enables env
+// overrides (parity with startup), then copies src's in-memory settings — no
+// re-read from disk, so there is no second I/O that could fail or change
+// between validation and apply (no partial/TOCTOU apply).
+func applyToGlobalViper(src *viper.Viper) error {
+	viper.Reset()
+	viper.AutomaticEnv()
+	return viper.MergeConfigMap(src.AllSettings())
 }
 
 func mainloop(conf *Config, configfile *string, pd *PopData) {
@@ -166,15 +186,22 @@ func mainloop(conf *Config, configfile *string, pd *PopData) {
 				// WaitGroup with a negative counter. (#159)
 				return
 			case <-hupper:
-				// SIGHUP: reload config, but NEVER let a bad config file take
-				// down a running daemon (#155).
+				// SIGHUP: reload the full config (primary + sources + outputs +
+				// policy), but NEVER let a bad config take down a running daemon
+				// (#155). On failure the running config is left unchanged.
 				if err := reloadConfig(*configfile); err != nil {
-					log.Printf("mainloop: SIGHUP: reload of %s failed (%v); keeping running config unchanged", *configfile, err)
+					log.Printf("mainloop: SIGHUP: config reload failed (%v); keeping running config unchanged", err)
 					continue
 				}
-				fmt.Fprintln(os.Stderr, "Reloaded config file:", *configfile)
-				log.Println("mainloop: SIGHUP received. Forcing refresh of all configured zones.")
-				conf.PopData.RpzRefreshCh <- RpzRefresh{Name: ""}
+				// NOTE: this reloads VIPER config only. Runtime state derived
+				// from config at startup (parsed sources/outputs, pd.Policy,
+				// logging, Gconfig) is NOT re-applied here, so new sources or
+				// policy do not take effect until restart (tracked separately).
+				// Knobs read from viper at request time do pick up the new
+				// values. We therefore do not claim a zone refresh: the old
+				// RpzRefresh{Name: ""} was a no-op (the engine ignores an empty
+				// zone name).
+				log.Println("mainloop: SIGHUP: viper config reloaded. Note: new sources/policy require a restart to take effect.")
 			case <-conf.Internal.APIStopCh:
 				log.Printf("mainloop: API instruction to stop\n")
 				err := pd.SaveRpzSerial()
