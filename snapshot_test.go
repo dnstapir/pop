@@ -283,6 +283,79 @@ func TestRpzIxfrOutStructure(t *testing.T) {
 	}
 }
 
+// --- real engine publish path under -race ----------------------------------
+//
+// Closes the gap that TestConcurrentServeAndUpdate left: that test published
+// synthetic snapshots via Store(). This one drives the REAL GenerateRpzIxfr
+// (the engine's incremental publish path — copies snap.Data, applies the
+// delta, builds/prunes the chain, Stores) on a single "engine" goroutine while
+// readers iterate the published snapshot. Under -race this exercises the actual
+// production publish code against concurrent serving.
+
+func TestGenerateRpzIxfrConcurrentWithReaders(t *testing.T) {
+	pd := newSnapshotTestPopData()
+	pd.Policy = PopPolicy{
+		Logger:          discardLogger(),
+		AllowlistAction: tapir.ALLOWLIST,
+		DenylistAction:  tapir.NODATA,
+		Doubtlist:       DoubtlistPolicy{NumSources: 1, NumSourcesAction: tapir.NXDOMAIN},
+	}
+	pd.Lists = map[string]map[string]*tapir.WBGlist{
+		"allowlist": {},
+		"denylist":  {},
+		"doubtlist": {"feed": {Name: "feed", Type: "doubtlist", Format: "map", Names: map[string]tapir.TapirName{}}},
+	}
+	pd.downstreamSerials = newDownstreamTracker()
+	pd.Downstreams = map[string]RpzDownstream{} // empty -> NotifyDownstreams is a no-op
+	pd.snapshot.Store(&ZoneSnapshot{ZoneName: "rpz.zone.", Serial: 1, SOA: mustSOA("rpz.zone.", 1), Data: map[string]*tapir.RpzName{}})
+
+	const readers = 6
+	const rounds = 150
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-stop:
+					return
+				default:
+					snap := pd.snapshot.Load()
+					for range snap.Data {
+					}
+					for range snap.IxfrChain {
+					}
+				}
+			}
+		}()
+	}
+
+	// "Engine" goroutine: add then remove a name each round via the real
+	// GenerateRpzIxfr publish path. (decide() with NumSources:1 makes a single
+	// doubtlist hit NXDOMAIN, so adds produce output.)
+	feed := pd.Lists["doubtlist"]["feed"]
+	for r := 0; r < rounds; r++ {
+		name := dns.Fqdn("n" + strconv.Itoa(r%32) + ".example")
+		feed.Names[name] = tapir.TapirName{Name: name}
+		if _, err := pd.GenerateRpzIxfr(&tapir.TapirMsg{Added: []tapir.Domain{{Name: name}}}); err != nil {
+			t.Fatalf("GenerateRpzIxfr add: %v", err)
+		}
+		delete(feed.Names, name)
+		if _, err := pd.GenerateRpzIxfr(&tapir.TapirMsg{Removed: []tapir.Domain{{Name: name}}}); err != nil {
+			t.Fatalf("GenerateRpzIxfr remove: %v", err)
+		}
+	}
+	close(stop)
+	wg.Wait()
+
+	// Sanity: the chain stayed within the hard bound throughout.
+	if snap := pd.snapshot.Load(); len(snap.IxfrChain) > maxIxfrChain {
+		t.Errorf("IxfrChain grew past maxIxfrChain: %d", len(snap.IxfrChain))
+	}
+}
+
 // --- helpers ---------------------------------------------------------------
 
 func newSnapshotTestPopData() *PopData {

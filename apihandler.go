@@ -42,6 +42,11 @@ type RpzCmdResponse struct {
 	Error     bool
 	ErrorMsg  string
 	Status    bool
+	// Populated by GEN-OUTPUT: captured on the engine goroutine so the HTTP
+	// handler never reads engine-owned state (Lists/DenylistedNames/...) itself.
+	DenylistedNames  map[string]bool
+	DoubtlistedNames map[string]*tapir.TapirName
+	RpzOutput        []tapir.RpzName
 }
 
 func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
@@ -469,18 +474,20 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "gen-output":
 			log.Printf("TAPIR-POP debug generate RPZ output")
-			err = td.GenerateRpzAxfr()
-			if err != nil {
+			// Route the rebuild through RefreshEngine: GenerateRpzAxfr mutates
+			// engine-owned state (Lists, DenylistedNames, ...) and publishes a
+			// snapshot, so it must run on the engine goroutine, not here in an
+			// HTTP handler concurrent with the engine's own writers.
+			respch := make(chan RpzCmdResponse, 1)
+			td.RpzCommandCh <- RpzCmdData{Command: "GEN-OUTPUT", Result: respch}
+			rpzresp := <-respch
+			if rpzresp.Error {
 				resp.Error = true
-				resp.ErrorMsg = err.Error()
+				resp.ErrorMsg = rpzresp.ErrorMsg
 			}
-			resp.DenylistedNames = td.DenylistedNames
-			resp.DoubtlistedNames = td.DoubtlistedNames
-			if snap := td.snapshot.Load(); snap != nil {
-				for _, rpzn := range snap.Data {
-					resp.RpzOutput = append(resp.RpzOutput, *rpzn)
-				}
-			}
+			resp.DenylistedNames = rpzresp.DenylistedNames
+			resp.DoubtlistedNames = rpzresp.DoubtlistedNames
+			resp.RpzOutput = rpzresp.RpzOutput
 
 		case "send-status":
 			log.Printf("TAPIR-POP debug send status")

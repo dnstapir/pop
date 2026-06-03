@@ -171,15 +171,28 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		return 0, 0, err
 	}
 
-	// Record the serial this downstream claims to hold (used by the engine to
-	// decide how far the IXFR chain can be pruned). Own mutex, not pd.mu.
-	pd.downstreamSerials.record(downstream, curserial)
-
 	snap := pd.snapshot.Load()
 	if snap == nil {
 		return 0, 0, fmt.Errorf("RpzIxfrOut: no snapshot published yet")
 	}
 	zone := snap.ZoneName
+
+	// A client claiming a serial newer than ours is confused (or spoofing).
+	// Fall back to AXFR to resynchronise it, and do NOT record the inflated
+	// serial into the tracker (it would skew chain pruning for other clients).
+	if curserial > snap.Serial {
+		pd.Logger.Printf("RpzIxfrOut: Downstream %s claims RPZ %s serial %d, ahead of our serial %d; AXFR needed", downstream, zone, curserial, snap.Serial)
+		serial, _, err := pd.RpzAxfrOut(w, r)
+		if err != nil {
+			return 0, 0, err
+		}
+		return serial, 0, nil
+	}
+
+	// Record the serial this downstream claims to hold (used by the engine to
+	// decide how far the IXFR chain can be pruned). Own mutex, not pd.mu.
+	// Recorded only after validating it is not ahead of our zone.
+	pd.downstreamSerials.record(downstream, curserial)
 
 	// Fall back to AXFR if we cannot serve an incremental update: empty chain,
 	// or the client is further behind than the oldest delta we still hold.

@@ -323,6 +323,11 @@ func (pd *PopData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 	// applied, plus a fresh IXFR chain (old + this delta, bounded), then
 	// publish atomically. The old snapshot is never mutated.
 	newData := make(map[string]*tapir.RpzName, len(snap.Data)+len(addData))
+	// Shallow copy: unchanged entries share the *RpzName pointer with the old
+	// snapshot. This is safe ONLY because a published *RpzName is never mutated
+	// in place — changes always produce a NEW *RpzName (see the add loops above
+	// and GenerateRpzAxfr). Do not introduce in-place edits of RpzName fields,
+	// or snapshots would alias mutable state and break immutability.
 	for k, v := range snap.Data {
 		newData[k] = v
 	}

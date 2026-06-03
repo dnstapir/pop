@@ -414,6 +414,28 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				resp.Msg += fmt.Sprintf("Doubtlist srcs: %s\n", strings.Join(list, ", "))
 				cmd.Result <- resp
 
+			case "GEN-OUTPUT":
+				// Full RPZ rebuild, run on the engine goroutine (the sole writer
+				// of Lists/DenylistedNames/the snapshot). The /debug gen-output
+				// HTTP handler dispatches here rather than calling
+				// GenerateRpzAxfr itself, so it never races the engine's writers.
+				log.Printf("RefreshEngine: received a GEN-OUTPUT command")
+				if err := pd.GenerateRpzAxfr(); err != nil {
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+				}
+				// Capture the response payload here, on the engine goroutine,
+				// from the freshly published snapshot and engine-owned maps.
+				resp.DenylistedNames = pd.DenylistedNames
+				resp.DoubtlistedNames = pd.DoubtlistedNames
+				if snap := pd.snapshot.Load(); snap != nil {
+					for _, rpzn := range snap.Data {
+						resp.RpzOutput = append(resp.RpzOutput, *rpzn)
+					}
+				}
+				resp.Status = !resp.Error
+				cmd.Result <- resp
+
 			default:
 				pd.Logger.Printf("RefreshEngine: unknown command: \"%s\". Ignored.", command)
 				resp.Error = true
