@@ -19,7 +19,7 @@ type Config struct {
 	ApiServer       ApiserverConf
 	DnsEngine       DnsengineConf
 	BootstrapServer BootstrapServerConf
-    KeyStore        KeystoreConf
+	KeyStore        KeystoreConf
 	Sources         map[string]SourceConf
 	Policy          PolicyConf
 	Log             struct {
@@ -78,7 +78,7 @@ type ServerConf struct {
 }
 
 type KeystoreConf struct {
-    Path string `validate:"required,file"`
+	Path string `validate:"required,file"`
 }
 
 type SourceConf struct {
@@ -88,7 +88,7 @@ type SourceConf struct {
 	Type         string `validate:"required"`
 	Format       string `validate:"required"`
 	Source       string `validate:"required"`
-    Immutable    bool
+	Immutable    bool
 	Topic        string
 	ValidatorKey string
 	Bootstrap    []string
