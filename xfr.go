@@ -70,16 +70,14 @@ func (pd *PopData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	outbound_xfr := make(chan *dns.Envelope)
 	tr := new(dns.Transfer)
 	var wg sync.WaitGroup
-	wg.Add(1)
 
-	go func() {
+	wg.Go(func() {
 		err := tr.Out(w, r, outbound_xfr)
 		if err != nil {
 			fmt.Printf("Error from transfer.Out(): %v\n", err)
 			pd.Logger.Printf("Error from transfer.Out(): %v", err)
 		}
-		wg.Done()
-	}()
+	})
 
 	count := 0
 	send_count := 0
@@ -206,9 +204,8 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	outbound_xfr := make(chan *dns.Envelope)
 	tr := new(dns.Transfer)
 	var wg sync.WaitGroup
-	wg.Add(1)
 
-	go func() {
+	wg.Go(func() {
 		err := tr.Out(w, r, outbound_xfr)
 		if err != nil {
 			pd.Logger.Printf("Error from transfer.Out(): %v", err)
@@ -219,8 +216,7 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 				TimeStamp: time.Now(),
 			}
 		}
-		wg.Done()
-	}()
+	})
 
 	rrs := []dns.RR{}
 

@@ -149,7 +149,7 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 		}
 	}
 
-	var configsections = make(map[string]interface{}, 5)
+	var configsections = make(map[string]any, 5)
 
 	configsections["log"] = config.Log
 	configsections["services"] = config.Services
@@ -171,7 +171,7 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 	return nil
 }
 
-func ValidateBySection(config *Config, configsections map[string]interface{}, cfgfile string) error {
+func ValidateBySection(config *Config, configsections map[string]any, cfgfile string) error {
 	validate := validator.New()
 
 	for k, data := range configsections {

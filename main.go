@@ -27,7 +27,7 @@ var name = "BAD-BUILD"
 var version = "BAD-BUILD"
 var commit = "BAD-BUILD"
 
-var POPExiter = func(args ...interface{}) {
+var POPExiter = func(args ...any) {
 	log.Printf("POPExiter: [placeholderfunction w/o real cleanup]")
 	log.Printf("POPExiter: Exit message: %s", fmt.Sprintf(args[0].(string), args[1:]...))
 	os.Exit(1)
@@ -58,7 +58,7 @@ func mainloop(conf *Config, configfile *string, pd *PopData) {
 	hupper := make(chan os.Signal, 1)
 	signal.Notify(hupper, syscall.SIGHUP)
 
-	POPExiter = func(args ...interface{}) {
+	POPExiter = func(args ...any) {
 		var msg string
 		log.Printf("POPExiter: will try to clean up.")
 

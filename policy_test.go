@@ -302,7 +302,7 @@ func TestDecideDeterminism(t *testing.T) {
 
 	first, firstReason := pd.decide(q)
 	firstSources := sourceList(firstReason.Sources)
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		got, gotReason := pd.decide(q)
 		if got != first {
 			t.Fatalf("decide is non-deterministic: call %d gave %s, first gave %s",
