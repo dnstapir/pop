@@ -64,7 +64,7 @@ install -m 0644 -D %{SOURCE2} %{buildroot}%{_sysusersdir}/dnstapir-pop.conf
 %attr(0770,dnstapir-pop,dnstapir) %dir %{_localstatedir}/log/dnstapir
 
 %attr(0755,dnstapir-pop,dnstapir) %{_bindir}/%{name}
-%attr(0644,dnstapir-pop,dnstapir) %config %{_unitdir}/dnstapir-pop.service
+%attr(0644,dnstapir-pop,dnstapir) %{_unitdir}/dnstapir-pop.service
 
 %attr(0644,dnstapir-pop,dnstapir) %config(noreplace) %{_sysconfdir}/dnstapir/pop/rpz-serial.yaml
 %attr(0660,dnstapir-pop,dnstapir) %config(noreplace) %{_localstatedir}/log/dnstapir/dnstapir-pop.log
