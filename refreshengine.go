@@ -414,6 +414,28 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 				resp.Msg += fmt.Sprintf("Doubtlist srcs: %s\n", strings.Join(list, ", "))
 				cmd.Result <- resp
 
+			case "GEN-OUTPUT":
+				// Full RPZ rebuild, run on the engine goroutine (the sole writer
+				// of Lists/DenylistedNames/the snapshot). The /debug gen-output
+				// HTTP handler dispatches here rather than calling
+				// GenerateRpzAxfr itself, so it never races the engine's writers.
+				log.Printf("RefreshEngine: received a GEN-OUTPUT command")
+				if err := pd.GenerateRpzAxfr(); err != nil {
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+				}
+				// Capture the response payload here, on the engine goroutine,
+				// from the freshly published snapshot and engine-owned maps.
+				resp.DenylistedNames = pd.DenylistedNames
+				resp.DoubtlistedNames = pd.DoubtlistedNames
+				if snap := pd.snapshot.Load(); snap != nil {
+					for _, rpzn := range snap.Data {
+						resp.RpzOutput = append(resp.RpzOutput, *rpzn)
+					}
+				}
+				resp.Status = !resp.Error
+				cmd.Result <- resp
+
 			default:
 				pd.Logger.Printf("RefreshEngine: unknown command: \"%s\". Ignored.", command)
 				resp.Error = true
@@ -432,15 +454,13 @@ func (pd *PopData) NotifyDownstreams() error {
 		csu := tapir.ComponentStatusUpdate{
 			Component: "downstream-notify",
 			Status:    tapir.StatusFail,
-			Msg:       fmt.Sprintf("Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, pd.Rpz.Axfr.SOA.Serial, pd.Rpz.ZoneName),
+			Msg:       fmt.Sprintf("Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, pd.Rpz.CurrentSerial, pd.Rpz.ZoneName),
 			TimeStamp: time.Now(),
 		}
 
 		m := new(dns.Msg)
 		m.SetNotify(pd.Rpz.ZoneName)
-		pd.Rpz.Axfr.SOA.Serial = pd.Rpz.CurrentSerial
-		// m.Ns = append(m.Ns, dns.RR(&pd.Rpz.Axfr.SOA))
-		pd.Logger.Printf("RefreshEngine: Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, pd.Rpz.Axfr.SOA.Serial, pd.Rpz.ZoneName)
+		pd.Logger.Printf("RefreshEngine: Notifying downstream %s about new SOA serial (%d) for RPZ zone %s", dest, pd.Rpz.CurrentSerial, pd.Rpz.ZoneName)
 		r, err := dns.Exchange(m, dest)
 		if err != nil {
 			// well, we tried
@@ -458,13 +478,13 @@ func (pd *PopData) NotifyDownstreams() error {
 
 		} else {
 			if r.Rcode != dns.RcodeSuccess {
-				csu.Msg = fmt.Sprintf("Downstream %s responded with rcode %s to NOTIFY(%s) about new SOA serial (%d)", dest, dns.RcodeToString[r.Rcode], pd.Rpz.ZoneName, pd.Rpz.Axfr.SOA.Serial)
+				csu.Msg = fmt.Sprintf("Downstream %s responded with rcode %s to NOTIFY(%s) about new SOA serial (%d)", dest, dns.RcodeToString[r.Rcode], pd.Rpz.ZoneName, pd.Rpz.CurrentSerial)
 				Gconfig.Internal.ComponentStatusCh <- csu
 				pd.Logger.Println(csu.Msg)
 				continue
 			}
 			csu.Status = tapir.StatusOK
-			csu.Msg = fmt.Sprintf("Downstream %s responded correctly to NOTIFY(%s) about new SOA serial (%d)", dest, pd.Rpz.ZoneName, pd.Rpz.Axfr.SOA.Serial)
+			csu.Msg = fmt.Sprintf("Downstream %s responded correctly to NOTIFY(%s) about new SOA serial (%d)", dest, pd.Rpz.ZoneName, pd.Rpz.CurrentSerial)
 			Gconfig.Internal.ComponentStatusCh <- csu
 			pd.Logger.Println(csu.Msg)
 		}

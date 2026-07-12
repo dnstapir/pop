@@ -139,35 +139,18 @@ func (pd *PopData) ProcessTapirUpdate(tm tapir.TapirMsg) (bool, error) {
 		delete(wbgl.Names, dns.Fqdn(tname.Name))
 	}
 
+	// GenerateRpzIxfr computes the delta AND publishes the new snapshot (the
+	// applied zone), so there is no separate apply step that could half-update
+	// state on error (fixes #165). It returns an empty RpzIxfr when the update
+	// produced no policy change.
 	ixfr, err := pd.GenerateRpzIxfr(&tm)
 	if err != nil {
 		return false, err
 	}
-	err = pd.ProcessIxfrIntoAxfr(ixfr)
+	if ixfr.FromSerial == ixfr.ToSerial {
+		// no change -> no new snapshot was published, nothing to notify
+		return true, nil
+	}
+	err = pd.NotifyDownstreams()
 	return true, err // return to RefreshEngine
-}
-
-func (pd *PopData) ProcessIxfrIntoAxfr(ixfr RpzIxfr) error {
-	for _, tn := range ixfr.Removed {
-		delete(pd.Rpz.Axfr.Data, tn.Name)
-		if pd.Debug {
-			pd.Logger.Printf("PIIA: Deleting domain %s", tn.Name)
-		}
-	}
-	for _, tn := range ixfr.Added {
-		if _, exist := pd.Rpz.Axfr.Data[tn.Name]; exist {
-			// XXX: this should not happen.
-			pd.Logger.Printf("Error: ProcessIxfrIntoAxfr: domain %s already exists. This should not happen.",
-				tn.Name)
-		} else {
-			pd.Rpz.Axfr.Data[tn.Name] = tn
-			if pd.Debug {
-				pd.Logger.Printf("PIIA: Adding domain %s", tn.Name)
-			}
-		}
-	}
-
-	//	pd.Logger.Printf("PIIA Notifying %d downstreams for RPZ zone %s", len(pd.RpzDownstreams), pd.Rpz.ZoneName)
-	err := pd.NotifyDownstreams()
-	return err
 }

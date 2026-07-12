@@ -7,7 +7,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"math"
 	"net"
 	"strings"
 	"sync"
@@ -48,24 +47,32 @@ ns2.${ZONE}	IN	AAAA	::1`
 	if err != nil {
 		pd.Logger.Printf("Error from ReadZoneString(): %v", err)
 	}
-	// pd.Rpz.CurrentSerial = serial
 
-	pd.mu.Lock()
-	pd.Rpz.Axfr.ZoneData = &zd // XXX: This is not thread safe
-	pd.Rpz.Axfr.SOA = zd.SOA
-	pd.Rpz.Axfr.NSrrs = zd.NSrrs
-	pd.mu.Unlock()
+	// Publish the initial (empty-Data) snapshot so readers have something
+	// consistent to serve before sources are parsed. ParseSources -> the first
+	// GenerateRpzAxfr then publishes the populated zone. Runs at startup before
+	// the engine serves, so no concurrent reader yet.
+	soa := zd.SOA
+	soa.Serial = pd.Rpz.CurrentSerial
+	pd.snapshot.Store(&ZoneSnapshot{
+		ZoneName: rpzzone,
+		Serial:   pd.Rpz.CurrentSerial,
+		SOA:      soa,
+		NSrrs:    zd.NSrrs,
+		Data:     map[string]*tapir.RpzName{},
+	})
 	return nil
 }
 
 func (pd *PopData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, error) {
-
-	zone := pd.Rpz.ZoneName
-
-	// if pd.Verbose {
-	//		pd.Logger.Printf("RpzAxfrOut: Will try to serve RPZ %s (%d RRs)", zone,
-	//			len(pd.Rpz.Axfr.Data))
-	//	}
+	// Load the immutable snapshot once; serve the whole transfer from it with
+	// no lock. A concurrent engine publish just means we serve the (consistent)
+	// slightly-older zone, which is correct.
+	snap := pd.snapshot.Load()
+	if snap == nil {
+		return 0, 0, fmt.Errorf("RpzAxfrOut: no snapshot published yet")
+	}
+	zone := snap.ZoneName
 
 	outbound_xfr := make(chan *dns.Envelope)
 	tr := new(dns.Transfer)
@@ -75,43 +82,34 @@ func (pd *PopData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	go func() {
 		err := tr.Out(w, r, outbound_xfr)
 		if err != nil {
-			fmt.Printf("Error from transfer.Out(): %v\n", err)
 			pd.Logger.Printf("Error from transfer.Out(): %v", err)
 		}
 		wg.Done()
 	}()
 
 	count := 0
-	send_count := 0
 
-	pd.Rpz.Axfr.SOA.Serial = pd.Rpz.CurrentSerial
-	rrs := []dns.RR{dns.RR(&pd.Rpz.Axfr.SOA)}
-	// pd.Logger.Printf("RpzAxfrOut: Adding SOA RR to env:%s", rrs[0].String())
+	soa := snap.SOA // copy; snapshot is immutable
+	rrs := []dns.RR{dns.RR(&soa)}
 	var total_sent int
 
-	rrs = append(rrs, pd.Rpz.Axfr.NSrrs...)
+	rrs = append(rrs, snap.NSrrs...)
 	count = len(rrs)
 
-	for _, rpzn := range pd.Rpz.Axfr.Data {
-		// pd.Logger.Printf("RpzAxfrOut: Adding RR to env:%s", (*rpzn.RR).String())
+	for _, rpzn := range snap.Data {
 		rrs = append(rrs, *rpzn.RR)
 		count++
 		if count >= 500 {
-			send_count++
 			total_sent += len(rrs)
-			// fmt.Printf("Sending %d RRs\n", len(rrs))
 			outbound_xfr <- &dns.Envelope{RR: rrs}
 			rrs = []dns.RR{}
-			// fmt.Printf("Sent %d RRs: done\n", len(rrs))
 			count = 0
 		}
 	}
 
-	rrs = append(rrs, dns.RR(&pd.Rpz.Axfr.SOA)) // trailing SOA
+	rrs = append(rrs, dns.RR(&soa)) // trailing SOA
 
 	total_sent += len(rrs)
-	//	pd.Logger.Printf("RpzAxfrOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d)\n",
-	//		zone, len(rrs), total_sent)
 	outbound_xfr <- &dns.Envelope{RR: rrs}
 
 	close(outbound_xfr)
@@ -123,7 +121,7 @@ func (pd *PopData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 
 	pd.Logger.Printf("ZoneTransferOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)
 
-	return pd.Rpz.CurrentSerial, total_sent - 1, nil
+	return snap.Serial, total_sent - 1, nil
 }
 
 // An IXFR has the following structure:
@@ -173,23 +171,40 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		return 0, 0, err
 	}
 
-	// tmp := pd.Downstreams[downstream]
-	// tmp.Serial = curserial
+	snap := pd.snapshot.Load()
+	if snap == nil {
+		return 0, 0, fmt.Errorf("RpzIxfrOut: no snapshot published yet")
+	}
+	zone := snap.ZoneName
 
-	pd.mu.Lock()
-	pd.DownstreamSerials[downstream] = curserial
-	zone := pd.Rpz.ZoneName
-	pd.mu.Unlock()
-
-	if len(pd.Rpz.IxfrChain) == 0 {
-		pd.Logger.Printf("RpzIxfrOut: Downstream %s claims to have RPZ %s with serial %d, but the IXFR chain is empty; AXFR needed", downstream, zone, curserial)
+	// A client claiming a serial newer than ours is confused (or spoofing).
+	// Fall back to AXFR to resynchronise it, and do NOT record the inflated
+	// serial into the tracker (it would skew chain pruning for other clients).
+	if curserial > snap.Serial {
+		pd.Logger.Printf("RpzIxfrOut: Downstream %s claims RPZ %s serial %d, ahead of our serial %d; AXFR needed", downstream, zone, curserial, snap.Serial)
 		serial, _, err := pd.RpzAxfrOut(w, r)
 		if err != nil {
 			return 0, 0, err
 		}
 		return serial, 0, nil
-	} else if curserial < pd.Rpz.IxfrChain[0].FromSerial {
-		pd.Logger.Printf("RpzIxfrOut: Downstream %s claims to have RPZ %s with serial %d, but the IXFR chain starts at %d; AXFR needed", downstream, zone, curserial, pd.Rpz.IxfrChain[0].FromSerial)
+	}
+
+	// Record the serial this downstream claims to hold (used by the engine to
+	// decide how far the IXFR chain can be pruned). Own mutex, not pd.mu.
+	// Recorded only after validating it is not ahead of our zone.
+	pd.downstreamSerials.record(downstream, curserial)
+
+	// Fall back to AXFR if we cannot serve an incremental update: empty chain,
+	// or the client is further behind than the oldest delta we still hold.
+	if len(snap.IxfrChain) == 0 {
+		pd.Logger.Printf("RpzIxfrOut: Downstream %s claims RPZ %s serial %d, but the IXFR chain is empty; AXFR needed", downstream, zone, curserial)
+		serial, _, err := pd.RpzAxfrOut(w, r)
+		if err != nil {
+			return 0, 0, err
+		}
+		return serial, 0, nil
+	} else if curserial < snap.IxfrChain[0].FromSerial {
+		pd.Logger.Printf("RpzIxfrOut: Downstream %s claims RPZ %s serial %d, but the IXFR chain starts at %d; AXFR needed", downstream, zone, curserial, snap.IxfrChain[0].FromSerial)
 		serial, _, err := pd.RpzAxfrOut(w, r)
 		if err != nil {
 			return 0, 0, err
@@ -198,9 +213,8 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	}
 
 	if pd.Verbose {
-		pd.Logger.Printf("RpzIxfrOut: Will try to serve RPZ %s to %v (%d IXFRs in chain)\n", zone,
-			w.RemoteAddr().String(), len(pd.Rpz.IxfrChain))
-		pd.Logger.Printf("RpzIxfrOut: Client claims to have RPZ %s with serial %d", zone, curserial)
+		pd.Logger.Printf("RpzIxfrOut: Will try to serve RPZ %s to %v (%d IXFRs in chain), client serial %d", zone,
+			w.RemoteAddr().String(), len(snap.IxfrChain), curserial)
 	}
 
 	outbound_xfr := make(chan *dns.Envelope)
@@ -222,88 +236,54 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		wg.Done()
 	}()
 
-	rrs := []dns.RR{}
+	// All SOAs derive from the snapshot's single authoritative SOA — there is
+	// no longer a separate ZoneData.SOA to drift from the served serial.
+	soa := snap.SOA
+	rrs := []dns.RR{dns.RR(&soa)} // leading SOA at current serial
 
-	var total_sent int
+	var total_sent, count int
+	// Default to the client's own serial: if no delta applies (client already
+	// up to date) we serve a SOA-only IXFR and report the unchanged serial,
+	// not 0.
+	finalSerial := curserial
+	for _, ixfr := range snap.IxfrChain {
+		if ixfr.FromSerial < curserial {
+			continue
+		}
+		finalSerial = ixfr.ToSerial
 
-	pd.Rpz.Axfr.SOA.Serial = pd.Rpz.CurrentSerial
-	rrs = append(rrs, dns.RR(&pd.Rpz.Axfr.SOA))
-
-	var totcount, count int
-	var finalSerial uint32
-	for _, ixfr := range pd.Rpz.IxfrChain {
-		pd.Logger.Printf("RpzIxfrOut: checking client serial(%d) against IXFR[from:%d, to:%d]",
-			curserial, ixfr.FromSerial, ixfr.ToSerial)
-		if ixfr.FromSerial >= curserial {
-			finalSerial = ixfr.ToSerial
-			pd.Logger.Printf("PushIxfrs: pushing the IXFR[from:%d, to:%d] onto output",
-				ixfr.FromSerial, ixfr.ToSerial)
-			fromsoa := dns.Copy(dns.RR(&pd.Rpz.Axfr.ZoneData.SOA))
-			fromsoa.(*dns.SOA).Serial = ixfr.FromSerial
-			if pd.Debug {
-				pd.Logger.Printf("IxfrOut: adding FROMSOA to output: %s", fromsoa.String())
-			}
-			rrs = append(rrs, fromsoa)
+		fromsoa := dns.Copy(dns.RR(&soa))
+		fromsoa.(*dns.SOA).Serial = ixfr.FromSerial
+		rrs = append(rrs, fromsoa)
+		count++
+		for _, tn := range ixfr.Removed {
+			rrs = append(rrs, *tn.RR)
 			count++
-			pd.Logger.Printf("RpzIxfrOut: IXFR[%d,%d] has %d RRs in the removal list",
-				ixfr.FromSerial, ixfr.ToSerial, len(ixfr.Removed))
-			for _, tn := range ixfr.Removed {
-				if pd.Debug {
-					pd.Logger.Printf("DEL: adding RR to ixfr output: %s", tn.Name)
-				}
-				rrs = append(rrs, *tn.RR) // should do proper slice magic instead
-				count++
-				if count >= 500 {
-					pd.Logger.Printf("Sending %d RRs\n", len(rrs))
-					for _, rr := range rrs {
-						pd.Logger.Printf("SEND DELS: %s", rr.String())
-					}
-					outbound_xfr <- &dns.Envelope{RR: rrs}
-					rrs = []dns.RR{}
-					totcount += count
-					count = 0
-				}
+			if count >= 500 {
+				outbound_xfr <- &dns.Envelope{RR: rrs}
+				total_sent += len(rrs)
+				rrs = []dns.RR{}
+				count = 0
 			}
-			tosoa := dns.Copy(dns.RR(&pd.Rpz.Axfr.ZoneData.SOA))
-			tosoa.(*dns.SOA).Serial = ixfr.ToSerial
-			if pd.Debug {
-				pd.Logger.Printf("RpzIxfrOut: adding TOSOA to output: %s", tosoa.String())
-			}
-			rrs = append(rrs, tosoa)
+		}
+		tosoa := dns.Copy(dns.RR(&soa))
+		tosoa.(*dns.SOA).Serial = ixfr.ToSerial
+		rrs = append(rrs, tosoa)
+		count++
+		for _, tn := range ixfr.Added {
+			rrs = append(rrs, *tn.RR)
 			count++
-			pd.Logger.Printf("RpzIxfrOut: IXFR[%d,%d] has %d RRs in the added list",
-				ixfr.FromSerial, ixfr.ToSerial, len(ixfr.Added))
-			for _, tn := range ixfr.Added {
-				if pd.Debug {
-					pd.Logger.Printf("ADD: adding RR to ixfr output: %s", tn.Name)
-				}
-				rrs = append(rrs, *tn.RR) // should do proper slice magic instead
-				count++
-				if count >= 500 {
-					pd.Logger.Printf("Sending %d RRs\n", len(rrs))
-					for _, rr := range rrs {
-						pd.Logger.Printf("SEND ADDS: %s", rr.String())
-					}
-					outbound_xfr <- &dns.Envelope{RR: rrs}
-					// fmt.Printf("Sent %d RRs: done\n", len(rrs))
-					rrs = []dns.RR{}
-					totcount += count
-					count = 0
-				}
+			if count >= 500 {
+				outbound_xfr <- &dns.Envelope{RR: rrs}
+				total_sent += len(rrs)
+				rrs = []dns.RR{}
+				count = 0
 			}
 		}
 	}
 
-	rrs = append(rrs, dns.RR(&pd.Rpz.Axfr.SOA)) // trailing SOA
-
+	rrs = append(rrs, dns.RR(&soa)) // trailing SOA
 	total_sent += len(rrs)
-	pd.Logger.Printf("RpzIxfrOut: Zone %s: Sending final %d RRs (including trailing SOA, total sent %d)\n",
-		zone, len(rrs), total_sent)
-
-	//	pd.Logger.Printf("Sending %d RRs\n", len(rrs))
-	//	for _, rr := range rrs {
-	//		pd.Logger.Printf("SEND FINAL: %s", rr.String())
-	//	}
 	outbound_xfr <- &dns.Envelope{RR: rrs}
 
 	close(outbound_xfr)
@@ -320,35 +300,43 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	}
 
 	pd.Logger.Printf("RpzIxfrOut: %s: Sent %d RRs (including SOA twice).", zone, total_sent)
-	err = pd.PruneRpzIxfrChain()
-	if err != nil {
-		pd.Logger.Printf("RpzIxfrOut: Error from PruneRpzIxfrChain(): %v", err)
-	}
-
 	return finalSerial, total_sent - 1, nil
 }
 
-func (pd *PopData) PruneRpzIxfrChain() error {
-	lowSerial := uint32(math.MaxUint32)
-	for _, serial := range pd.DownstreamSerials {
-		if serial < lowSerial {
-			lowSerial = serial
-		}
+// pruneIxfrChain returns chain trimmed to the deltas still needed: everything
+// from the slowest downstream's serial onward is kept. If no downstreams are
+// tracked, the chain is returned unchanged (the hard maxIxfrChain bound in
+// GenerateRpzIxfr still caps it). Pure function — called by the engine while
+// building a new snapshot, so all chain mutation stays on the engine goroutine.
+// (Replaces the old PruneRpzIxfrChain, which mutated shared state from a DNS
+// goroutine and had an off-by-two bug.)
+//
+// Invariant relied on: the chain is contiguous and oldest-first — each delta's
+// ToSerial equals the next delta's FromSerial. GenerateRpzIxfr guarantees this
+// by only ever appending curserial -> curserial+1. Trimming a contiguous chain
+// from the front preserves contiguity, so RpzIxfrOut can always walk an
+// unbroken serial path from any in-range client serial to the current one.
+func pruneIxfrChain(chain []RpzIxfr, lowSerial uint32, haveDownstreams bool) []RpzIxfr {
+	if !haveDownstreams || len(chain) == 0 {
+		return chain
 	}
-
-	indexToDeleteUpTo := -1
-	for i := 0; i < len(pd.Rpz.IxfrChain); i++ {
-		if pd.Rpz.IxfrChain[i].FromSerial == lowSerial {
-			indexToDeleteUpTo = i - 2
+	// Keep deltas whose ToSerial is still > lowSerial (a downstream at
+	// lowSerial needs every delta that advances past it); drop fully-superseded
+	// older deltas. Chain is ordered oldest-first.
+	keepFrom := 0
+	for i, ix := range chain {
+		if ix.ToSerial > lowSerial {
+			keepFrom = i
 			break
 		}
+		keepFrom = i + 1
 	}
-
-	if indexToDeleteUpTo >= 0 {
-		pd.Rpz.IxfrChain = pd.Rpz.IxfrChain[indexToDeleteUpTo+1:]
-		pd.Logger.Printf("PruneRpzIxfrChain: Pruning IXFR chain up to two serials before serial %d", lowSerial)
-	} else {
-		pd.Logger.Printf("PruneRpzIxfrChain: Nothing to prune from the IXFR chain")
+	if keepFrom <= 0 {
+		return chain
 	}
-	return nil
+	if keepFrom >= len(chain) {
+		// keep at least the most recent delta so the FromSerial floor is sane
+		return chain[len(chain)-1:]
+	}
+	return chain[keepFrom:]
 }
