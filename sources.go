@@ -23,11 +23,6 @@ func NewPopData(conf *Config, lg *log.Logger) (*PopData, error) {
 	rpzdata := RpzData{
 		CurrentSerial: 1,
 		ZoneName:      viper.GetString("services.rpz.zonename"),
-		IxfrChain:     []RpzIxfr{},
-		Axfr: RpzAxfr{
-			Data: map[string]*tapir.RpzName{},
-		},
-		// RpzMap: map[string]*tapir.RpzName{},
 	}
 
 	repint := viper.GetInt("services.reaper.interval")
@@ -52,7 +47,7 @@ func NewPopData(conf *Config, lg *log.Logger) (*PopData, error) {
 	pd.Lists["doubtlist"] = make(map[string]*tapir.WBGlist, 3)
 	pd.Lists["denylist"] = make(map[string]*tapir.WBGlist, 3)
 	pd.Downstreams = map[string]RpzDownstream{}
-	pd.DownstreamSerials = map[string]uint32{}
+	pd.downstreamSerials = newDownstreamTracker()
 
 	err := pd.ParseOutputs()
 	if err != nil {
@@ -199,10 +194,18 @@ func (pd *PopData) ParseSourcesNG() error {
 					pd.Logger.Printf("ParseSourcesNG: Fetching MQTT validator key for topic %s", src.Topic)
 				}
 
-				pd.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
-				err := pd.MqttEngine.SubToTopic(src.Topic, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
-				if err != nil {
-					POPExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
+				// With MQTT ignored there is no engine to subscribe to. The
+				// source is still registered, so it shows up in status output
+				// as present-but-empty rather than vanishing without trace.
+				if pd.MqttEngine == nil {
+					pd.Logger.Printf("WARNING: MQTT source %s (topic %s) not subscribed: MQTT is not enabled (tapir.mqtt.mode)",
+						src.Name, src.Topic)
+				} else {
+					pd.Logger.Printf("ParseSourcesNG: Adding topic '%s' to MQTT Engine", src.Topic)
+					err := pd.MqttEngine.SubToTopic(src.Topic, pd.TapirObservations, "struct", true) // XXX: Brr. kludge.
+					if err != nil {
+						POPExiter("Error adding topic %s to MQTT Engine: %v", src.Topic, err)
+					}
 				}
 				pd.Logger.Printf("ParseSourcesNG: Topic data for topic %s", src.Topic)
 
@@ -257,9 +260,12 @@ func (pd *PopData) ParseSourcesNG() error {
 	pd.Logger.Printf("ParseSources: all sources done.")
 
 	if pd.MqttEngine != nil && !pd.TapirMqttEngineRunning {
-		err := pd.StartMqttEngine(pd.MqttEngine)
-		if err != nil {
-			POPExiter("Error starting MQTT Engine: %v", err)
+		mode, merr := mqttMode()
+		if merr != nil {
+			POPExiter("%v", merr)
+		}
+		if err := pd.StartMqttEngine(pd.MqttEngine, mode, Gconfig.Internal.ComponentStatusCh); err != nil {
+			POPExiter("%v", err)
 		}
 	}
 

@@ -42,6 +42,11 @@ type RpzCmdResponse struct {
 	Error     bool
 	ErrorMsg  string
 	Status    bool
+	// Populated by GEN-OUTPUT: captured on the engine goroutine so the HTTP
+	// handler never reads engine-owned state (Lists/DenylistedNames/...) itself.
+	DenylistedNames  map[string]bool
+	DoubtlistedNames map[string]*tapir.TapirName
+	RpzOutput        []tapir.RpzName
 }
 
 func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
@@ -104,10 +109,11 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				Msg:    "Daemon was happy, but now winding down",
 			}
 			log.Printf("Stopping MQTT engine\n")
-			_, err := conf.PopData.MqttEngine.StopEngine()
-			if err != nil {
-				resp.Error = true
-				resp.ErrorMsg = err.Error()
+			if me := mqttEngineOrError(conf, &resp); me != nil {
+				if _, err := me.StopEngine(); err != nil {
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+				}
 			}
 			conf.Internal.APIStopCh <- struct{}{}
 		case "bump":
@@ -118,28 +124,34 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "mqtt-start":
-			_, _, _, err := conf.PopData.MqttEngine.StartEngine()
-			if err != nil {
-				resp.Error = true
-				resp.ErrorMsg = err.Error()
+			if me := mqttEngineOrError(conf, &resp); me != nil {
+				if _, _, _, err := me.StartEngine(); err != nil {
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+				} else {
+					resp.Msg = "MQTT engine started"
+				}
 			}
-			resp.Msg = "MQTT engine started"
 
 		case "mqtt-stop":
-			_, err := conf.PopData.MqttEngine.StopEngine()
-			if err != nil {
-				resp.Error = true
-				resp.ErrorMsg = err.Error()
+			if me := mqttEngineOrError(conf, &resp); me != nil {
+				if _, err := me.StopEngine(); err != nil {
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+				} else {
+					resp.Msg = "MQTT engine stopped"
+				}
 			}
-			resp.Msg = "MQTT engine stopped"
 
 		case "mqtt-restart":
-			_, err := conf.PopData.MqttEngine.RestartEngine()
-			if err != nil {
-				resp.Error = true
-				resp.ErrorMsg = err.Error()
+			if me := mqttEngineOrError(conf, &resp); me != nil {
+				if _, err := me.RestartEngine(); err != nil {
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+				} else {
+					resp.Msg = "MQTT engine restarted"
+				}
 			}
-			resp.Msg = "MQTT engine restarted"
 
 		case "rpz-add":
 			log.Printf("Received RPZ-ADD %s policy %s RPZ source %s command", cp.Name, cp.Policy, cp.RpzSource)
@@ -246,9 +258,9 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			w.Header().Set("Content-Type", "application/json")
 			me := conf.PopData.MqttEngine
-            me.DataMu.Lock() /* Lock because resp.TopicData needs to be accessed safely */
+			me.DataMu.Lock() /* Lock because resp.TopicData needs to be accessed safely */
 			err := json.NewEncoder(w).Encode(resp)
-            me.DataMu.Unlock()
+			me.DataMu.Unlock()
 			if err != nil {
 				log.Printf("Error from json encoder: %v", err)
 				log.Printf("resp: %v", resp)
@@ -270,9 +282,9 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		switch bp.Command {
 		case "doubtlist-status":
 			me := conf.PopData.MqttEngine
-            me.DataMu.Lock()
+			me.DataMu.Lock()
 			stats := me.Stats()
-            me.DataMu.Unlock()
+			me.DataMu.Unlock()
 			// resp.MsgCounters = stats.MsgCounters
 			// resp.MsgTimeStamps = stats.MsgTimeStamps
 			resp.TopicData = stats
@@ -376,6 +388,18 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// mqttEngineOrError returns the MQTT engine, or fills in resp and returns nil
+// when MQTT is not enabled (tapir.mqtt.mode: ignored). Without this the
+// mqtt-* commands would panic on a nil engine rather than answer.
+func mqttEngineOrError(conf *Config, resp *tapir.CommandResponse) *tapir.MqttEngine {
+	if conf.PopData.MqttEngine == nil {
+		resp.Error = true
+		resp.ErrorMsg = "MQTT is not enabled on this pop (tapir.mqtt.mode)"
+		return nil
+	}
+	return conf.PopData.MqttEngine
+}
+
 func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 	td := conf.PopData
 
@@ -469,16 +493,20 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "gen-output":
 			log.Printf("TAPIR-POP debug generate RPZ output")
-			err = td.GenerateRpzAxfr()
-			if err != nil {
+			// Route the rebuild through RefreshEngine: GenerateRpzAxfr mutates
+			// engine-owned state (Lists, DenylistedNames, ...) and publishes a
+			// snapshot, so it must run on the engine goroutine, not here in an
+			// HTTP handler concurrent with the engine's own writers.
+			respch := make(chan RpzCmdResponse, 1)
+			td.RpzCommandCh <- RpzCmdData{Command: "GEN-OUTPUT", Result: respch}
+			rpzresp := <-respch
+			if rpzresp.Error {
 				resp.Error = true
-				resp.ErrorMsg = err.Error()
+				resp.ErrorMsg = rpzresp.ErrorMsg
 			}
-			resp.DenylistedNames = td.DenylistedNames
-			resp.DoubtlistedNames = td.DoubtlistedNames
-			for _, rpzn := range td.Rpz.Axfr.Data {
-				resp.RpzOutput = append(resp.RpzOutput, *rpzn)
-			}
+			resp.DenylistedNames = rpzresp.DenylistedNames
+			resp.DoubtlistedNames = rpzresp.DoubtlistedNames
+			resp.RpzOutput = rpzresp.RpzOutput
 
 		case "send-status":
 			log.Printf("TAPIR-POP debug send status")

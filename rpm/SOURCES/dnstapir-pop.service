@@ -1,12 +1,16 @@
 [Unit]
 Description=DNS TAPIR EDGE Policy Processor
 After=network-online.target
+StartLimitIntervalSec=10s
+StartLimitBurst=5
 
 [Service]
 Type=simple
 User=dnstapir-pop
 Group=dnstapir
 ExecStart=/usr/bin/dnstapir-pop
+Restart=on-failure
+RestartSec=1s
 
 [Install]
 WantedBy=multi-user.target

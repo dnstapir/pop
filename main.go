@@ -264,17 +264,10 @@ func main() {
 		POPExiter("Error from NewPopData: %v", err)
 	}
 
-	if pd.MqttEngine == nil {
-		pd.mu.Lock()
-		err := pd.CreateMqttEngine(mqttclientid, statusch, pd.MqttLogger)
-		if err != nil {
-			POPExiter("Error creating MQTT Engine: %v", err)
-		}
-		pd.mu.Unlock()
-		err = pd.StartMqttEngine(pd.MqttEngine)
-		if err != nil {
-			POPExiter("Error starting MQTT Engine: %v", err)
-		}
+	// Whether a failure here is fatal is tapir.mqtt.mode's decision, not this
+	// caller's: SetupMqtt returns an error only when the mode says so.
+	if err := pd.SetupMqtt(mqttclientid, statusch, pd.MqttLogger); err != nil {
+		POPExiter("%v", err)
 	}
 
 	go pd.ConfigUpdater(&Gconfig, stopch) // Note that ConfigUpdater must as early as possible

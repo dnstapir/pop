@@ -6,10 +6,38 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    steps:
-      - name: Test build before merge
-        uses: actions/checkout@v2
 
-      - name: Test build
-        run: |
-          make
+    # Least privilege: this job builds and runs pull-request-controlled code,
+    # so it gets a read-only token rather than whatever the repository or
+    # organization default happens to be.
+    permissions:
+      contents: read
+
+    steps:
+      # Was actions/checkout@v2, and had no setup-go step at all -- so this
+      # job ran against whatever Go happened to be on the runner image.
+      #
+      # persist-credentials: false keeps the token out of .git/config, so code
+      # from the pull request cannot pick it up from the checkout. Nothing here
+      # pushes, so there is nothing to lose by dropping it.
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      # go-version-file rather than a literal: it ties the gate to the version
+      # the module actually declares, and cannot drift from it.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        run: make build
+
+      # The actual gate. This job has been named "test" all along while its
+      # only step ran "make" -- a build. No test had ever run in CI.
+      #
+      # "make test" carries -race deliberately: the high-priority backlog in
+      # this repo is dominated by data races on the served RPZ zone, which is
+      # the one bug class the detector finds mechanically.
+      - name: Test
+        run: make test

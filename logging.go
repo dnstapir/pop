@@ -14,9 +14,75 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-func SetupLogging(conf *Config) {
-	logfile := viper.GetString("log.file")
+// lumberjackWriter is the rotating writer every pop log goes through.
+func lumberjackWriter(logfile string) *lumberjack.Logger {
+	return &lumberjack.Logger{
+		Filename:   logfile,
+		MaxSize:    20,
+		MaxBackups: 3,
+		MaxAge:     14,
+	}
+}
 
+// newFileLogger returns a logger writing to logfile, or the default logger
+// when no file is configured.
+//
+// There is deliberately no os.OpenFile check here, and its absence is the
+// point. There used to be one on the policy, dnsengine and MQTT logs, and it
+// was the reason a missing log DIRECTORY killed pop outright before it had
+// served anything -- while the standard log, which goes straight to
+// lumberjack, quietly created that same directory and carried on. The
+// inconsistency was the bug.
+//
+// The check also tested nothing the writer could not handle: lumberjack does
+// os.MkdirAll when it opens. And it leaked what it opened -- the *os.File was
+// handed to log.New and then immediately superseded by
+// SetOutput(&lumberjack.Logger{...}), so it was never written to and never
+// closed.
+//
+// What replaces it is a probe: create the directory, confirm the file can be
+// opened for append, and CLOSE it again. That is deliberate rather than
+// trusting lumberjack alone, because lumberjack opens lazily and log.Logger
+// discards write errors -- so an unwritable path would otherwise lose the log
+// in silence, which is a worse trade than the fatal it replaced.
+//
+// A log destination that cannot be opened is a reason to say so loudly, and to
+// fall back to a log that works. It is not a reason to refuse to run: pop's
+// job is to serve a policy zone, and it can do that while complaining that one
+// of its logs is unwritable.
+func newFileLogger(name, logfile, prefix string, logoptions int) *log.Logger {
+	if logfile == "" {
+		log.Printf("No %s logfile specified, using default", name)
+		return log.Default()
+	}
+	if err := probeLogfile(logfile); err != nil {
+		log.Printf("WARNING: cannot write the %s log to %s (%v); using the default log instead", name, logfile, err)
+		return log.Default()
+	}
+	lg := log.New(lumberjackWriter(logfile), prefix, logoptions)
+	fmt.Printf("TAPIR-POP %s logging to: %s\n", name, logfile)
+	return lg
+}
+
+// probeLogfile checks that logfile can actually be written, creating its
+// directory as lumberjack would. The descriptor is closed again: this is a
+// check, not the writer.
+func probeLogfile(logfile string) error {
+	logfile = filepath.Clean(logfile)
+	if err := os.MkdirAll(filepath.Dir(logfile), 0o755); err != nil {
+		return err
+	}
+	// 0600, not 0644: logs carry query names and other operational detail, and
+	// lumberjack preserves the mode it finds when it rotates -- so the mode
+	// this probe creates the file with is the mode it keeps.
+	f, err := os.OpenFile(logfile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+func SetupLogging(conf *Config) {
 	debug := viper.GetString("log.mode") == "debug"
 	logoptions := log.Ldate | log.Ltime
 	if debug {
@@ -24,89 +90,33 @@ func SetupLogging(conf *Config) {
 		logoptions |= log.Lshortfile
 	}
 
-	prefix := ""
+	prefixFor := func(name string) string {
+		if debug {
+			return name + ": "
+		}
+		return ""
+	}
 
-	if logfile != "" {
-		log.SetOutput(&lumberjack.Logger{
-			Filename:   logfile,
-			MaxSize:    20,
-			MaxBackups: 3,
-			MaxAge:     14,
-		})
+	// The standard log. Falling back to stderr rather than refusing to start:
+	// an unset log.file is a configuration omission, and stderr is a perfectly
+	// good answer to it -- under systemd it is captured anyway. Killing the
+	// daemon over it means a trivial config slip stops DNS being served.
+	logfile := viper.GetString("log.file")
+	switch {
+	case logfile == "":
+		log.SetOutput(os.Stderr)
+		log.Println("WARNING: no standard logfile configured (key log.file); logging to stderr")
+	default:
+		if err := probeLogfile(logfile); err != nil {
+			log.SetOutput(os.Stderr)
+			log.Printf("WARNING: cannot write the standard log to %s (%v); logging to stderr", logfile, err)
+			break
+		}
+		log.SetOutput(lumberjackWriter(logfile))
 		fmt.Printf("TAPIR-POP standard logging to: %s\n", logfile)
-	} else {
-		POPExiter("Error: standard log (key log.file) not specified")
 	}
 
-	logfile = viper.GetString("policy.logfile")
-	if logfile != "" {
-		logfile = filepath.Clean(logfile)
-		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec G302
-		if err != nil {
-			POPExiter("error opening TAPIR-POP policy logfile '%s': %v", logfile, err)
-		}
-
-		if debug {
-			prefix = "policy: "
-		}
-		conf.Loggers.Policy = log.New(f, prefix, logoptions)
-		conf.Loggers.Policy.SetOutput(&lumberjack.Logger{
-			Filename:   logfile,
-			MaxSize:    20,
-			MaxBackups: 3,
-			MaxAge:     14,
-		})
-		fmt.Printf("TAPIR-POP policy logging to: %s\n", logfile)
-	} else {
-		log.Println("No policy logfile specified, using default")
-		conf.Loggers.Policy = log.Default()
-	}
-
-	logfile = viper.GetString("dnsengine.logfile")
-	if logfile != "" {
-		logfile = filepath.Clean(logfile)
-		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec G302
-		if err != nil {
-			POPExiter("error opening TAPIR-POP dnsengine logfile '%s': %v", logfile, err)
-		}
-
-		if debug {
-			prefix = "dnsengine: "
-		}
-		conf.Loggers.Dnsengine = log.New(f, prefix, logoptions)
-		conf.Loggers.Dnsengine.SetOutput(&lumberjack.Logger{
-			Filename:   logfile,
-			MaxSize:    20,
-			MaxBackups: 3,
-			MaxAge:     14,
-		})
-		fmt.Printf("TAPIR-POP dnsengine logging to: %s\n", logfile)
-	} else {
-		log.Println("No dnsengine logfile specified, using default")
-		conf.Loggers.Dnsengine = log.Default()
-	}
-
-	logfile = viper.GetString("tapir.mqtt.logfile")
-	if logfile != "" {
-		logfile = filepath.Clean(logfile)
-		f, err := os.OpenFile(logfile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644) // #nosec G302
-		if err != nil {
-			POPExiter("error opening TAPIR-POP MQTT logfile '%s': %v", logfile, err)
-		}
-
-		if debug {
-			prefix = "mqtt: "
-		}
-		conf.Loggers.Mqtt = log.New(f, prefix, logoptions)
-		conf.Loggers.Mqtt.SetOutput(&lumberjack.Logger{
-			Filename:   logfile,
-			MaxSize:    20,
-			MaxBackups: 3,
-			MaxAge:     14,
-		})
-		fmt.Printf("TAPIR-POP MQTT logging to: %s\n", logfile)
-	} else {
-		log.Println("No MQTT logfile specified, using default")
-		conf.Loggers.Mqtt = log.Default()
-	}
+	conf.Loggers.Policy = newFileLogger("policy", viper.GetString("policy.logfile"), prefixFor("policy"), logoptions)
+	conf.Loggers.Dnsengine = newFileLogger("dnsengine", viper.GetString("dnsengine.logfile"), prefixFor("dnsengine"), logoptions)
+	conf.Loggers.Mqtt = newFileLogger("mqtt", viper.GetString("tapir.mqtt.logfile"), prefixFor("mqtt"), logoptions)
 }

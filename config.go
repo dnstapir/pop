@@ -24,9 +24,14 @@ type Config struct {
 	Sources         map[string]SourceConf
 	Policy          PolicyConf
 	Log             struct {
-		File    string `validate:"required"`
-		Verbose *bool  `validate:"required"`
-		Debug   *bool  `validate:"required"`
+		// Not required: SetupLogging falls back to stderr, and an unset
+		// log.file should not stop pop serving DNS. Leaving the tag here made
+		// that fallback cosmetic -- ValidateConfig runs immediately after
+		// SetupLogging and killed the daemon anyway.
+		File string
+
+		Verbose *bool `validate:"required"`
+		Debug   *bool `validate:"required"`
 	}
 	Loggers struct {
 		Mqtt      *log.Logger
