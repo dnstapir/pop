@@ -55,6 +55,8 @@ func NewPopData(conf *Config, lg *log.Logger) (*PopData, error) {
 	if err != nil {
 		POPExiter("NewPopData: Error from ParseOutputs(): %v", err)
 	}
+	// Once, here, before anything is published. See loadCachedSerial.
+	pd.loadCachedSerial()
 
 	//	pd.Rpz.IxfrChain = map[uint32]RpzIxfr{}
 	pd.RpzSources = map[string]*tapir.ZoneData{}
