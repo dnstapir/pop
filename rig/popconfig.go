@@ -71,8 +71,8 @@ func renderMain(p *Pop, apiPort, tlsPort, bootPort, bootTLSPort int) string {
 log:
    mode:        normal
    file:        %[1]s/pop.log
-   verbose:     false
-   debug:       false
+   verbose:     true
+   debug:       true
 
 services:
    rpz:
@@ -99,8 +99,8 @@ dnsengine:
    name:         rig-dns
    addresses:    [ %[5]s ]
    logfile:      %[1]s/pop-dnsengine.log
-   verbose:      false
-   debug:        false
+   verbose:      true
+   debug:        true
 
 bootstrapserver:
    active:       false
