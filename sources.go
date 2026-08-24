@@ -23,11 +23,6 @@ func NewPopData(conf *Config, lg *log.Logger) (*PopData, error) {
 	rpzdata := RpzData{
 		CurrentSerial: 1,
 		ZoneName:      viper.GetString("services.rpz.zonename"),
-		IxfrChain:     []RpzIxfr{},
-		Axfr: RpzAxfr{
-			Data: map[string]*tapir.RpzName{},
-		},
-		// RpzMap: map[string]*tapir.RpzName{},
 	}
 
 	repint := viper.GetInt("services.reaper.interval")
@@ -52,7 +47,7 @@ func NewPopData(conf *Config, lg *log.Logger) (*PopData, error) {
 	pd.Lists["doubtlist"] = make(map[string]*tapir.WBGlist, 3)
 	pd.Lists["denylist"] = make(map[string]*tapir.WBGlist, 3)
 	pd.Downstreams = map[string]RpzDownstream{}
-	pd.DownstreamSerials = map[string]uint32{}
+	pd.downstreamSerials = newDownstreamTracker()
 
 	err := pd.ParseOutputs()
 	if err != nil {

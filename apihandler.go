@@ -42,6 +42,11 @@ type RpzCmdResponse struct {
 	Error     bool
 	ErrorMsg  string
 	Status    bool
+	// Populated by GEN-OUTPUT: captured on the engine goroutine so the HTTP
+	// handler never reads engine-owned state (Lists/DenylistedNames/...) itself.
+	DenylistedNames  map[string]bool
+	DoubtlistedNames map[string]*tapir.TapirName
+	RpzOutput        []tapir.RpzName
 }
 
 func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
@@ -246,9 +251,9 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			w.Header().Set("Content-Type", "application/json")
 			me := conf.PopData.MqttEngine
-            me.DataMu.Lock() /* Lock because resp.TopicData needs to be accessed safely */
+			me.DataMu.Lock() /* Lock because resp.TopicData needs to be accessed safely */
 			err := json.NewEncoder(w).Encode(resp)
-            me.DataMu.Unlock()
+			me.DataMu.Unlock()
 			if err != nil {
 				log.Printf("Error from json encoder: %v", err)
 				log.Printf("resp: %v", resp)
@@ -270,9 +275,9 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 		switch bp.Command {
 		case "doubtlist-status":
 			me := conf.PopData.MqttEngine
-            me.DataMu.Lock()
+			me.DataMu.Lock()
 			stats := me.Stats()
-            me.DataMu.Unlock()
+			me.DataMu.Unlock()
 			// resp.MsgCounters = stats.MsgCounters
 			// resp.MsgTimeStamps = stats.MsgTimeStamps
 			resp.TopicData = stats
@@ -469,16 +474,20 @@ func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 
 		case "gen-output":
 			log.Printf("TAPIR-POP debug generate RPZ output")
-			err = td.GenerateRpzAxfr()
-			if err != nil {
+			// Route the rebuild through RefreshEngine: GenerateRpzAxfr mutates
+			// engine-owned state (Lists, DenylistedNames, ...) and publishes a
+			// snapshot, so it must run on the engine goroutine, not here in an
+			// HTTP handler concurrent with the engine's own writers.
+			respch := make(chan RpzCmdResponse, 1)
+			td.RpzCommandCh <- RpzCmdData{Command: "GEN-OUTPUT", Result: respch}
+			rpzresp := <-respch
+			if rpzresp.Error {
 				resp.Error = true
-				resp.ErrorMsg = err.Error()
+				resp.ErrorMsg = rpzresp.ErrorMsg
 			}
-			resp.DenylistedNames = td.DenylistedNames
-			resp.DoubtlistedNames = td.DoubtlistedNames
-			for _, rpzn := range td.Rpz.Axfr.Data {
-				resp.RpzOutput = append(resp.RpzOutput, *rpzn)
-			}
+			resp.DenylistedNames = rpzresp.DenylistedNames
+			resp.DoubtlistedNames = rpzresp.DoubtlistedNames
+			resp.RpzOutput = rpzresp.RpzOutput
 
 		case "send-status":
 			log.Printf("TAPIR-POP debug send status")
