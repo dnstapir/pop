@@ -6,6 +6,14 @@ VERSION:=0.0.0
 PROG:=dnstapir-pop
 OUT:=$$(pwd)/out
 COMMIT:=$$(cat COMMIT 2> /dev/null || git describe --dirty=+WiP --always 2> /dev/null)
+# Test builds deliberately do NOT reuse $(GO), for two reasons. It sets
+# CGO_ENABLED=0 for reproducible static release builds, and the race detector
+# requires cgo -- with it off, "go test -race" fails outright rather than
+# quietly running unraced. It also pins GOOS/GOARCH, and a cross-compiled test
+# binary cannot be executed by the machine that built it, so a developer with
+# GOOS set for a release build would find "make test" broken for no reason.
+GOTEST:=CGO_ENABLED=1 go
+
 GOFLAGS:=-v -ldflags "-X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.name=$(PROG)'"
 GOOS ?= $(shell uname -s | tr A-Z a-z)
 GO:=GOOS=$(GOOS) GOARCH=$(GOARCH) CGO_ENABLED=0 go
@@ -33,6 +41,28 @@ outdir:
 
 install:
 	test -z "$(DESTDIR)" && $(INSTALL) $(OUT)/$(PROG) /usr/bin/ || $(INSTALL) $(OUT)/$(PROG) $(DESTDIR)$(prefix)
+
+# The unit suite, with the race detector ALWAYS on. Wired into CI as the
+# merge gate.
+#
+# -race is not a separate opt-in target on purpose. This repository's
+# high-priority backlog is dominated by one bug class -- data races on the
+# served RPZ zone (#149, #150, #151, #153, #157) -- which is exactly the class
+# the detector finds mechanically. A suite that was run without it answers a
+# question nobody is asking.
+#
+# Kept deliberately to the fast in-process suite. The integration rig (#185)
+# belongs in its own target and its own CI job: it will want containers and
+# wall-clock that a per-PR gate must not have, and "make test" staying quick is
+# what stops it being switched off the first time it is inconvenient.
+test:
+	$(GOTEST) test -race -cover ./...
+
+# Same suite plus a coverage profile on disk, for looking at rather than gating.
+test-coverage: outdir
+	$(GOTEST) test -race -coverprofile=$(OUT)/coverage.out ./...
+	$(GOTEST) tool cover -func=$(OUT)/coverage.out | tail -1
+	@echo "HTML: go tool cover -html=$(OUT)/coverage.out"
 
 lint:
 	go fmt ./...
@@ -69,4 +99,4 @@ deb: build
 	sed -e "s/@@VERSION@@/$(DEB_VERSION)/g" $(OUT)/deb/DEBIAN/control.in > $(OUT)/deb/DEBIAN/control
 	dpkg-deb -b $(OUT)/deb/ $(OUT)/$(PROG)-$(DEB_VERSION).deb
 
-.PHONY: build clean generate
+.PHONY: build clean generate test test-coverage
