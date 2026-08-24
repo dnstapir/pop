@@ -56,18 +56,30 @@ func (pd *PopData) SaveRpzSerial() error {
 // last config file touched (for diagnostics) and an error on any failure. Both
 // startup (main) and SIGHUP reload (reloadConfig) use it, so the reload reads
 // exactly the same set of files, in the same order, as startup.
+type configStep struct {
+	file  string
+	merge bool // false = ReadInConfig (primary), true = MergeInConfig
+}
+
+// popConfigFiles is what loadAllConfig reads, in order.
+//
+// A package var rather than a literal inside loadAllConfig so that a test can
+// point it at a directory the test controls. Asserting that a load fails
+// "because the real config paths do not exist" makes the test depend on the
+// machine it runs on: it fails on any host where pop is actually configured,
+// and the integration rig necessarily writes pop's config to that exact
+// directory -- pop insists its config lives there -- so `go test ./...` fails
+// as soon as both suites run.
+var popConfigFiles = []configStep{
+	{tapir.DefaultPopCfgFile, false},
+	{tapir.PopSourcesCfgFile, true},
+	{tapir.PopOutputsCfgFile, true},
+	{tapir.PopPolicyCfgFile, true},
+}
+
 func loadAllConfig(v *viper.Viper) (string, error) {
 	var used string
-	steps := []struct {
-		file  string
-		merge bool // false = ReadInConfig (primary), true = MergeInConfig
-	}{
-		{tapir.DefaultPopCfgFile, false},
-		{tapir.PopSourcesCfgFile, true},
-		{tapir.PopOutputsCfgFile, true},
-		{tapir.PopPolicyCfgFile, true},
-	}
-	for _, s := range steps {
+	for _, s := range popConfigFiles {
 		v.SetConfigFile(s.file)
 		var err error
 		if s.merge {
