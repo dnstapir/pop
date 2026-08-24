@@ -23,7 +23,11 @@ func (pd *PopData) ConfigUpdater(conf *Config, stopch chan struct{}) {
 	// Create a new mqtt engine just for the statusupdater.
 	me := pd.MqttEngine
 	if me == nil {
-		POPExiter("ConfigUpdater: MQTT Engine not running")
+		// MQTT ignored: there is no channel for TAPIR global config to arrive
+		// on. That is a reason to run without it, not to kill a daemon that is
+		// serving a policy zone perfectly well.
+		pd.Logger.Printf("ConfigUpdater: MQTT is not enabled (tapir.mqtt.mode); TAPIR global config updates disabled")
+		return
 	}
 
 	ConfigChan := make(chan tapir.MqttPkgIn, 5)

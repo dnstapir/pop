@@ -1,0 +1,67 @@
+# pop-sources.sample.yaml -- intelligence sources.
+# Keep in sync with https://github.com/dnstapir/tapir/blob/main/cmd/cfgfiles/pop-sources.yaml
+# Copy to /etc/dnstapir/pop-sources.yaml.
+#
+# Each entry is one feed. "source" is HOW the data arrives (mqtt | file | xfr)
+# and "type" is WHICH list it lands in (allowlist | denylist | doubtlist).
+# Those two are independent: an RPZ transfer can feed a denylist or a
+# doubtlist, and policy is applied per list, not per source.
+
+sources:
+   # --- MQTT: the DNS TAPIR observation feed -------------------------------
+   tapir-observations:
+      active:        true
+      name:          dns-tapir
+      description:   DNS TAPIR main intelligence feed
+      type:          doubtlist
+      format:        json
+      source:        mqtt
+      topic:         observations/down/tapir-pop
+      validatorkey:  /etc/dnstapir/certs/mqttsigner-pub.pem
+      immutable:     false            # true = ignore TAPIR global config updates for this source
+      bootstrap:     [ "https://bootstrap.example.com/feed" ]
+      bootstrapurl:  https://bootstrap.example.com
+      bootstrapkey:  /etc/dnstapir/bootstrap.key
+
+   # --- xfr: an upstream RPZ pulled by zone transfer ------------------------
+   # pop queries the SOA and pulls a full AXFR whenever the serial has
+   # increased. Inbound IXFR is not implemented, so the poll interval and the
+   # zone size together set the cost.
+   upstream-rpz:
+      active:        true
+      name:          upstream-rpz
+      description:   Upstream RPZ denylist via zone transfer
+      type:          denylist
+      format:        rpz
+      source:        xfr
+      upstream:      192.0.2.1:53     # REQUIRED for source: xfr
+      zone:          rpz.example.com. # REQUIRED for source: xfr
+
+   # --- file: locally maintained lists --------------------------------------
+   local-allowlist:
+      active:        true
+      name:          local-allowlist
+      description:   Locally maintained allowlist
+      type:          allowlist
+      format:        domains          # domains | csv | dawg
+      source:        file
+      filename:      /etc/dnstapir/allowlist.txt
+
+   local-denylist:
+      active:        true
+      name:          local-denylist
+      description:   Locally maintained denylist
+      type:          denylist
+      format:        domains
+      source:        file
+      filename:      /etc/dnstapir/denylist.txt
+
+   # DAWG is only supported for type: allowlist. Useful for very large lists.
+   well-known-domains:
+      active:        false
+      name:          wkdlist
+      description:   Large allowlist of well-known domains
+      type:          allowlist
+      format:        dawg
+      source:        file
+      filename:      /var/lib/dnstapir/well-known-domains.dawg

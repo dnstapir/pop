@@ -1,0 +1,125 @@
+# dnstapir-pop.sample.yaml -- main configuration for dnstapir-pop.
+# Keep in sync with https://github.com/dnstapir/tapir/blob/main/cmd/cfgfiles/dnstapir-pop.yaml
+# Copy to /etc/dnstapir/dnstapir-pop.yaml and edit. The path and filename are
+# FIXED: pop reads exactly /etc/dnstapir/dnstapir-pop.yaml and has no --config
+# flag, deliberately, so that a host cannot accumulate stale or conflicting
+# configs. The same applies to the other three files.
+#
+# NOTE: docs/configuration.md calls this file "tapir-pop.yaml". The code says
+# dnstapir-pop.yaml (tapir.DefaultPopCfgFile). The code is authoritative.
+#
+# Fields marked REQUIRED will stop pop from starting if absent.
+
+log:
+   mode:        debug                              # "debug" enables debug logging; anything else disables
+   file:        /var/log/dnstapir/pop.log          # optional; falls back to stderr
+   verbose:     false                              # forwarded to the sources library
+   debug:       false                              # forwarded to the sources library
+
+services:
+   rpz:
+      zonename:     rpz.example.                   # REQUIRED. The zone pop serves downstream.
+      serialcache:  /var/cache/dnstapir/pop-serial.yaml   # REQUIRED. Serial persisted across restarts.
+   reaper:
+      interval:     3600                           # seconds between expiry sweeps of observation data
+   refreshengine:
+      active:       true
+
+# Note the SINGULAR "service:" key. These two live here and not under
+# "services:" above; that is a wart, not a typo in this file.
+service:
+   reset_soa_serial:  false                        # reset the RPZ SOA serial at startup
+   maxrefresh:        3600                         # upper bound (seconds) on a source's refresh interval
+
+apiserver:
+   active:          true
+   name:            pop-api
+   key:             change-me-this-is-an-api-key   # REQUIRED
+   addresses:       [ 127.0.0.1:9099 ]             # REQUIRED (plain HTTP)
+   tlsaddresses:    [ 127.0.0.1:9098 ]             # REQUIRED (HTTPS)
+
+dnsengine:
+   active:          true
+   name:            pop-dns
+   addresses:       [ 127.0.0.1:5360 ]             # REQUIRED. Port 53 needs root; 5360 does not.
+   logfile:         /var/log/dnstapir/pop-dnsengine.log
+   verbose:         false
+   debug:           false
+
+# Only enable on a host that is acting as a bootstrap server for other POPs.
+bootstrapserver:
+   active:          false
+   name:            pop-bootstrap
+   addresses:       []
+   tlsaddresses:    []
+   logfile:         /var/log/dnstapir/pop-bootstrap.log
+
+# JWK set used to validate signed MQTT payloads. Required whenever MQTT is in
+# use (tapir.mqtt.mode: required or optional) -- the engine reads it at
+# creation and will not start without it. Not needed at all with mode: ignored.
+# The file must exist and parse; an empty set is '{"keys":[]}'.
+#
+# Note that this is NOT enforced by config validation, only by the MQTT engine
+# at startup, so a typo here surfaces as an MQTT failure rather than a config
+# error.
+keystore:
+   path:            /etc/dnstapir/keystore.json
+
+tapir:
+   # Global config pushed down from TAPIR Core over MQTT.
+   config:
+      active:       false
+      topic:        config/down/tapir-pop/edge-id
+
+   # Status reports published upward over MQTT.
+   status:
+      active:       false
+      signingkey:   /etc/dnstapir/certs/mqttsigner-key.pem
+
+   # MQTT connection, and the client credentials pop AUTHENTICATES TO THE
+   # BROKER with. These are mTLS client credentials for MQTT only -- they are
+   # not pop's own server certificates; see the separate certs: block below.
+   #
+   # NONE of these appear in docs/configuration.md, which documents only
+   # tapir.mqtt.logfile -- but server, cacert, clientcert and clientkey are
+   # all required by the MQTT engine whenever mode is required or optional.
+   # With mode: ignored they are not needed at all.
+   mqtt:
+      # How much pop depends on MQTT:
+      #   required  do not run without a working broker. The connection is
+      #             still BOUNDED -- pop fails with a clear message rather
+      #             than hanging.
+      #   optional  try to connect, but start regardless (DEFAULT). Sources
+      #             fed over MQTT stay empty until it connects. Safe because
+      #             observations expire unless refreshed, so a disconnected
+      #             pop sheds them rather than serving stale intelligence.
+      #   ignored   do not connect at all, and require no MQTT config below.
+      #             For a pop fed purely by RPZ transfer and local files.
+      mode:         optional
+      connect-timeout: 10                        # seconds to wait at startup
+      logfile:      /var/log/dnstapir/pop-mqtt.log
+      server:       tls://mqtt.example.com:8883    # REQUIRED. Note the scheme.
+      clientid:     this-must-be-unique-per-edge
+      qos:          2
+      cacert:       /etc/dnstapir/certs/tapirCA.crt      # REQUIRED
+      clientcert:   /etc/dnstapir/certs/tapir-edge.crt   # REQUIRED
+      clientkey:    /etc/dnstapir/certs/tapir-edge.key   # REQUIRED
+
+# POP'S OWN TLS material -- a different job from the MQTT credentials above,
+# even though a deployment may well point both at the same files.
+#
+# Used in two places:
+#   - apihandler.go: the server certificate for the HTTPS API listener
+#     (apiserver.tlsaddresses), with certs.cacertfile as the pool for
+#     verifying client certificates.
+#   - bootstrap.go: as a CLIENT certificate when pop fetches bootstrap data
+#     from a bootstrap server.
+#
+# This whole block is absent from docs/configuration.md, and certs.certdir is
+# a hard requirement of the bootstrap path (POPExiter if unset).
+certs:
+   certdir:         /etc/dnstapir/certs
+   cacertfile:      /etc/dnstapir/certs/tapirCA.crt
+   tapir-pop:
+      cert:         /etc/dnstapir/certs/tapir-edge.crt
+      key:          /etc/dnstapir/certs/tapir-edge.key
