@@ -1,5 +1,5 @@
 # dnstapir-pop.sample.yaml -- main configuration for dnstapir-pop.
-#
+# Keep in sync with https://github.com/dnstapir/tapir/blob/main/cmd/cfgfiles/dnstapir-pop.yaml
 # Copy to /etc/dnstapir/dnstapir-pop.yaml and edit. The path and filename are
 # FIXED: pop reads exactly /etc/dnstapir/dnstapir-pop.yaml and has no --config
 # flag, deliberately, so that a host cannot accumulate stale or conflicting

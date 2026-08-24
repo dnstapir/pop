@@ -1,5 +1,5 @@
 # pop-policy.sample.yaml -- how list membership becomes an RPZ action.
-#
+# Keep in sync with https://github.com/dnstapir/tapir/blob/main/cmd/cfgfiles/pop-policy.yaml
 # Copy to /etc/dnstapir/pop-policy.yaml.
 #
 # Allowlist and denylist membership is absolute: an allowlisted name is never
