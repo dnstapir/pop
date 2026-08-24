@@ -64,6 +64,21 @@ install:
 test:
 	$(GOTEST) test -race -cover ./...
 
+# The interactive rig: pop and a fake upstream RPZ feed, kept up and driven by
+# hand through rig-cli. Not a test and not wired into CI -- this is for looking
+# at the thing working, which no assertion substitutes for.
+#
+# Writes pop's configuration to /etc/dnstapir, because that is where pop insists
+# it lives. The rig refuses to touch a directory it did not create itself.
+riglab: build outdir
+	$(GOTEST) build $(GOFLAGS) -o $(OUT)/riglab ./rig/cmd/riglab
+	$(GOTEST) build $(GOFLAGS) -o $(OUT)/rig-cli ./rig/cmd/rig-cli
+	$(OUT)/riglab
+
+# rig-cli alone, for when the lab is already up.
+rig-cli: outdir
+	$(GOTEST) build $(GOFLAGS) -o $(OUT)/rig-cli ./rig/cmd/rig-cli
+
 # Same suite plus a coverage profile on disk, for looking at rather than gating.
 test-coverage: outdir
 	$(GOTEST) test -race -coverprofile=$(OUT)/coverage.out ./...
@@ -105,4 +120,4 @@ deb: build
 	sed -e "s/@@VERSION@@/$(DEB_VERSION)/g" $(OUT)/deb/DEBIAN/control.in > $(OUT)/deb/DEBIAN/control
 	dpkg-deb -b $(OUT)/deb/ $(OUT)/$(PROG)-$(DEB_VERSION).deb
 
-.PHONY: build clean generate test test-coverage
+.PHONY: build clean generate test test-coverage riglab rig-cli

@@ -425,6 +425,38 @@ func (p *Pop) WaitForRule(owner string, want Action, timeout time.Duration) (uin
 	return 0, fmt.Errorf("%s served as %q, want %q, after %s", owner, last, want, timeout)
 }
 
+// WaitForPresent waits until pop serves owner with ANY action, and reports the
+// action it settled on.
+//
+// Separate from WaitForRule because the action pop serves is NOT the action the
+// upstream asked for. A denylist source's per-name action is parsed and stored,
+// but decide() answers a denylisted name with the CONFIGURED
+// policy.denylist.action -- so an upstream rule of rpz-drop. is served as
+// NXDOMAIN under the usual config. Waiting for the upstream's own action there
+// waits for something that will never arrive.
+//
+// So: use WaitForRule when the test is about WHICH action is served, and this
+// when it is about the name arriving at all.
+func (p *Pop) WaitForPresent(owner string, timeout time.Duration) (Action, uint32, error) {
+	owner = dns.Fqdn(owner)
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		rrs, err := p.AXFR()
+		if err == nil {
+			for _, rr := range rrs {
+				c, ok := rr.(*dns.CNAME)
+				if !ok || !strings.EqualFold(c.Hdr.Name, owner) {
+					continue
+				}
+				s, _ := p.Serial()
+				return Action(c.Target), s, nil
+			}
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return "", 0, fmt.Errorf("%s never appeared in the served zone within %s", owner, timeout)
+}
+
 // WaitForAbsent waits until owner is NOT in the served zone.
 func (p *Pop) WaitForAbsent(owner string, timeout time.Duration) error {
 	owner = dns.Fqdn(owner)
