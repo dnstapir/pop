@@ -64,14 +64,32 @@ ns2.${ZONE}	IN	AAAA	::1`
 	return nil
 }
 
+// RpzAxfrOut serves a full AXFR, pinning the current snapshot itself.
+//
+// Callers that have ALREADY pinned a snapshot must call rpzAxfrOutFrom with it
+// instead. Loading again mid-response is how a single answer ends up built
+// from two different publishes -- see the note on rpzAxfrOutFrom.
 func (pd *PopData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, error) {
-	// Load the immutable snapshot once; serve the whole transfer from it with
-	// no lock. A concurrent engine publish just means we serve the (consistent)
-	// slightly-older zone, which is correct.
 	snap := pd.snapshot.Load()
 	if snap == nil {
 		return 0, 0, fmt.Errorf("RpzAxfrOut: no snapshot published yet")
 	}
+	return pd.rpzAxfrOutFrom(w, r, snap)
+}
+
+// rpzAxfrOutFrom serves a full AXFR from a snapshot the CALLER pinned.
+//
+// ONE snapshot per response is the rule. The snapshot itself is immutable, so
+// serving from a slightly older publish is always consistent -- the danger is
+// serving one response out of two of them. A response that decides what to do
+// from snapshot A and then serves the data from snapshot C can report a serial
+// that does not describe the bytes it sent, which is precisely the
+// cross-serial divergence the snapshot model exists to remove.
+//
+// This is not hypothetical: tdns adopted this same model from pop and hit
+// exactly this defect after cutover (its C1/M1 fix), because the reader paths
+// were each loading independently.
+func (pd *PopData) rpzAxfrOutFrom(w dns.ResponseWriter, r *dns.Msg, snap *ZoneSnapshot) (uint32, int, error) {
 	zone := snap.ZoneName
 
 	outbound_xfr := make(chan *dns.Envelope)
@@ -150,7 +168,20 @@ func (pd *PopData) RpzAxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 // 3: RR, RR, RR # adds
 // SOA N
 // Returns: serial that we gave the client, number of RRs sent, error
+// RpzIxfrOut serves an IXFR, pinning the current snapshot itself. As with
+// RpzAxfrOut, callers holding a pinned snapshot must use rpzIxfrOutFrom.
 func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, error) {
+	snap := pd.snapshot.Load()
+	if snap == nil {
+		return 0, 0, fmt.Errorf("RpzIxfrOut: no snapshot published yet")
+	}
+	return pd.rpzIxfrOutFrom(w, r, snap)
+}
+
+// rpzIxfrOutFrom serves an IXFR from a snapshot the CALLER pinned. Its AXFR
+// fallbacks reuse that same snapshot, so a response that decides "the chain
+// cannot reach you" and the full zone it then sends describe one publish.
+func (pd *PopData) rpzIxfrOutFrom(w dns.ResponseWriter, r *dns.Msg, snap *ZoneSnapshot) (uint32, int, error) {
 
 	var curserial uint32 = 0 // serial that the client claims to have
 
@@ -171,10 +202,6 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 		return 0, 0, err
 	}
 
-	snap := pd.snapshot.Load()
-	if snap == nil {
-		return 0, 0, fmt.Errorf("RpzIxfrOut: no snapshot published yet")
-	}
 	zone := snap.ZoneName
 
 	// A client claiming a serial newer than ours is confused (or spoofing).
@@ -182,7 +209,7 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	// serial into the tracker (it would skew chain pruning for other clients).
 	if curserial > snap.Serial {
 		pd.Logger.Printf("RpzIxfrOut: Downstream %s claims RPZ %s serial %d, ahead of our serial %d; AXFR needed", downstream, zone, curserial, snap.Serial)
-		serial, _, err := pd.RpzAxfrOut(w, r)
+		serial, _, err := pd.rpzAxfrOutFrom(w, r, snap)
 		if err != nil {
 			return 0, 0, err
 		}
@@ -198,14 +225,14 @@ func (pd *PopData) RpzIxfrOut(w dns.ResponseWriter, r *dns.Msg) (uint32, int, er
 	// or the client is further behind than the oldest delta we still hold.
 	if len(snap.IxfrChain) == 0 {
 		pd.Logger.Printf("RpzIxfrOut: Downstream %s claims RPZ %s serial %d, but the IXFR chain is empty; AXFR needed", downstream, zone, curserial)
-		serial, _, err := pd.RpzAxfrOut(w, r)
+		serial, _, err := pd.rpzAxfrOutFrom(w, r, snap)
 		if err != nil {
 			return 0, 0, err
 		}
 		return serial, 0, nil
 	} else if curserial < snap.IxfrChain[0].FromSerial {
 		pd.Logger.Printf("RpzIxfrOut: Downstream %s claims RPZ %s serial %d, but the IXFR chain starts at %d; AXFR needed", downstream, zone, curserial, snap.IxfrChain[0].FromSerial)
-		serial, _, err := pd.RpzAxfrOut(w, r)
+		serial, _, err := pd.rpzAxfrOutFrom(w, r, snap)
 		if err != nil {
 			return 0, 0, err
 		}
