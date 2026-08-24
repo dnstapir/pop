@@ -1,5 +1,5 @@
 # pop-sources.sample.yaml -- intelligence sources.
-#
+# Keep in sync with https://github.com/dnstapir/tapir/blob/main/cmd/cfgfiles/pop-sources.yaml
 # Copy to /etc/dnstapir/pop-sources.yaml.
 #
 # Each entry is one feed. "source" is HOW the data arrives (mqtt | file | xfr)

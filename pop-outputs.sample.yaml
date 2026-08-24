@@ -1,5 +1,5 @@
 # pop-outputs.sample.yaml -- downstream consumers of the RPZ pop produces.
-#
+# Keep in sync with https://github.com/dnstapir/tapir/blob/main/cmd/cfgfiles/pop-outputs.yaml
 # Copy to /etc/dnstapir/pop-outputs.yaml.
 #
 # An output is a resolver that pop sends DNS NOTIFY to, and which then pulls
