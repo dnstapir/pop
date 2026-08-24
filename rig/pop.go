@@ -5,8 +5,10 @@ package rig
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,6 +37,9 @@ const EtcDir = "/etc/dnstapir"
 // rigMarker marks EtcDir as rig-owned. Its absence is what stops the rig
 // overwriting a real installation.
 const rigMarker = ".rig-generated"
+
+// APIKey is the key the rig configures pop's API with.
+const APIKey = "rig-api-key"
 
 // AllowEtcEnv must be set before the rig will write to EtcDir.
 //
@@ -441,4 +446,55 @@ func (p *Pop) WaitForAbsent(owner string, timeout time.Duration) error {
 		time.Sleep(250 * time.Millisecond)
 	}
 	return fmt.Errorf("%s was still in the served zone after %s", owner, timeout)
+}
+
+// DebugOutput is the part of pop's /debug gen-output answer the rig uses.
+//
+// Declared here rather than imported: pop is package main, so nothing can
+// import its types even if that were desirable.
+type DebugOutput struct {
+	Error           bool
+	ErrorMsg        string
+	DenylistedNames map[string]bool
+	RpzOutput       []struct {
+		Name   string
+		Action int
+	}
+}
+
+// GenOutput asks pop to rebuild its RPZ from the lists it currently holds, and
+// returns what that rebuild produced.
+//
+// This is a diagnostic rather than something a normal test should need. It is
+// how you tell "the data never reached pop's lists" apart from "the data is in
+// the lists and nothing rebuilt the zone" -- two failures that look identical
+// from outside, because in both the served zone is stale.
+func (p *Pop) GenOutput() (*DebugOutput, error) {
+	body, err := json.Marshal(map[string]string{"command": "gen-output"})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, "http://"+p.APIAddr+"/api/v1/debug", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", APIKey)
+
+	resp, err := (&http.Client{Timeout: 20 * time.Second}).Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("posting gen-output to %s: %w", p.APIAddr, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gen-output answered %s", resp.Status)
+	}
+	var out DebugOutput
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, fmt.Errorf("decoding gen-output response: %w", err)
+	}
+	if out.Error {
+		return &out, fmt.Errorf("gen-output failed: %s", out.ErrorMsg)
+	}
+	return &out, nil
 }

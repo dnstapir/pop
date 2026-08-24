@@ -90,7 +90,7 @@ service:
 apiserver:
    active:       true
    name:         rig-api
-   key:          rig-api-key
+   key:          %[8]s
    addresses:    [ 127.0.0.1:%[3]d ]
    tlsaddresses: [ 127.0.0.1:%[4]d ]
 
@@ -128,7 +128,7 @@ certs:
    tapir-pop:
       cert:      %[1]s/certs/server.crt
       key:       %[1]s/certs/server.key
-`, p.WorkDir, p.ZoneName, apiPort, tlsPort, p.DNSAddr, bootPort, bootTLSPort)
+`, p.WorkDir, p.ZoneName, apiPort, tlsPort, p.DNSAddr, bootPort, bootTLSPort, APIKey)
 }
 
 func renderSources(p *Pop, sources []Source) (string, error) {
