@@ -25,7 +25,6 @@ import (
 // from the refresh path would still leave the serial standing still.
 func TestTraceUpstreamChange(t *testing.T) {
 	requireEtc(t)
-	reproducesOpenBug(t, "#195", "upstream changes are ingested but never republished")
 
 	feed := newFeedT(t, "deny.rig.test.")
 	feed.Set("first.example.", NXDOMAIN)
