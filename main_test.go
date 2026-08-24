@@ -59,8 +59,16 @@ func TestValidateConfigReturnsErrorNotFatal(t *testing.T) {
 // On a missing file it must return an error (so reloadConfig can reject a bad
 // reload), not panic or exit.
 func TestLoadAllConfigMissingFileErrors(t *testing.T) {
-	// The real config paths (tapir.DefaultPopCfgFile, ...) do not exist in the
-	// test environment, so loadAllConfig must report that as an error.
+	// Point the loader at a directory this test owns and leaves empty, rather
+	// than relying on pop's real config paths being absent from the machine.
+	// That assumption does not hold on a host where pop is configured, and the
+	// integration rig writes pop's config to exactly those paths -- pop insists
+	// its config lives there -- so the two suites cannot both be run otherwise.
+	dir := t.TempDir()
+	orig := popConfigFiles
+	t.Cleanup(func() { popConfigFiles = orig })
+	popConfigFiles = []configStep{{filepath.Join(dir, "no-such-config.yaml"), false}}
+
 	v := viper.New()
 	if _, err := loadAllConfig(v); err == nil {
 		t.Errorf("loadAllConfig with no config files present = nil, want error")
