@@ -14,14 +14,26 @@ import (
 	"github.com/spf13/viper"
 )
 
+// drainComponentStatus consumes status updates without publishing them.
+//
+// Something must always read ComponentStatusCh. It is buffered at 10 and the
+// sends in refreshengine.go and apihandler.go are unguarded, so with no
+// consumer the eleventh update blocks its producer -- the refresh engine
+// included. Not publishing status is a degradation; wedging the engine that
+// builds the RPZ is not.
+func (pd *PopData) drainComponentStatus(reason string) {
+	pd.Logger.Printf("StatusUpdater: not publishing status (%s); still consuming status updates", reason)
+	for csu := range pd.ComponentStatusCh {
+		log.Printf("StatusUpdater: got status update message: %+v", csu)
+	}
+}
+
 func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 
 	active := viper.GetBool("tapir.status.active")
 	if !active {
-		pd.Logger.Printf("*** StatusUpdater: not active, will just read status updates from channel and not publish anything")
-		for csu := range pd.ComponentStatusCh {
-			log.Printf("StatusUpdater: got status update message: %+v", csu)
-		}
+		pd.drainComponentStatus("tapir.status.active is false")
+		return
 	}
 
 	var s = tapir.TapirFunctionStatus{
@@ -42,9 +54,12 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 	// }
 	me := pd.MqttEngine
 	if me == nil {
-		// MQTT ignored: there is nowhere to publish status to. Say so once and
-		// stop, rather than panicking on the first tick.
-		pd.Logger.Printf("StatusUpdater: MQTT is not enabled (tapir.mqtt.mode); status updates disabled")
+		// MQTT ignored: nowhere to publish status TO, but the channel still
+		// needs draining. Returning outright would leave ComponentStatusCh
+		// with no consumer -- it is buffered at 10 and its senders in
+		// refreshengine.go and apihandler.go are unguarded, so the eleventh
+		// update would wedge whichever goroutine produced it.
+		pd.drainComponentStatus("MQTT is not enabled (tapir.mqtt.mode)")
 		return
 	}
 
@@ -86,9 +101,19 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 	}
 	pd.Logger.Printf("StatusUpdater: pub topic configured for MQTT engine %s", me.Creator)
 
-	_, outbox, _, err := me.StartEngine()
-	if err != nil {
-		POPExiter("StatusUpdater: Error starting MQTT Engine: %v", err)
+	// Deliberately NOT me.StartEngine(). SetupMqtt has already started this
+	// engine, or bounded its attempt and moved on; starting it a second time
+	// queues another "start" behind a connect that may never complete, and
+	// blocks here forever -- taking the only consumer of ComponentStatusCh
+	// down with it.
+	//
+	// The publish channel is safe to take regardless of connection state:
+	// NewMqttEngine creates it up front, and StartEngine only ever handed back
+	// the same one.
+	outbox := pd.TapirMqttPubCh
+	if outbox == nil {
+		pd.drainComponentStatus("MQTT publish channel unavailable")
+		return
 	}
 
 	log.Printf("StatusUpdater: Starting")

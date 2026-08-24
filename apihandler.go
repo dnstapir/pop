@@ -128,8 +128,9 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				if _, _, _, err := me.StartEngine(); err != nil {
 					resp.Error = true
 					resp.ErrorMsg = err.Error()
+				} else {
+					resp.Msg = "MQTT engine started"
 				}
-				resp.Msg = "MQTT engine started"
 			}
 
 		case "mqtt-stop":
@@ -137,8 +138,9 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				if _, err := me.StopEngine(); err != nil {
 					resp.Error = true
 					resp.ErrorMsg = err.Error()
+				} else {
+					resp.Msg = "MQTT engine stopped"
 				}
-				resp.Msg = "MQTT engine stopped"
 			}
 
 		case "mqtt-restart":
@@ -146,8 +148,9 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				if _, err := me.RestartEngine(); err != nil {
 					resp.Error = true
 					resp.ErrorMsg = err.Error()
+				} else {
+					resp.Msg = "MQTT engine restarted"
 				}
-				resp.Msg = "MQTT engine restarted"
 			}
 
 		case "rpz-add":

@@ -72,7 +72,10 @@ func probeLogfile(logfile string) error {
 	if err := os.MkdirAll(filepath.Dir(logfile), 0o755); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(logfile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644) // #nosec G302
+	// 0600, not 0644: logs carry query names and other operational detail, and
+	// lumberjack preserves the mode it finds when it rotates -- so the mode
+	// this probe creates the file with is the mode it keeps.
+	f, err := os.OpenFile(logfile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}

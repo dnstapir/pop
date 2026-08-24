@@ -19,13 +19,18 @@ type Config struct {
 	ApiServer       ApiserverConf
 	DnsEngine       DnsengineConf
 	BootstrapServer BootstrapServerConf
-    KeyStore        KeystoreConf
+	KeyStore        KeystoreConf
 	Sources         map[string]SourceConf
 	Policy          PolicyConf
 	Log             struct {
-		File    string `validate:"required"`
-		Verbose *bool  `validate:"required"`
-		Debug   *bool  `validate:"required"`
+		// Not required: SetupLogging falls back to stderr, and an unset
+		// log.file should not stop pop serving DNS. Leaving the tag here made
+		// that fallback cosmetic -- ValidateConfig runs immediately after
+		// SetupLogging and killed the daemon anyway.
+		File string
+
+		Verbose *bool `validate:"required"`
+		Debug   *bool `validate:"required"`
 	}
 	Loggers struct {
 		Mqtt      *log.Logger
@@ -78,7 +83,7 @@ type ServerConf struct {
 }
 
 type KeystoreConf struct {
-    Path string `validate:"required,file"`
+	Path string `validate:"required,file"`
 }
 
 type SourceConf struct {
@@ -88,7 +93,7 @@ type SourceConf struct {
 	Type         string `validate:"required"`
 	Format       string `validate:"required"`
 	Source       string `validate:"required"`
-    Immutable    bool
+	Immutable    bool
 	Topic        string
 	ValidatorKey string
 	Bootstrap    []string

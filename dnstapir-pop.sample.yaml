@@ -12,7 +12,7 @@
 
 log:
    mode:        debug                              # "debug" enables debug logging; anything else disables
-   file:        /var/log/dnstapir/pop.log          # REQUIRED
+   file:        /var/log/dnstapir/pop.log          # optional; falls back to stderr
    verbose:     false                              # forwarded to the sources library
    debug:       false                              # forwarded to the sources library
 
@@ -54,11 +54,16 @@ bootstrapserver:
    tlsaddresses:    []
    logfile:         /var/log/dnstapir/pop-bootstrap.log
 
-# JWK set used to validate signed MQTT payloads. The file must EXIST and parse
-# before pop will start, even when no MQTT source is configured. An empty set
-# is '{"keys":[]}'.
+# JWK set used to validate signed MQTT payloads. Required whenever MQTT is in
+# use (tapir.mqtt.mode: required or optional) -- the engine reads it at
+# creation and will not start without it. Not needed at all with mode: ignored.
+# The file must exist and parse; an empty set is '{"keys":[]}'.
+#
+# Note that this is NOT enforced by config validation, only by the MQTT engine
+# at startup, so a typo here surfaces as an MQTT failure rather than a config
+# error.
 keystore:
-   path:            /etc/dnstapir/keystore.json    # REQUIRED
+   path:            /etc/dnstapir/keystore.json
 
 tapir:
    # Global config pushed down from TAPIR Core over MQTT.
