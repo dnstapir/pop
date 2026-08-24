@@ -136,10 +136,34 @@ func (pd *PopData) GenerateRpzAxfr() error {
 		}
 	}
 
-	// Publish the new full zone. Carry SOA/NSrrs forward from the current
-	// snapshot (set up by BootstrapRpzOutput); bump nothing here — the serial
-	// is owned by pd.Rpz.CurrentSerial.
+	// Publish the new full zone, carrying SOA/NSrrs forward from the current
+	// snapshot (set up by BootstrapRpzOutput).
+	//
+	// A rebuild that changes what is served MUST advance the serial (#198).
+	// It used to publish under pd.Rpz.CurrentSerial unchanged, so a downstream
+	// holding that serial had no reason to transfer and kept the old zone; an
+	// IXFR-following one was told nothing had changed.
+	//
+	// And only when it changes. An unconditional bump on every rebuild would
+	// advance the serial for identical content, which is pointless transfers
+	// downstream and serial churn for nothing.
 	old := pd.snapshot.Load()
+	if old != nil && rpzDataEqual(old.Data, data) {
+		pd.Logger.Printf("GenerateRpzAxfr: rebuild produced identical content for %s; not republishing (serial stays %d)",
+			pd.Rpz.ZoneName, pd.Rpz.CurrentSerial)
+		return nil
+	}
+	if old != nil {
+		// Bump from the PUBLISHED serial, not from pd.Rpz.CurrentSerial. The
+		// snapshot is what downstreams actually hold, and it is the only value
+		// that cannot be rewound behind our back -- ParseOutputs re-reads the
+		// serial cache into the counter and runs a second time at startup,
+		// after the zone is already live.
+		//
+		// Not on the first publish: that one carries the serial restored from
+		// the serial cache, which must not be skipped past.
+		pd.Rpz.CurrentSerial = old.Serial + 1
+	}
 	snap := &ZoneSnapshot{
 		ZoneName:  pd.Rpz.ZoneName,
 		Serial:    pd.Rpz.CurrentSerial,
@@ -310,7 +334,11 @@ func (pd *PopData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 		return RpzIxfr{}, nil
 	}
 
-	curserial := pd.Rpz.CurrentSerial
+	// From the published snapshot, for the same reason as in GenerateRpzAxfr:
+	// pd.Rpz.CurrentSerial can be rewound by a re-run of ParseOutputs, and
+	// publishing a CHANGED zone under a serial a downstream already holds is
+	// exactly the failure #198 is about.
+	curserial := snap.Serial
 	newserial := curserial + 1 // XXX: serial wrap handled separately (see #166)
 	thisixfr := RpzIxfr{
 		FromSerial: curserial,
@@ -367,4 +395,21 @@ func (pd *PopData) GenerateRpzIxfr(data *tapir.TapirMsg) (RpzIxfr, error) {
 			curserial, newserial, len(removeData), len(addData), len(newChain))
 	}
 	return thisixfr, nil
+}
+
+// rpzDataEqual reports whether two published zone bodies are the same.
+//
+// Compared by name and action rather than by the dns.RR pointers, which differ
+// on every rebuild even when the zone does not.
+func rpzDataEqual(a, b map[string]*tapir.RpzName) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for name, ra := range a {
+		rb, ok := b[name]
+		if !ok || ra == nil || rb == nil || ra.Action != rb.Action {
+			return false
+		}
+	}
+	return true
 }
