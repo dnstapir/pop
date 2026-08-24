@@ -6,13 +6,19 @@ VERSION:=0.0.0
 PROG:=dnstapir-pop
 OUT:=$$(pwd)/out
 COMMIT:=$$(cat COMMIT 2> /dev/null || git describe --dirty=+WiP --always 2> /dev/null)
-# Test builds deliberately do NOT reuse $(GO), for two reasons. It sets
-# CGO_ENABLED=0 for reproducible static release builds, and the race detector
-# requires cgo -- with it off, "go test -race" fails outright rather than
-# quietly running unraced. It also pins GOOS/GOARCH, and a cross-compiled test
-# binary cannot be executed by the machine that built it, so a developer with
-# GOOS set for a release build would find "make test" broken for no reason.
-GOTEST:=CGO_ENABLED=1 go
+# Test builds deliberately do NOT reuse $(GO), for two reasons.
+#
+# It sets CGO_ENABLED=0 for reproducible static release builds, and the race
+# detector requires cgo -- with it off, "go test -race" fails outright rather
+# than quietly running unraced.
+#
+# And GOOS/GOARCH are cleared EXPLICITLY, not merely left unset: a test binary
+# built for another platform cannot be run by the machine that built it, and
+# the go command reads GOOS/GOARCH from the environment. Simply not passing
+# them through is not enough -- "GOOS=linux make test" would still cross-compile
+# and then fail to run. An empty value is treated as unset by the go command,
+# so this pins the tests to the host whatever the caller's environment says.
+GOTEST:=GOOS= GOARCH= CGO_ENABLED=1 go
 
 GOFLAGS:=-v -ldflags "-X 'main.version=$(VERSION)' -X 'main.commit=$(COMMIT)' -X 'main.name=$(PROG)'"
 GOOS ?= $(shell uname -s | tr A-Z a-z)

@@ -6,10 +6,23 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+
+    # Least privilege: this job builds and runs pull-request-controlled code,
+    # so it gets a read-only token rather than whatever the repository or
+    # organization default happens to be.
+    permissions:
+      contents: read
+
     steps:
       # Was actions/checkout@v2, and had no setup-go step at all -- so this
       # job ran against whatever Go happened to be on the runner image.
+      #
+      # persist-credentials: false keeps the token out of .git/config, so code
+      # from the pull request cannot pick it up from the checkout. Nothing here
+      # pushes, so there is nothing to lose by dropping it.
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       # go-version-file rather than a literal: it ties the gate to the version
       # the module actually declares, and cannot drift from it.
