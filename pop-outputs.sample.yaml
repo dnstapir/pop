@@ -1,0 +1,16 @@
+# pop-outputs.sample.yaml -- downstream consumers of the RPZ pop produces.
+#
+# Copy to /etc/dnstapir/pop-outputs.yaml.
+#
+# An output is a resolver that pop sends DNS NOTIFY to, and which then pulls
+# the zone by AXFR or IXFR. pop serves that zone from dnsengine.addresses in
+# the main config, so the downstream must be able to reach it there.
+
+outputs:
+   primary-resolver:
+      active:        true
+      name:          primary-resolver
+      description:   Primary downstream resolver
+      type:          doubtlist        # which list this output is derived from
+      format:        rpz              # currently the only supported format
+      downstream:    127.0.0.1:53     # host:port to send NOTIFY to

@@ -1,0 +1,40 @@
+# pop-policy.sample.yaml -- how list membership becomes an RPZ action.
+#
+# Copy to /etc/dnstapir/pop-policy.yaml.
+#
+# Allowlist and denylist membership is absolute: an allowlisted name is never
+# blocked, a denylisted name always is. Only DOUBTLIST names are subject to the
+# graded rules below, because doubt is a matter of degree.
+#
+# Actions: allowlist (or passthru) -> rpz-passthru.
+#          nxdomain               -> .
+#          nodata                 -> *.
+#          drop                   -> rpz-drop.
+#
+# "redirect" exists in the code but is not fully implemented (see issue #147);
+# do not use it.
+
+policy:
+   logfile:  /var/log/dnstapir/pop-policy.log
+
+   allowlist:
+      action:  allowlist       # allowlist always wins over any denylist hit
+
+   denylist:
+      action:  nxdomain
+
+   doubtlist:
+      # Block a name that shows up in this many or more doubtlist sources.
+      numsources:
+         limit:   3
+         action:  nxdomain
+
+      # Block a name carrying this many or more TAPIR tags.
+      numtapirtags:
+         limit:   2
+         action:  drop
+
+      # Block a name carrying any of these tags, regardless of the counts above.
+      denytapir:
+         tags:    [ likelymalware, badip ]
+         action:  drop
