@@ -30,8 +30,8 @@ func (td *PopData) BootstrapMqttSource(src SourceConf) (*tapir.WBGlist, error) {
 		POPExiter("BootstrapMqttSource error: missing config key: certs.certdir")
 	}
 	// cert := cd + "/" + certname
-    key := viper.GetString("certs.tapir-pop.key")
-    cert := viper.GetString("certs.tapir-pop.cert")
+	key := viper.GetString("certs.tapir-pop.key")
+	cert := viper.GetString("certs.tapir-pop.cert")
 	tlsConfig, err := tapir.NewClientConfig(viper.GetString("certs.cacertfile"), key, cert)
 	if err != nil {
 		POPExiter("BootstrapMqttSource: Error: Could not set up TLS: %v", err)
