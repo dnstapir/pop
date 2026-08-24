@@ -113,6 +113,12 @@ type Pop struct {
 	cmd    *exec.Cmd
 	out    *lockedBuffer
 	closed bool
+	killed bool // Stop had to SIGKILL it: pop did not exit on SIGINT
+
+	// How pop exited, recorded by Stop. Nil until Stop has run.
+	exitState *os.ProcessState
+	exitErr   error
+	exited    chan struct{} // closed once the waiter has reaped pop
 }
 
 type lockedBuffer struct {
@@ -275,9 +281,19 @@ func StartPop(cfg PopConfig) (*Pop, error) {
 	p.cmd.Dir = workdir
 	p.cmd.Stdout = p.out
 	p.cmd.Stderr = p.out
+	p.exited = make(chan struct{})
 	if err := p.cmd.Start(); err != nil {
 		return nil, fmt.Errorf("starting %s: %w", cfg.Binary, err)
 	}
+
+	// One waiter, for the lifetime of the process. Reaping here rather than in
+	// Stop is what makes Alive truthful: a process that has exited but has not
+	// been waited for is a zombie, and a zombie still accepts signal 0 -- so a
+	// test asking "did pop survive that?" would be told yes about a corpse.
+	go func() {
+		p.exitState, p.exitErr = p.cmd.Process.Wait()
+		close(p.exited)
+	}()
 
 	if err := p.waitUntilServing(cfg.StartTimeout); err != nil {
 		out := p.Output()
@@ -333,6 +349,11 @@ func (p *Pop) waitUntilServing(timeout time.Duration) error {
 }
 
 // Stop terminates pop and removes its working directory.
+//
+// It RECORDS how pop exited rather than discarding it. Every test teardown
+// sends this signal, so pop's shutdown path is one of the most heavily
+// exercised in the suite -- and throwing the exit status away meant a shutdown
+// that panicked looked exactly like one that did not. See ExitOK.
 func (p *Pop) Stop() {
 	if p == nil || p.closed {
 		return
@@ -340,13 +361,12 @@ func (p *Pop) Stop() {
 	p.closed = true
 	if p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Signal(os.Interrupt)
-		done := make(chan struct{})
-		go func() { _, _ = p.cmd.Process.Wait(); close(done) }()
 		select {
-		case <-done:
+		case <-p.exited:
 		case <-time.After(5 * time.Second):
+			p.killed = true
 			_ = p.cmd.Process.Kill()
-			<-done
+			<-p.exited
 		}
 	}
 	if os.Getenv(KeepWorkDirEnv) == "1" {
@@ -355,6 +375,84 @@ func (p *Pop) Stop() {
 	}
 	_ = os.RemoveAll(p.WorkDir)
 }
+
+// ExitOK reports whether pop shut down cleanly, and says why not when it did
+// not. Call it after Stop.
+//
+// "Cleanly" means: it exited of its own accord on SIGINT (not killed after the
+// grace period), with status 0, and without a panic on the way out. A Go panic
+// exits non-zero anyway, but the message is what identifies WHICH bug -- a
+// WaitGroup driven negative reads "sync: negative WaitGroup counter" -- so the
+// output is reported too.
+func (p *Pop) ExitOK() error {
+	if p == nil {
+		return fmt.Errorf("no pop")
+	}
+	if !p.closed {
+		return fmt.Errorf("pop has not been stopped yet")
+	}
+	if p.killed {
+		return fmt.Errorf("pop did not exit on SIGINT within the grace period and had to be killed")
+	}
+	if panicked, detail := p.Panicked(); panicked {
+		return fmt.Errorf("pop panicked during shutdown: %s", detail)
+	}
+	if p.exitErr != nil {
+		return fmt.Errorf("waiting for pop: %v", p.exitErr)
+	}
+	if p.exitState != nil && p.exitState.ExitCode() != 0 {
+		return fmt.Errorf("pop exited with status %d", p.exitState.ExitCode())
+	}
+	return nil
+}
+
+// Panicked reports whether a Go panic appears in pop's output, with the panic
+// line and a little of what followed it.
+func (p *Pop) Panicked() (bool, string) {
+	out := p.Output()
+	i := strings.Index(out, "panic: ")
+	if i < 0 {
+		return false, ""
+	}
+	tail := out[i:]
+	if len(tail) > 300 {
+		tail = tail[:300]
+	}
+	return true, strings.TrimSpace(tail)
+}
+
+// Signal sends a signal to pop, for the lifecycle paths a test cannot reach any
+// other way -- SIGHUP being the reload.
+func (p *Pop) Signal(sig os.Signal) error {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return fmt.Errorf("pop is not running")
+	}
+	return p.cmd.Process.Signal(sig)
+}
+
+// Alive reports whether pop is still running.
+//
+// Reads the waiter's channel rather than probing with signal 0, which would
+// answer "yes" for an exited-but-unreaped process. This is how a test tells
+// "the daemon survived a bad reload" from "the daemon died and the assertion
+// passed for some other reason".
+func (p *Pop) Alive() bool {
+	if p == nil || p.exited == nil {
+		return false
+	}
+	select {
+	case <-p.exited:
+		return false
+	default:
+		return true
+	}
+}
+
+// EtcFile is the path of one of pop's configuration files.
+//
+// pop reads its configuration from a hardcoded directory, so a test that wants
+// to change what a reload would load has to write there.
+func (p *Pop) EtcFile(name string) string { return filepath.Join(EtcDir, name) }
 
 // AXFR pulls the whole zone pop is currently serving.
 func (p *Pop) AXFR() ([]dns.RR, error) {
@@ -501,6 +599,33 @@ type DebugOutput struct {
 // how you tell "the data never reached pop's lists" apart from "the data is in
 // the lists and nothing rebuilt the zone" -- two failures that look identical
 // from outside, because in both the served zone is stale.
+// APICommand posts a command to pop's management API.
+//
+// "stop" is the one that matters for lifecycle testing: it is pop's SECOND
+// shutdown path, independent of signals, and the two of them arriving together
+// is the condition #159 is about.
+func (p *Pop) APICommand(command string) error {
+	body, err := json.Marshal(map[string]string{"command": command})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, "http://"+p.APIAddr+"/api/v1/command", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-API-Key", APIKey)
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return fmt.Errorf("posting %s to %s: %w", command, p.APIAddr, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s answered %s", command, resp.Status)
+	}
+	return nil
+}
+
 func (p *Pop) GenOutput() (*DebugOutput, error) {
 	body, err := json.Marshal(map[string]string{"command": "gen-output"})
 	if err != nil {
