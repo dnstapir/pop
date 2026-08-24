@@ -268,6 +268,17 @@ func (pd *PopData) decide(name string) (tapir.Action, Reason) {
 	}
 
 	// Stage 2: denylist.
+	//
+	// The CONFIGURED action, not the one the upstream asked for. Every input --
+	// RPZ feeds, MQTT, files -- is only a TRIGGER saying this name is
+	// interesting; local policy decides what is actually done about it. So the
+	// per-name action that the RPZ parse function stores off the upstream's
+	// CNAME target is deliberately not consulted here.
+	//
+	// This is not the plain RPZ model, where an action is final and settled by
+	// a single match: with several RPZ zones loaded, the first zone whose rule
+	// matches the owner decides. pop does not work that way, and the unused
+	// per-name action is not dead code to be "fixed" into use.
 	if hits := pd.listOf("denylist", name); len(hits) > 0 {
 		return pd.Policy.DenylistAction, Reason{
 			Action: pd.Policy.DenylistAction, Stage: StageDenylist, Sources: hits,
