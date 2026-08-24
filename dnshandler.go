@@ -170,7 +170,7 @@ func (pd *PopData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16, 
 	switch qtype {
 	case dns.TypeAXFR:
 		lg.Printf("RpzResponder: serving AXFR of %s", snap.ZoneName)
-		_, _, err := pd.RpzAxfrOut(w, r)
+		_, _, err := pd.rpzAxfrOutFrom(w, r, snap)
 		if err != nil {
 			lg.Printf("RpzResponder: error from RpzAxfrOut() serving zone %s: %v", snap.ZoneName, err)
 		}
@@ -178,7 +178,7 @@ func (pd *PopData) RpzResponder(w dns.ResponseWriter, r *dns.Msg, qtype uint16, 
 
 	case dns.TypeIXFR:
 		lg.Printf("RpzResponder: %s is our RPZ output", snap.ZoneName)
-		serial, _, err := pd.RpzIxfrOut(w, r)
+		serial, _, err := pd.rpzIxfrOutFrom(w, r, snap)
 		if err != nil {
 			lg.Printf("RpzResponder: error from RpzIxfrOut() serving zone %s: %v", snap.ZoneName, err)
 		}
