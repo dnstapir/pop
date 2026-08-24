@@ -76,11 +76,22 @@ tapir:
    # not pop's own server certificates; see the separate certs: block below.
    #
    # NONE of these appear in docs/configuration.md, which documents only
-   # tapir.mqtt.logfile -- but server, cacert, clientcert and clientkey are all
-   # REQUIRED by the MQTT engine, and pop currently starts that engine
-   # unconditionally. See issue #191: with these absent, or with the broker
-   # simply unreachable, pop does not start at all.
+   # tapir.mqtt.logfile -- but server, cacert, clientcert and clientkey are
+   # all required by the MQTT engine whenever mode is required or optional.
+   # With mode: ignored they are not needed at all.
    mqtt:
+      # How much pop depends on MQTT:
+      #   required  do not run without a working broker. The connection is
+      #             still BOUNDED -- pop fails with a clear message rather
+      #             than hanging.
+      #   optional  try to connect, but start regardless (DEFAULT). Sources
+      #             fed over MQTT stay empty until it connects. Safe because
+      #             observations expire unless refreshed, so a disconnected
+      #             pop sheds them rather than serving stale intelligence.
+      #   ignored   do not connect at all, and require no MQTT config below.
+      #             For a pop fed purely by RPZ transfer and local files.
+      mode:         optional
+      connect-timeout: 10                        # seconds to wait at startup
       logfile:      /var/log/dnstapir/pop-mqtt.log
       server:       tls://mqtt.example.com:8883    # REQUIRED. Note the scheme.
       clientid:     this-must-be-unique-per-edge

@@ -109,10 +109,11 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 				Msg:    "Daemon was happy, but now winding down",
 			}
 			log.Printf("Stopping MQTT engine\n")
-			_, err := conf.PopData.MqttEngine.StopEngine()
-			if err != nil {
-				resp.Error = true
-				resp.ErrorMsg = err.Error()
+			if me := mqttEngineOrError(conf, &resp); me != nil {
+				if _, err := me.StopEngine(); err != nil {
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+				}
 			}
 			conf.Internal.APIStopCh <- struct{}{}
 		case "bump":
@@ -123,28 +124,31 @@ func APIcommand(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			}
 
 		case "mqtt-start":
-			_, _, _, err := conf.PopData.MqttEngine.StartEngine()
-			if err != nil {
-				resp.Error = true
-				resp.ErrorMsg = err.Error()
+			if me := mqttEngineOrError(conf, &resp); me != nil {
+				if _, _, _, err := me.StartEngine(); err != nil {
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+				}
+				resp.Msg = "MQTT engine started"
 			}
-			resp.Msg = "MQTT engine started"
 
 		case "mqtt-stop":
-			_, err := conf.PopData.MqttEngine.StopEngine()
-			if err != nil {
-				resp.Error = true
-				resp.ErrorMsg = err.Error()
+			if me := mqttEngineOrError(conf, &resp); me != nil {
+				if _, err := me.StopEngine(); err != nil {
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+				}
+				resp.Msg = "MQTT engine stopped"
 			}
-			resp.Msg = "MQTT engine stopped"
 
 		case "mqtt-restart":
-			_, err := conf.PopData.MqttEngine.RestartEngine()
-			if err != nil {
-				resp.Error = true
-				resp.ErrorMsg = err.Error()
+			if me := mqttEngineOrError(conf, &resp); me != nil {
+				if _, err := me.RestartEngine(); err != nil {
+					resp.Error = true
+					resp.ErrorMsg = err.Error()
+				}
+				resp.Msg = "MQTT engine restarted"
 			}
-			resp.Msg = "MQTT engine restarted"
 
 		case "rpz-add":
 			log.Printf("Received RPZ-ADD %s policy %s RPZ source %s command", cp.Name, cp.Policy, cp.RpzSource)
@@ -379,6 +383,18 @@ func APIbootstrap(conf *Config) func(w http.ResponseWriter, r *http.Request) {
 			resp.Error = true
 		}
 	}
+}
+
+// mqttEngineOrError returns the MQTT engine, or fills in resp and returns nil
+// when MQTT is not enabled (tapir.mqtt.mode: ignored). Without this the
+// mqtt-* commands would panic on a nil engine rather than answer.
+func mqttEngineOrError(conf *Config, resp *tapir.CommandResponse) *tapir.MqttEngine {
+	if conf.PopData.MqttEngine == nil {
+		resp.Error = true
+		resp.ErrorMsg = "MQTT is not enabled on this pop (tapir.mqtt.mode)"
+		return nil
+	}
+	return conf.PopData.MqttEngine
 }
 
 func APIdebug(conf *Config) func(w http.ResponseWriter, r *http.Request) {

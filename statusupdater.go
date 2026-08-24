@@ -41,6 +41,12 @@ func (pd *PopData) StatusUpdater(conf *Config, stopch chan struct{}) {
 	// 	POPExiter("StatusUpdater: Error creating MQTT Engine: %v", err)
 	// }
 	me := pd.MqttEngine
+	if me == nil {
+		// MQTT ignored: there is nowhere to publish status to. Say so once and
+		// stop, rather than panicking on the first tick.
+		pd.Logger.Printf("StatusUpdater: MQTT is not enabled (tapir.mqtt.mode); status updates disabled")
+		return
+	}
 
 	ticker := time.NewTicker(60 * time.Second)
 
