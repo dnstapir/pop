@@ -5,6 +5,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"time"
 
@@ -141,16 +142,21 @@ type InternalConf struct {
 	ComponentStatusCh chan tapir.ComponentStatusUpdate
 }
 
+// ValidateConfig validates the (merged) config. It RETURNS an error on failure
+// rather than calling POPExiter, so it is safe to call on a SIGHUP reload of a
+// running daemon (a bad reload must not kill the process — #155). Startup
+// callers that genuinely cannot continue treat the returned error as fatal
+// themselves (see main()).
 func ValidateConfig(v *viper.Viper, cfgfile string) error {
 	var config Config
 
 	if v == nil {
 		if err := viper.Unmarshal(&config); err != nil {
-			POPExiter("ValidateConfig: Unmarshal error: %v", err)
+			return fmt.Errorf("ValidateConfig: unmarshal error: %w", err)
 		}
 	} else {
 		if err := v.Unmarshal(&config); err != nil {
-			POPExiter("ValidateConfig: Unmarshal error: %v", err)
+			return fmt.Errorf("ValidateConfig: unmarshal error: %w", err)
 		}
 	}
 
@@ -171,7 +177,7 @@ func ValidateConfig(v *viper.Viper, cfgfile string) error {
 	//	configsections["oldsources"] = config.OldSources
 
 	if err := ValidateBySection(&config, configsections, cfgfile); err != nil {
-		POPExiter("Config \"%s\" is missing required attributes:\n%v\n", cfgfile, err)
+		return fmt.Errorf("config %q is missing required attributes: %w", cfgfile, err)
 	}
 	return nil
 }
@@ -188,7 +194,7 @@ func ValidateBySection(config *Config, configsections map[string]interface{}, cf
 		}
 		if err := validate.Struct(data); err != nil {
 			log.Printf("ValidateBySection: data that caused validation to fail:\n%v\n", data)
-			POPExiter("ValidateBySection: Config %s, section %s: missing required attributes:\n%v\n", cfgfile, k, err)
+			return fmt.Errorf("config %s, section %s: missing required attributes: %w", cfgfile, k, err)
 		}
 	}
 	return nil
