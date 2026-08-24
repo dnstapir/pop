@@ -219,6 +219,14 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					updated, err = pd.RpzSources[zone].Refresh(rc.Upstream)
 					if err != nil {
 						log.Printf("RefreshEngine: Error from zone refresh(%s): %v", zone, err)
+						// Same reason as the periodic path: rc.Ingest lives in
+						// refreshCounters across refreshes, so anything a
+						// failed transfer staged would otherwise be committed
+						// by the NEXT one -- names it happened to carry looking
+						// like additions, names it missed like removals.
+						if rc.Ingest != nil {
+							rc.Ingest.Discard()
+						}
 					}
 
 					if updated {
