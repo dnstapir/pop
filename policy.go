@@ -75,32 +75,6 @@ func (pd *PopData) ParseOutputs() error {
 			pd.Downstreams[addr] = RpzDownstream{Address: addr, Port: portInt}
 		}
 	}
-	// Read the current value of pd.Downstreams.Serial from a text file
-	serialFile := viper.GetString("services.rpz.serialcache")
-
-	if serialFile != "" {
-		serialFile = filepath.Clean(serialFile)
-		serialData, err := os.ReadFile(serialFile)
-		if err != nil {
-			pd.Logger.Printf("Error reading serial from file %s: %v", serialFile, err)
-			pd.Rpz.CurrentSerial = 1
-		} else {
-			var serialYaml struct {
-				CurrentSerial uint32 `yaml:"current_serial"`
-			}
-			err = yaml.Unmarshal(serialData, &serialYaml)
-			if err != nil {
-				pd.Logger.Printf("Error unmarshalling YAML serial data: %v", err)
-				pd.Rpz.CurrentSerial = 1
-			} else {
-				pd.Rpz.CurrentSerial = serialYaml.CurrentSerial
-				pd.Logger.Printf("Loaded serial %d from file %s", pd.Rpz.CurrentSerial, serialFile)
-			}
-		}
-	} else {
-		pd.Logger.Printf("No serial cache file specified, starting serial at 1")
-		pd.Rpz.CurrentSerial = 1
-	}
 	// pd.Rpz.CurrentSerial = pd.Downstreams.Serial
 	return nil
 }
@@ -294,6 +268,17 @@ func (pd *PopData) decide(name string) (tapir.Action, Reason) {
 	}
 
 	// Stage 2: denylist.
+	//
+	// The CONFIGURED action, not the one the upstream asked for. Every input --
+	// RPZ feeds, MQTT, files -- is only a TRIGGER saying this name is
+	// interesting; local policy decides what is actually done about it. So the
+	// per-name action that the RPZ parse function stores off the upstream's
+	// CNAME target is deliberately not consulted here.
+	//
+	// This is not the plain RPZ model, where an action is final and settled by
+	// a single match: with several RPZ zones loaded, the first zone whose rule
+	// matches the owner decides. pop does not work that way, and the unused
+	// per-name action is not dead code to be "fixed" into use.
 	if hits := pd.listOf("denylist", name); len(hits) > 0 {
 		return pd.Policy.DenylistAction, Reason{
 			Action: pd.Policy.DenylistAction, Stage: StageDenylist, Sources: hits,
@@ -327,5 +312,45 @@ func (pd *PopData) decide(name string) (tapir.Action, Reason) {
 	}
 	return winner.Action, Reason{
 		Action: winner.Action, Stage: StageDoubtlist, Sources: hits, Fired: fired, Winner: winner,
+	}
+}
+
+// loadCachedSerial restores the RPZ serial from the serial cache.
+//
+// Called exactly once, from NewPopData, before anything is published. It used
+// to sit inside ParseOutputs -- which runs a SECOND time at startup, after the
+// zone has been built and served, and so reset the serial to the cached value
+// behind the running zone's back. The next update then published CHANGED
+// content under a serial downstreams already held, giving them no reason to
+// transfer it (#198).
+//
+// Publishing owns the serial from here on: GenerateRpzAxfr and GenerateRpzIxfr
+// both derive the next one from the published snapshot.
+func (pd *PopData) loadCachedSerial() {
+	// Read the current value of pd.Downstreams.Serial from a text file
+	serialFile := viper.GetString("services.rpz.serialcache")
+
+	if serialFile != "" {
+		serialFile = filepath.Clean(serialFile)
+		serialData, err := os.ReadFile(serialFile)
+		if err != nil {
+			pd.Logger.Printf("Error reading serial from file %s: %v", serialFile, err)
+			pd.Rpz.CurrentSerial = 1
+		} else {
+			var serialYaml struct {
+				CurrentSerial uint32 `yaml:"current_serial"`
+			}
+			err = yaml.Unmarshal(serialData, &serialYaml)
+			if err != nil {
+				pd.Logger.Printf("Error unmarshalling YAML serial data: %v", err)
+				pd.Rpz.CurrentSerial = 1
+			} else {
+				pd.Rpz.CurrentSerial = serialYaml.CurrentSerial
+				pd.Logger.Printf("Loaded serial %d from file %s", pd.Rpz.CurrentSerial, serialFile)
+			}
+		}
+	} else {
+		pd.Logger.Printf("No serial cache file specified, starting serial at 1")
+		pd.Rpz.CurrentSerial = 1
 	}
 }

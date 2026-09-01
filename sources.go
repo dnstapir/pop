@@ -9,12 +9,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dnstapir/tapir"
 	"github.com/miekg/dns"
 	"github.com/smhanov/dawg"
 	"github.com/spf13/viper"
+
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 )
@@ -53,6 +55,8 @@ func NewPopData(conf *Config, lg *log.Logger) (*PopData, error) {
 	if err != nil {
 		POPExiter("NewPopData: Error from ParseOutputs(): %v", err)
 	}
+	// Once, here, before anything is published. See loadCachedSerial.
+	pd.loadCachedSerial()
 
 	//	pd.Rpz.IxfrChain = map[uint32]RpzIxfr{}
 	pd.RpzSources = map[string]*tapir.ZoneData{}
@@ -359,11 +363,16 @@ func (pd *PopData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
 	//	s.RpzUpstream = upstream
 	pd.Logger.Printf("---> SetupRPZFeed: about to transfer zone %s from %s", s.RpzZoneName, s.RpzUpstream)
 
+	// The ingest travels with the refresh request: the engine needs it to turn
+	// each later transfer into a delta (#197), not just to parse RRs.
+	ingest := pd.newRpzFeedIngest(s)
+
 	var reRpt = make(chan RpzRefreshResult, 1)
 	pd.RpzRefreshCh <- RpzRefresh{
 		Name:        s.RpzZoneName,
 		Upstream:    s.RpzUpstream,
-		RRParseFunc: pd.RpzParseFuncFactory(s),
+		RRParseFunc: ingest.ParseFunc(),
+		Ingest:      ingest,
 		ZoneType:    tapir.RpzZone,
 		Resp:        reRpt,
 	}
@@ -378,14 +387,99 @@ func (pd *PopData) ParseRpzFeed(sourceid string, s *tapir.WBGlist) error {
 	return nil
 }
 
-// Parse the CNAME (in the shape of a dns.RR) that is found in the RPZ and sort the data into the
+// stage records one name from the transfer currently being parsed.
+func (ing *rpzFeedIngest) stage(name string, tn tapir.TapirName) {
+	ing.mu.Lock()
+	defer ing.mu.Unlock()
+	ing.names[name] = tn
+}
+
+// rpzFeedIngest stages one zone transfer's worth of an RPZ source.
+//
+// The parse function used to write straight into s.Names, which only ever
+// grows: a name dropped upstream stayed in pop's list forever (#197). It now
+// accumulates here instead, and Commit turns the accumulated set into a DELTA
+// against what the source already held.
+//
+// A delta rather than a wholesale replacement, deliberately. Inbound IXFR will
+// deliver adds and deletes directly off the wire, and that delta can be applied
+// by the same Commit path without materialising the whole zone. Replacing
+// s.Names outright would work for AXFR and would have to be rewritten for IXFR.
+//
+// LIMITATION: the parse function also spills misplaced rules into the shared
+// doubt_catchall / allow_catchall buckets -- an allowlist rule in a denylist
+// feed, and so on. Those buckets are shared by every source and carry no record
+// of which source contributed what, so a per-source diff cannot be applied to
+// them and they still only grow. Narrower than the bug fixed here, on a path
+// that only a misconfigured upstream reaches, and it needs per-source
+// provenance to fix properly.
+type rpzFeedIngest struct {
+	pd  *PopData
+	src *tapir.WBGlist
+
+	mu    sync.Mutex
+	names map[string]tapir.TapirName // what THIS transfer carried
+}
+
+func (pd *PopData) newRpzFeedIngest(s *tapir.WBGlist) *rpzFeedIngest {
+	return &rpzFeedIngest{pd: pd, src: s, names: map[string]tapir.TapirName{}}
+}
+
+// Discard throws away a partial transfer, so a failed one cannot leak entries
+// into the next transfer's delta.
+func (ing *rpzFeedIngest) Discard() {
+	ing.mu.Lock()
+	defer ing.mu.Unlock()
+	ing.names = map[string]tapir.TapirName{}
+}
+
+// Commit diffs what the transfer carried against what the source held, applies
+// the difference to the source, and returns it.
+//
+// The staging map is cleared here rather than at the start of a transfer. That
+// is what makes "no transfer happened" indistinguishable from "an empty
+// transfer": if the upstream serial did not move, the parse function was never
+// called, the staging map is still empty, and the caller does not call Commit
+// at all. Resetting at transfer start would need the parse function to
+// recognise transfer boundaries from the RR stream, which is guesswork.
+func (ing *rpzFeedIngest) Commit() (added, removed []tapir.Domain) {
+	ing.mu.Lock()
+	fresh := ing.names
+	ing.names = map[string]tapir.TapirName{}
+	ing.mu.Unlock()
+
+	ing.pd.mu.Lock()
+	defer ing.pd.mu.Unlock()
+
+	for name, tn := range fresh {
+		if _, had := ing.src.Names[name]; !had {
+			added = append(added, tapir.Domain{Name: name})
+		}
+		ing.src.Names[name] = tn
+	}
+	for name := range ing.src.Names {
+		if _, still := fresh[name]; !still {
+			removed = append(removed, tapir.Domain{Name: name})
+		}
+	}
+	for _, d := range removed {
+		delete(ing.src.Names, d.Name)
+	}
+	return added, removed
+}
+
+// ParseFunc is what the transfer machinery calls for each RR.
+//
+// It parses the CNAME (in the shape of a dns.RR) found in the RPZ and sorts the data into the
 // appropriate list in PopData. Note that there are two special cases:
 //  1. If a "allowlist" RPZ source has a rule with an action other than "rpz-passthru." then that rule doesn't
 //     really belong in a "allowlist" source. So we take that rule an put it in the doubt_catchall bucket instead.
 //  2. If a "{doubt|deny}list" RPZ source has a rule with an "rpz-passthru." (i.e. allowlist) action then that
 //     rule doesn't really belong in a "{doubt|deny}list" source. So we take that rule an put it in the
 //     allow_catchall bucket instead.
-func (pd *PopData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.ZoneData) bool {
+func (ing *rpzFeedIngest) ParseFunc() func(*dns.RR, *tapir.ZoneData) bool {
+	pd := ing.pd
+	s := ing.src
 	return func(rr *dns.RR, zd *tapir.ZoneData) bool {
 		var action tapir.Action
 		name := strings.TrimSuffix((*rr).Header().Name, zd.ZoneName)
@@ -417,7 +511,7 @@ func (pd *PopData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 			switch s.Type {
 			case "allowlist":
 				if action == tapir.ALLOWLIST {
-					s.Names[name] = tapir.TapirName{Name: name} // drop all other actions
+					ing.stage(name, tapir.TapirName{Name: name}) // drop all other actions
 				} else {
 					pd.Logger.Printf("Warning: allowlist RPZ source %s has denylisted name: %s",
 						s.RpzZoneName, name)
@@ -431,7 +525,7 @@ func (pd *PopData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 				}
 			case "denylist":
 				if action != tapir.ALLOWLIST {
-					s.Names[name] = tapir.TapirName{Name: name, Action: action}
+					ing.stage(name, tapir.TapirName{Name: name, Action: action})
 				} else {
 					pd.Logger.Printf("Warning: denylist RPZ source %s has allowlisted name: %s",
 						s.RpzZoneName, name)
@@ -441,7 +535,7 @@ func (pd *PopData) RpzParseFuncFactory(s *tapir.WBGlist) func(*dns.RR, *tapir.Zo
 				}
 			case "doubtlist":
 				if action != tapir.ALLOWLIST {
-					s.Names[name] = tapir.TapirName{Name: name, Action: action}
+					ing.stage(name, tapir.TapirName{Name: name, Action: action})
 				} else {
 					pd.Logger.Printf("Warning: doubtlist RPZ source %s has allowlisted name: %s",
 						s.RpzZoneName, name)

@@ -23,8 +23,11 @@ type RpzRefresh struct {
 	Upstream string
 	//	RRKeepFunc  func(uint16) bool
 	RRParseFunc func(*dns.RR, *tapir.ZoneData) bool
-	ZoneType    tapir.ZoneType // 1=xfr, 2=map, 3=slice
-	Resp        chan RpzRefreshResult
+	// Ingest stages each transfer so that a refresh can be turned into a delta
+	// rather than an ever-growing name set (#197).
+	Ingest   *rpzFeedIngest
+	ZoneType tapir.ZoneType // 1=xfr, 2=map, 3=slice
+	Resp     chan RpzRefreshResult
 }
 
 type RpzRefreshResult struct {
@@ -40,8 +43,43 @@ type RefreshCounter struct {
 	IncomingSerial uint32
 	//	RRKeepFunc     func(uint16) bool
 	RRParseFunc func(*dns.RR, *tapir.ZoneData) bool
+	Ingest      *rpzFeedIngest
 	Upstream    string
 	Downstreams []string
+}
+
+// applyUpstreamDelta turns a completed transfer into a delta, applies it to the
+// source's name set, and optionally publishes it.
+//
+// Every path that transfers an RPZ source must call this. The parse function
+// stages into the ingest rather than writing to the source directly (#197), so
+// a transfer that is never committed simply vanishes -- which is exactly what
+// happened when only the periodic-refresh path called it and startup did not.
+//
+// publish is false for the initial transfer of a source, because
+// ParseSourcesNG does a full GenerateRpzAxfr once every source has loaded;
+// publishing per-source there would emit a partial zone.
+func (pd *PopData) applyUpstreamDelta(zone string, ing *rpzFeedIngest, publish bool) {
+	if ing == nil {
+		log.Printf("RefreshEngine: %s: no ingest for this source; the transfer cannot be applied", zone)
+		return
+	}
+	added, removed := ing.Commit()
+	if len(added) == 0 && len(removed) == 0 {
+		log.Printf("RefreshEngine: %s: transfer produced no net change to the name set; nothing to publish", zone)
+		return
+	}
+	log.Printf("RefreshEngine: %s: upstream delta: %d added, %d removed", zone, len(added), len(removed))
+	if !publish {
+		return
+	}
+	if _, err := pd.GenerateRpzIxfr(&tapir.TapirMsg{Added: added, Removed: removed}); err != nil {
+		log.Printf("RefreshEngine: %s: Error from GenerateRpzIxfr(): %v", zone, err)
+		return
+	}
+	if err := pd.NotifyDownstreams(); err != nil {
+		log.Printf("RefreshEngine: Error notifying downstreams: %v", err)
+	}
 }
 
 func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
@@ -171,6 +209,7 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 							CurRefresh: 1, // force immediate refresh
 							//							RRKeepFunc:  keepfunc,
 							RRParseFunc: parsefunc,
+							Ingest:      zr.Ingest,
 							Upstream:    upstream,
 							Downstreams: downstreams,
 						}
@@ -180,6 +219,14 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					updated, err = pd.RpzSources[zone].Refresh(rc.Upstream)
 					if err != nil {
 						log.Printf("RefreshEngine: Error from zone refresh(%s): %v", zone, err)
+						// Same reason as the periodic path: rc.Ingest lives in
+						// refreshCounters across refreshes, so anything a
+						// failed transfer staged would otherwise be committed
+						// by the NEXT one -- names it happened to carry looking
+						// like additions, names it missed like removals.
+						if rc.Ingest != nil {
+							rc.Ingest.Discard()
+						}
 					}
 
 					if updated {
@@ -188,10 +235,7 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 							log.Printf("RefreshEngine: %s updated from upstream. Resetting serial to unixtime: %d",
 								zone, pd.RpzSources[zone].SOA.Serial)
 						}
-						err := pd.NotifyDownstreams()
-						if err != nil {
-							log.Printf("RefreshEngine: Error notifying downstreams: %v", err)
-						}
+						pd.applyUpstreamDelta(zone, rc.Ingest, true)
 					}
 					// showing some apex details:
 					log.Printf("Showing some details for zone %s: ", zone)
@@ -242,6 +286,7 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 						CurRefresh: refresh,
 						//						RRKeepFunc:  keepfunc,
 						RRParseFunc: parsefunc,
+						Ingest:      zr.Ingest,
 						Upstream:    upstream,
 						Downstreams: downstreams,
 					}
@@ -252,9 +297,13 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 							log.Printf("RefreshEngine: %s updated from upstream. Resetting serial to unixtime: %d",
 								zone, zonedata.SOA.Serial)
 						}
-						// NotifyDownstreams(zonedata, downstreams)
-
 					}
+					// Unconditional, and unconditionally unpublished: this is a
+					// source's first transfer, so the names have to be applied
+					// even in the odd case where Refresh() reports no update,
+					// and ParseSourcesNG does the publishing once every source
+					// has loaded.
+					pd.applyUpstreamDelta(zone, zr.Ingest, false)
 					pd.mu.Lock()
 					pd.RpzSources[zone] = zonedata
 					pd.mu.Unlock()
@@ -285,6 +334,12 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 					rc.CurRefresh = rc.SOARefresh
 					if err != nil {
 						log.Printf("RefreshEngine: Error from zd.Refresh(%s): %v", zone, err)
+						// A partial transfer must not leak into the next
+						// delta, or names it happened to carry would look like
+						// additions and names it missed like removals.
+						if rc.Ingest != nil {
+							rc.Ingest.Discard()
+						}
 					}
 					if updated {
 						if resetSoaSerial {
@@ -293,12 +348,16 @@ func (pd *PopData) RefreshEngine(conf *Config, stopch chan struct{}) {
 								zone, pd.RpzSources[zone].SOA.Serial)
 
 						}
-					}
-					if updated {
-						err := pd.NotifyDownstreams()
-						if err != nil {
-							log.Printf("RefreshEngine: Error notifying downstreams: %v", err)
-						}
+
+						// Turn the transfer into a delta and publish it.
+						//
+						// This is what was missing (#195): the transfer landed
+						// in pop's lists and nothing ever rebuilt the served
+						// zone, so an upstream feed only affected the output at
+						// startup. Published incrementally rather than by full
+						// rebuild so the IXFR chain survives and downstreams are
+						// not pushed to a full AXFR on every upstream change.
+						pd.applyUpstreamDelta(zone, rc.Ingest, true)
 					}
 				}
 			}
