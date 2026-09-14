@@ -1,6 +1,6 @@
 module dnstapir-pop
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/dnstapir/tapir v0.0.0-20251117100352-b3b797ea3b38
@@ -12,7 +12,7 @@ require (
 	github.com/smhanov/dawg v0.0.0-20220118194912-66057bdbf2e3
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 )
