@@ -107,7 +107,6 @@ func TestPopServesWhatAFeedGivesIt(t *testing.T) {
 // to wait a fixed number of seconds.
 func TestPopFollowsUpstreamChanges(t *testing.T) {
 	requireEtc(t)
-	reproducesOpenBug(t, "#195", "xfr upstream changes are fetched but never republished")
 
 	feed := newFeedT(t, "deny.rig.test.")
 	feed.Set("first.example.", NXDOMAIN)
