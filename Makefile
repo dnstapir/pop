@@ -39,6 +39,8 @@ default: $(PROG)
 
 $(PROG): build
 
+build: export GOSUMDB=sum.golang.org
+build: export GOTOOLCHAIN=auto
 build: outdir
 	$(GO) build $(GOFLAGS) -o $(OUT)/$(PROG)
 
