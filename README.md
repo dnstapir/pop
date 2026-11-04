@@ -1,16 +1,19 @@
 # dnstapir-pop: DNS TAPIR Policy Processor
 
 The *DNS TAPIR Policy Processor*, dnstapir-pop, is the component that processes the intelligence data from the DNS TAPIR Core
-(and possibly other sources) and applies local policy to reach a filtering decision. 
+(and possibly other sources) and applies local policy to reach a filtering decision. dnstapir-pop
+can be run independently of DNS TAPIR and does not rely on getting the DNS TAPIR observations.
 
-It is the connection between the core and the
-edge platform. It manages local configurations and gets updates from
+It is the connection between the DNS TAPIR core and the
+DNS TAPIR edge platform. It manages local configurations and gets updates from
 the core with alerts and config changes.
 
-dnstapir-pop is responsible for the task of integrating all intelligence sources
+dnstapir-pop is responsible for the task of integrating many intelligence sources
 into a single Response Policy Zone (RPZ) that is as compact as possible.
 The RPZ file is used by the DNS resolver to implement blocklists and other
-policy-related functions.
+policy-related functions. The RPZ zone is distributed using DNS
+which means that a single dnstapir-pop instance can server multiple
+resolvers.
 
 ## A unified single RPZ zone instead of multiple sources
 
@@ -45,12 +48,12 @@ design a suitable threat policy dnstapir-pop uses a number of concepts:
   - the name resolves to an IP address known to host bad
     things, etc.
 
-- __sources__: TEM supports the following types of sources for intelligence data:
-  - __RPZ__: imported via AXFR or IXFR. TEM understands DNS NOTIFY.
+- __sources__: POP supports the following types of sources for intelligence data:
+  - __RPZ__: imported via AXFR or IXFR. POP understands DNS NOTIFY.
   - __MQTT__: DNS TAPIR Core Analyser sends out rapid updates for small numbers
     of names via an MQTT message bus infrastructure.
   - __DAWG__: Directed Acyclic Word Graphs are extremely compact data structures.
-    TEM is able to mmap very large lists in DAWG format which is used for large allowlists.
+    POP is able to mmap very large lists in DAWG format which is used for large allowlists.
   - __CSV Files__: Text files on local disk, either with just domain names, or in
     CSV format are supported.
   - __HTTPS__: To bootstrap an intelligence feed that only distributes deltas
