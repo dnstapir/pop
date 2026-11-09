@@ -10,7 +10,7 @@ require (
 	github.com/miekg/dns v1.1.73
 	github.com/ryanuber/columnize v2.1.2+incompatible
 	github.com/smhanov/dawg v0.0.0-20220118194912-66057bdbf2e3
-	github.com/spf13/pflag v1.0.10
+	github.com/spf13/pflag v1.1.0
 	github.com/spf13/viper v1.21.0
 	golang.org/x/sync v0.23.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
