@@ -94,9 +94,11 @@ clean:
 	@rm -rf $(OUT)
 
 tarball: outdir
+	@rm -f "$(OUT)/$(PROG).tar.gz"
 	@echo "$(COMMIT)" > $(OUT)/COMMIT
 	@echo "$(VERSION)" > $(OUT)/VERSION
-	@test -z "$$(git status --porcelain)" && git archive --format=tar.gz --prefix=$(PROG)/ -o $(OUT)/$(PROG).tar.gz --add-file $(OUT)/VERSION --add-file $(OUT)/COMMIT HEAD || echo "won't make tarball from dirty history"
+	@test -z "$$(git status --porcelain)" || echo "won't make tarball from dirty history" && exit 1;
+	@test -z "$$(git status --porcelain)" && git archive --format=tar.gz --prefix=$(PROG)/ -o $(OUT)/$(PROG).tar.gz --add-file $(OUT)/VERSION --add-file $(OUT)/COMMIT HEAD
 
 srpm: tarball
 	cp -r rpm $(OUT)
