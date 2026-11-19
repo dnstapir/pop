@@ -1,6 +1,7 @@
 PROG:=dnstapir-pop
 OUT:=$$(pwd)/out
-VERSION:=$(shell git describe --exact-match --tags 2> /dev/null || cat VERSION 2> /dev/null || echo "0.0.0")
+HAS_TAG:=$(shell git describe --exact-match --tags 2> /dev/null)
+VERSION:=$(shell test -n "$(HAS_TAG)" && git describe --exact-match --tags 2> /dev/null | sed 's/^v//' || cat VERSION 2> /dev/null || echo "0.0.0")
 COMMIT:=$(shell git describe --dirty=+WiP --always 2> /dev/null || cat COMMIT 2> /dev/null || echo "no_vcs_info")
 # Test builds deliberately do NOT reuse $(GO), for two reasons.
 #
@@ -97,7 +98,7 @@ tarball: outdir
 	@rm -f "$(OUT)/$(PROG).tar.gz"
 	@echo "$(COMMIT)" > $(OUT)/COMMIT
 	@echo "$(VERSION)" > $(OUT)/VERSION
-	@test -z "$$(git status --porcelain)" || echo "won't make tarball from dirty history" && exit 1;
+	@test -z "$$(git status --porcelain)" || (echo "won't make tarball from dirty history" && exit 1);
 	@test -z "$$(git status --porcelain)" && git archive --format=tar.gz --prefix=$(PROG)/ -o $(OUT)/$(PROG).tar.gz --add-file $(OUT)/VERSION --add-file $(OUT)/COMMIT HEAD
 
 srpm: tarball
