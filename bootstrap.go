@@ -36,8 +36,7 @@ func (td *PopData) BootstrapMqttSource(src SourceConf) (*tapir.WBGlist, error) {
 	if err != nil {
 		POPExiter("BootstrapMqttSource: Error: Could not set up TLS: %v", err)
 	}
-	// XXX: Need to verify that the server cert is valid for the bootstrap server
-	tlsConfig.InsecureSkipVerify = true
+	tlsConfig.InsecureSkipVerify = false // TODO: Work out a solution for bootstrap PKI once that is officially supported
 	err = api.SetupTLS(tlsConfig)
 	if err != nil {
 		POPExiter("BootstrapMqttSource: error setting up TLS for the API client: %v", err)
